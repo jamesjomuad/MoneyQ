@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { CURRENCIES, DEFAULT_CURRENCY } from '../utils/currency';
-import { SETTING_KEYS, getSetting, setSetting } from '../database/repositories/settingsRepository';
+import { SETTING_KEYS, getSetting, setSetting } from '../storage/repositories/settingsRepository';
 
 /**
  * Transient view state only. SQLite remains the source of truth: this store

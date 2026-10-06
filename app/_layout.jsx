@@ -12,7 +12,7 @@ import { Button } from '../components/ui/Button';
 import { Screen } from '../components/ui/Screen';
 import { Text } from '../components/ui/Text';
 import { ThemeProvider, useTheme } from '../components/ui/ThemeProvider';
-import { getSchemaVersion } from '../database/database';
+import { initStorage } from '../storage/adapters/adapter';
 import { useAppStore } from '../stores/appStore';
 
 export { ErrorBoundary } from 'expo-router';
@@ -42,8 +42,9 @@ export default function RootLayout() {
 }
 
 /**
- * SQLite is opened and migrated before any screen renders, so no screen ever
- * has to handle a half-initialised database.
+ * The storage engine is initialised before any screen renders, so no screen
+ * ever has to handle a half-initialised database. On native that opens and
+ * migrates SQLite; on web it swaps in the in-memory adapter.
  */
 function DatabaseGate({ children }) {
   const databaseStatus = useAppStore((state) => state.databaseStatus);
@@ -55,8 +56,8 @@ function DatabaseGate({ children }) {
 
     async function initialise() {
       try {
-        const schemaVersion = await getSchemaVersion();
-        if (!cancelled) useAppStore.getState().setDatabaseReady(schemaVersion);
+        const { source, schemaVersion } = await initStorage();
+        if (!cancelled) useAppStore.getState().setDatabaseReady(schemaVersion, source);
       } catch (error) {
         if (!cancelled) useAppStore.getState().setDatabaseError(error);
       }
@@ -73,7 +74,7 @@ function DatabaseGate({ children }) {
       <DatabaseErrorView
         message={databaseError?.message}
         onRetry={() => {
-          useAppStore.setState({ databaseStatus: 'idle', databaseError: null });
+          useAppStore.setState({ databaseStatus: 'idle', databaseError: null, storageSource: null });
           setAttempt((value) => value + 1);
         }}
       />
@@ -93,6 +94,10 @@ function NavigationShell() {
     <NavigationThemeProvider value={navigationTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="budget/[id]" options={{ headerBackTitle: 'Back' }} />
+        <Stack.Screen name="budget/form" options={{ presentation: 'modal', title: 'Budget' }} />
+        <Stack.Screen name="transaction/form" options={{ presentation: 'modal', title: 'Add Transaction' }} />
+        <Stack.Screen name="tags" options={{ presentation: 'modal', title: 'Tags' }} />
       </Stack>
     </NavigationThemeProvider>
   );

@@ -1,12 +1,29 @@
-import { BUDGET_WARNING_RATIO, BUDGET_STATUS } from '../constants/finance';
-
 /**
- * Every financial calculation lives here so that no screen ever re-implements
- * business rules. All amounts are integer minor units.
+ * Every financial calculation lives here so no screen re-implements business
+ * rules. All amounts are integer minor units.
  *
  * Core rule: transfers move money between accounts and must never affect
- * income, expenses, or total assets.
+ * income, expenses, or total assets. A Budget has no spending limit, so there
+ * is no overspend state anywhere in this module: "spent" is always just the
+ * expense transactions recorded against it.
  */
+
+export function computeTotals(transactions) {
+  let income = 0;
+  let expense = 0;
+
+  for (const transaction of transactions) {
+    if (transaction.type === 'income') income += transaction.amount;
+    else if (transaction.type === 'expense') expense += transaction.amount;
+  }
+
+  return {
+    income,
+    expense,
+    remaining: income - expense,
+    transactionCount: transactions.length,
+  };
+}
 
 export function computeAccountBalance(account, transactions) {
   let balance = account?.initial_balance ?? 0;
@@ -34,54 +51,36 @@ export function computeTotalAssets(accounts, transactions) {
   );
 }
 
-/** Income and expense totals. Transfers are deliberately excluded. */
-export function computeTotals(transactions) {
-  let income = 0;
-  let expense = 0;
-
-  for (const transaction of transactions) {
-    if (transaction.type === 'income') income += transaction.amount;
-    else if (transaction.type === 'expense') expense += transaction.amount;
-  }
-
-  return { income, expense, net: income - expense };
-}
-
-export function computeBudgetStatus({ amount, spent }) {
-  const budget = amount ?? 0;
-  const ratio = budget > 0 ? spent / budget : 0;
-
-  let status = BUDGET_STATUS.ok;
-  if (budget > 0 && spent > budget) status = BUDGET_STATUS.over;
-  else if (ratio >= BUDGET_WARNING_RATIO) status = BUDGET_STATUS.warning;
-
-  return {
-    amount: budget,
-    spent,
-    remaining: budget - spent,
-    ratio,
-    percent: Math.round(ratio * 100),
-    status,
-  };
-}
-
-/** Expense spend per category, used by the budget screen and dashboard. */
-export function computeSpendByCategory(transactions, categories = []) {
-  const totals = new Map(categories.map((category) => [category.id, 0]));
+/**
+ * Expense spend per tag, keyed by tag id. Only expenses count, so income and
+ * transfers never inflate a tag's total.
+ */
+export function computeSpendByTag(transactions, tags = []) {
+  const totals = new Map();
 
   for (const transaction of transactions) {
     if (transaction.type !== 'expense') continue;
-    const key = transaction.category_id;
-    totals.set(key, (totals.get(key) ?? 0) + transaction.amount);
+    if (!transaction.tag_id) continue;
+    totals.set(transaction.tag_id, (totals.get(transaction.tag_id) ?? 0) + transaction.amount);
   }
 
-  return categories
-    .map((category) => ({ category, spent: totals.get(category.id) ?? 0 }))
-    .sort((a, b) => b.spent - a.spent);
+  return tags.map((tag) => ({
+    tag,
+    spent: totals.get(tag.id) ?? 0,
+  }));
 }
 
-export function computeRemainingOverallBudget({ budgetAmount, spent }) {
-  return Math.max(0, computeBudgetStatus({ amount: budgetAmount, spent }).remaining);
+/** Groups transactions by date, preserving the order they were passed in. */
+export function groupByDate(transactions) {
+  const groups = new Map();
+
+  for (const transaction of transactions) {
+    const key = transaction.transaction_date;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(transaction);
+  }
+
+  return Array.from(groups, ([date, items]) => ({ date, items }));
 }
 
 export function sumAmounts(items, selectAmount = (item) => item.amount) {

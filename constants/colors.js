@@ -14,6 +14,9 @@ export const lightColors = {
   expenseSoft: '#FBE9E7',
   warning: '#A96600',
   warningSoft: '#FCF0DC',
+  folder: '#FDF1DA',
+  folderBorder: '#F0DEB6',
+  folderInk: '#8A6B2E',
   overlay: 'rgba(19, 32, 26, 0.45)',
 };
 
@@ -33,10 +36,13 @@ export const darkColors = {
   expenseSoft: '#33191A',
   warning: '#E0A44A',
   warningSoft: '#2F2415',
+  folder: '#211E13',
+  folderBorder: '#332E1E',
+  folderInk: '#D9B96A',
   overlay: 'rgba(0, 0, 0, 0.6)',
 };
 
-export const categoryColors = [
+export const tagColors = [
   '#0F6B4B',
   '#B3261E',
   '#A96600',

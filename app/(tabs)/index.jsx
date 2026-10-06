@@ -1,26 +1,23 @@
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { Card } from '../../components/ui/Card';
+import { BudgetCard } from '../../components/budgets/BudgetCard';
+import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Fab } from '../../components/ui/Fab';
 import { Screen, ScreenTitle, SectionHeader } from '../../components/ui/Screen';
 import { Text } from '../../components/ui/Text';
 import { useTheme } from '../../components/ui/ThemeProvider';
-import { formatCurrency } from '../../utils/currency';
-import { formatMonth } from '../../utils/dates';
-import { useDashboardStore } from '../../stores/dashboardStore';
+import { useBudgetsStore } from '../../stores/budgetsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 
-export default function DashboardScreen() {
+export default function HomeScreen() {
   const { colors, spacing } = useTheme();
+  const budgets = useBudgetsStore((state) => state.budgets);
+  const isLoading = useBudgetsStore((state) => state.isLoading);
+  const load = useBudgetsStore((state) => state.load);
   const currency = useSettingsStore((state) => state.currency);
-
-  const summary = useDashboardStore((state) => state.summary);
-  const counts = useDashboardStore((state) => state.counts);
-  const schemaVersion = useDashboardStore((state) => state.schemaVersion);
-  const isLoading = useDashboardStore((state) => state.isLoading);
-  const load = useDashboardStore((state) => state.load);
 
   useFocusEffect(
     useCallback(() => {
@@ -28,145 +25,48 @@ export default function DashboardScreen() {
     }, [load]),
   );
 
-  if (isLoading) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
-  }
-
-  const money = (minorUnits) => formatCurrency(minorUnits, { currency });
-
   return (
-    <Screen>
-      <ScreenTitle
-        title={summary.period ? formatMonth(summary.period.monthKey) : 'Overview'}
-        subtitle="Your money at a glance"
-      />
+    <View style={styles.fill}>
+      <Screen contentContainerStyle={{ paddingBottom: 96 }}>
+        <ScreenTitle title="Home" subtitle="Budgets are folders that hold your transactions" />
 
-      <Card>
-        <Text variant="label" tone="muted">
-          TOTAL BALANCE
-        </Text>
-        <Text variant="display" style={{ marginTop: spacing.xs }}>
-          {money(summary.balance)}
-        </Text>
+        {budgets.length > 0 ? (
+          <SectionHeader title={`Your Budgets · ${budgets.length}`} />
+        ) : null}
 
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-        <View style={styles.row}>
-          <View style={styles.flex}>
-            <Text variant="caption" tone="faint">
-              Income
-            </Text>
-            <Text variant="heading" tone="income">
-              {money(summary.income)}
+        {isLoading && budgets.length === 0 ? (
+          <View style={styles.loading}>
+            <ActivityIndicator color={colors.primary} size="large" />
+            <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
+              Loading budgets…
             </Text>
           </View>
-          <View style={styles.flex}>
-            <Text variant="caption" tone="faint">
-              Expenses
-            </Text>
-            <Text variant="heading" tone="expense">
-              {money(summary.expense)}
-            </Text>
-          </View>
-        </View>
-      </Card>
-
-      <View style={{ height: spacing.lg }} />
-
-      <SectionHeader title="Recent activity" />
-      {summary.recentTransactions.length === 0 ? (
-        <Card>
+        ) : budgets.length === 0 ? (
           <EmptyState
-            icon="list"
-            title="No transactions yet"
-            description="Add your first income or expense and it will appear here."
-          />
-        </Card>
-      ) : (
-        <Card padded={false}>
-          {summary.recentTransactions.map((transaction) => (
-            <View
-              key={transaction.id}
-              style={[styles.transactionRow, { borderBottomColor: colors.border }]}
-            >
-              <Text variant="body">{transaction.description || transaction.type}</Text>
-              <Text
-                variant="label"
-                tone={
-                  transaction.type === 'income'
-                    ? 'income'
-                    : transaction.type === 'expense'
-                      ? 'expense'
-                      : 'muted'
-                }
-              >
-                {money(transaction.amount)}
-              </Text>
-            </View>
-          ))}
-        </Card>
-      )}
+            icon="folder"
+            title="No budgets yet"
+            description="A budget is a period you name, such as October 2026. Transactions you add inside it are what make up your spending."
+          >
+            <Button label="Create your first budget" onPress={() => router.push('/budget/form')} />
+          </EmptyState>
+        ) : (
+          budgets.map((budget) => (
+            <BudgetCard
+              key={budget.id}
+              budget={budget}
+              currency={currency}
+              onPress={() => router.push({ pathname: '/budget/[id]', params: { id: budget.id } })}
+            />
+          ))
+        )}
+      </Screen>
 
-      <View style={{ height: spacing.lg }} />
-
-      <SectionHeader title="Storage" />
-      <Card>
-        <StorageRow label="Database" value="moneyq.db" />
-        <StorageRow label="Schema version" value={String(schemaVersion)} />
-        <StorageRow label="Categories" value={String(counts?.categoryCount ?? 0)} />
-        <StorageRow label="Accounts" value={String(counts?.accountCount ?? 0)} />
-        <StorageRow label="Transactions" value={String(counts?.transactionCount ?? 0)} />
-      </Card>
-    </Screen>
-  );
-}
-
-function StorageRow({ label, value }) {
-  const { colors } = useTheme();
-
-  return (
-    <View style={styles.storageRow}>
-      <Text variant="body" tone="muted">
-        {label}
-      </Text>
-      <Text variant="body" style={{ color: colors.text }}>
-        {value}
-      </Text>
+      <Fab onPress={() => router.push('/budget/form')} accessibilityLabel="Create budget" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  centered: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  flex: {
-    flex: 1,
-  },
-  row: {
-    flexDirection: 'row',
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginVertical: 16,
-  },
-  transactionRow: {
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  storageRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
+  fill: { flex: 1 },
+  loading: { alignItems: 'center', paddingVertical: 48 },
 });

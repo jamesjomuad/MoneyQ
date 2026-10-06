@@ -11,6 +11,11 @@ export async function resolve(specifier, context, nextResolve) {
       if (existsSync(fileURLToPath(candidate))) {
         return { url: candidate.href, shortCircuit: true, format: 'module' };
       }
+      // Metro also resolves a directory to its index file.
+      const asIndex = new URL(`${specifier}/index.js`, context.parentURL);
+      if (existsSync(fileURLToPath(asIndex))) {
+        return { url: asIndex.href, shortCircuit: true, format: 'module' };
+      }
     }
     throw error;
   }

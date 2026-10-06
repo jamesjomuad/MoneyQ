@@ -16,24 +16,28 @@ export const ACCOUNT_TYPE_LABELS = {
   savings: 'Savings',
 };
 
-export const BUDGET_PERIODS = ['monthly'];
-
-export const BUDGET_STATUS = {
-  ok: 'ok',
-  warning: 'warning',
-  over: 'over',
-};
-
-export const BUDGET_WARNING_RATIO = 0.8;
-
-export const DEFAULT_CATEGORIES = [
-  { key: 'food', name: 'Food', color: '#B3261E', icon: 'restaurant' },
-  { key: 'transportation', name: 'Transportation', color: '#1F5FA8', icon: 'directions_bus' },
-  { key: 'utilities', name: 'Utilities', color: '#A96600', icon: 'bolt' },
-  { key: 'shopping', name: 'Shopping', color: '#6B3FA0', icon: 'shopping_bag' },
-  { key: 'entertainment', name: 'Entertainment', color: '#8C2F5C', icon: 'movie' },
-  { key: 'health', name: 'Health', color: '#0F7A8C', icon: 'medical_services' },
-  { key: 'education', name: 'Education', color: '#5C6B62', icon: 'school' },
-  { key: 'bills', name: 'Bills', color: '#7A5C1F', icon: 'receipt_long' },
-  { key: 'other', name: 'Other', color: '#8D9A92', icon: 'category' },
+/**
+ * The default tag library. Tags are a single reusable library rather than
+ * something each budget owns, so these seed once and apply everywhere.
+ */
+export const DEFAULT_TAGS = [
+  { key: 'household', name: 'Household', emoji: '🏠', color: '#0F6B4B' },
+  { key: 'car', name: 'Car', emoji: '🚗', color: '#1F5FA8' },
+  { key: 'daily-expenses', name: 'Daily Expenses', emoji: '🛒', color: '#A96600' },
+  { key: 'work', name: 'Work', emoji: '💼', color: '#6B3FA0' },
+  { key: 'travel', name: 'Travel', emoji: '✈️', color: '#0F7A8C' },
+  { key: 'education', name: 'Education', emoji: '🎓', color: '#8C2F5C' },
 ];
+
+/**
+ * A small fixed set for picking a tag icon. Deliberately a fixed list rather
+ * than an icon browser, so adding a tag stays a single-tap decision.
+ */
+export const TAG_EMOJI_CHOICES = [
+  '🏠', '🚗', '🛒', '💼', '✈️', '🎓',
+  '🍔', '☕️', '💡', '🎮', '🎬', '🎵',
+  '🏥', '💊', '🎁', '🐾', '👶', '🧾',
+  '💰', '📦', '🛠️', '🚲', '🏋️', '🏷️',
+];
+
+export const DEFAULT_TAG_EMOJI = '🏷️';
