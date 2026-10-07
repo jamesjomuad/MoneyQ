@@ -81,7 +81,7 @@ storage/
 Run and report all four:
 
 ```bash
-npm run verify:db      # must be 122/122 or better
+npm run verify:db      # must be 114/114 or better
 npx expo-doctor        # must be 21/21
 npx expo export --platform android
 npx expo export --platform web

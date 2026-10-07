@@ -28,13 +28,12 @@ export function ReminderFields({
   onTimeChange,
   error,
   permission,
-  isSettled = false,
   onOpenSettings,
 }) {
   const { colors, spacing } = useTheme();
   const today = toIsoDate(new Date());
 
-  const permissionNotice = describePermission(permission, isSettled);
+  const permissionNotice = describePermission(permission);
 
   return (
     <>
@@ -44,7 +43,7 @@ export function ReminderFields({
           <View style={styles.labels}>
             <Text variant="body">Set Reminder</Text>
             <Text variant="caption" tone="faint">
-              {isSettled ? 'Paused until you mark it unpaid again' : 'A local notification at the chosen time'}
+              A local notification at the chosen time
             </Text>
           </View>
           <Switch
@@ -52,7 +51,6 @@ export function ReminderFields({
             accessibilityLabel="Set reminder"
             value={enabled}
             onValueChange={onEnabledChange}
-            disabled={isSettled}
             trackColor={{ false: colors.border, true: colors.primary }}
             thumbColor={colors.surface}
             ios_backgroundColor={colors.border}
@@ -71,7 +69,6 @@ export function ReminderFields({
               value={date}
               onChange={onDateChange}
               minimumDate={today}
-              disabled={isSettled}
               error={error}
             />
             <TimePicker
@@ -79,7 +76,6 @@ export function ReminderFields({
               title="Reminder Time"
               value={time}
               onChange={onTimeChange}
-              disabled={isSettled}
             />
 
             <View style={[styles.summary, { backgroundColor: colors.surfaceMuted, borderRadius: 12 }]}>
@@ -114,8 +110,7 @@ export function ReminderFields({
  * Explains what the OS will do with a saved reminder. Never blocks a save —
  * the row is the record, the notification is only delivery.
  */
-function describePermission(permission, isSettled) {
-  if (isSettled) return null;
+function describePermission(permission) {
   if (!permission) return null;
 
   if (permission.supported === false) {

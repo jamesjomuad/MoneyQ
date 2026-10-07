@@ -86,13 +86,13 @@ export function reminderValidationError(date, time, reference = new Date()) {
 }
 
 /**
- * A sensible first choice when the user switches a reminder on: the due date
- * when it is still ahead, otherwise today at 9:00 AM — stepping a day forward
- * when 9:00 AM has already passed, so the form never opens on an error.
+ * A sensible first choice when the user switches a reminder on: today at
+ * 9:00 AM — stepping a day forward when 9:00 AM has already passed, so the
+ * form never opens on an error.
  */
-export function suggestReminderValues({ dueDate, reference = new Date() } = {}) {
+export function suggestReminderValues({ reference = new Date() } = {}) {
   const today = toIsoDate(reference);
-  let date = dueDate && ISO_DATE_PATTERN.test(dueDate) && dueDate >= today ? dueDate : today;
+  let date = today;
   if (reminderValidationError(date, DEFAULT_REMINDER_TIME, reference)) {
     date = addDaysIso(date, 1);
   }
@@ -111,31 +111,12 @@ export function formatReminderWhen(date, time, { short = false } = {}) {
  * the financial record: this text is a convenience that can be rebuilt at any
  * time from what MoneyQ already stores.
  */
-export function buildReminderNotification({ transaction, currency, reference = new Date() }) {
+export function buildReminderNotification({ transaction, currency }) {
   const money = formatCurrency(transaction.amount, { currency });
   const name = String(transaction.description ?? '').trim() || 'MoneyQ entry';
-  const today = toIsoDate(reference);
-  const due = transaction.due_date ?? null;
 
-  let dueLabel = null;
-  if (due === today) dueLabel = 'today';
-  else if (due === addDaysIso(today, 1)) dueLabel = 'tomorrow';
-  else if (due) dueLabel = formatDate(due);
-
-  let body;
-  if (transaction.repayment_direction === 'owed_to_me') {
-    body =
-      dueLabel === 'today'
-        ? `${name} was supposed to pay you ${money} today.`
-        : `You are owed ${money} from ${name}${dueLabel ? `, due ${dueLabel}` : ''}.`;
-  } else if (transaction.repayment_direction === 'owed_by_me') {
-    body =
-      dueLabel === 'today'
-        ? `You were supposed to pay ${name} ${money} today.`
-        : `You owe ${name} ${money}${dueLabel ? `, due ${dueLabel}` : ''}.`;
-  } else {
-    body = `${name} · ${money}${dueLabel ? ` · due ${dueLabel}` : ''}`;
-  }
-
-  return { title: '🔔 MoneyQ Reminder', body };
+  return {
+    title: '🔔 MoneyQ Reminder',
+    body: `Don't forget about your ${money} transaction with ${name}.`,
+  };
 }

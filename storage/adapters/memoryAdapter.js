@@ -156,15 +156,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async insertTransaction(row) {
-      // SQLite always writes every repayment column (NULL when unset), so the
-      // in-memory row must carry the same keys or the parity comparison fails.
-      store.transactions.push({
-        repayment_direction: null,
-        repayment_status: null,
-        due_date: null,
-        paid_at: null,
-        ...row,
-      });
+      store.transactions.push({ ...row });
     },
 
     async updateTransaction(row) {
@@ -175,10 +167,6 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       existing.tag_id = row.tag_id ?? null;
       existing.description = row.description ?? null;
       existing.transaction_date = row.transaction_date;
-      existing.repayment_direction = row.repayment_direction ?? null;
-      existing.repayment_status = row.repayment_status ?? null;
-      existing.due_date = row.due_date ?? null;
-      existing.paid_at = row.paid_at ?? null;
       existing.updated_at = row.updated_at;
       return 1;
     },
@@ -188,33 +176,6 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       store.transactions = store.transactions.filter((transaction) => transaction.id !== id);
       store.reminders = store.reminders.filter((reminder) => reminder.transaction_id !== id);
       return before - store.transactions.length;
-    },
-
-    /** Pending repayments across every budget, earliest due date first. */
-    async listRepayments({ status = 'pending' } = {}) {
-      return store.transactions
-        .filter(
-          (transaction) =>
-            transaction.repayment_direction != null && transaction.repayment_status === status,
-        )
-        .sort(
-          (a, b) =>
-            String(a.due_date ?? '').localeCompare(String(b.due_date ?? '')) ||
-            a.created_at.localeCompare(b.created_at),
-        )
-        .map((transaction) => {
-          // Same projection as the SQLite join: budget name + reminder flag.
-          const budget = store.budgets.find((b) => b.id === transaction.budget_id);
-          const reminder = store.reminders.find(
-            (r) => r.transaction_id === transaction.id,
-          );
-          return {
-            ...copy(transaction),
-            budget_name: budget?.name ?? null,
-            reminder_enabled: reminder?.enabled ?? 0,
-            reminder_at: reminder?.remind_at ?? null,
-          };
-        });
     },
 
     // --- reminders -----------------------------------------------------
@@ -231,9 +192,6 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
             amount: transaction.amount,
             description: transaction.description ?? null,
             transaction_date: transaction.transaction_date,
-            repayment_direction: transaction.repayment_direction ?? null,
-            repayment_status: transaction.repayment_status ?? null,
-            due_date: transaction.due_date ?? null,
           };
         })
         .filter(Boolean)
@@ -334,43 +292,29 @@ function seedDemoData(store, timestamp) {
 
   store.transactions.push(...transactions);
 
-  // One receivable with a reminder, so the browser harness shows the money
-  // owed list and the reminder editor populated instead of always empty.
-  const dueDate = addDaysIso(today, 10);
-  store.tags.push({
-    id: 'demo_tag_lent',
-    name: 'Money Lent',
-    emoji: '🤝',
-    color: '#1F5FA8',
-    is_default: 0,
-    archived: 0,
-    created_at: timestamp,
-    updated_at: timestamp,
-  });
+  // A plain expense with a reminder, so the browser harness shows the reminder
+  // editor populated instead of always empty.
+  const reminderDate = addDaysIso(today, 10);
   store.transactions.push({
-    id: 'demo_tx_lent',
+    id: 'demo_tx_reminder',
     budget_id: budgets[0].id,
     type: 'expense',
     amount: 200_000, // ₱2,000.00
-    tag_id: 'demo_tag_lent',
+    tag_id: 'default_daily-expenses',
     account_id: null,
     to_account_id: null,
-    description: 'John',
+    description: 'Internet bill',
     transaction_date: today,
-    repayment_direction: 'owed_to_me',
-    repayment_status: 'pending',
-    due_date: dueDate,
-    paid_at: null,
     created_at: timestamp,
     updated_at: timestamp,
   });
   store.reminders.push({
-    id: 'demo_reminder_lent',
-    transaction_id: 'demo_tx_lent',
+    id: 'demo_reminder_bill',
+    transaction_id: 'demo_tx_reminder',
     enabled: 1,
-    remind_date: dueDate,
+    remind_date: reminderDate,
     remind_time: '09:00',
-    remind_at: buildRemindAt(dueDate, '09:00'),
+    remind_at: buildRemindAt(reminderDate, '09:00'),
     notification_id: null,
     created_at: timestamp,
     updated_at: timestamp,
@@ -387,10 +331,6 @@ function seedDemoData(store, timestamp) {
       to_account_id: null,
       description,
       transaction_date: date,
-      repayment_direction: null,
-      repayment_status: null,
-      due_date: null,
-      paid_at: null,
       created_at: timestamp,
       updated_at: timestamp,
     };

@@ -7,11 +7,9 @@ import { createSqliteAdapter } from '../storage/adapters/sqliteAdapter.js';
 import {
   computeAccountBalance,
   computeBudgetBalance,
-  computeRepaymentState,
   computeSpendByTag,
   computeTotals,
   computeTotalAssets,
-  sortRepayments,
 } from '../utils/calculations.js';
 import {
   addDaysIso,
@@ -123,13 +121,6 @@ check(
   transactionColumns.join(','),
 );
 check('transactions no longer use categories', !transactionColumns.includes('category_id'));
-check(
-  'transactions carry their repayment fields',
-  ['repayment_direction', 'repayment_status', 'due_date', 'paid_at'].every((column) =>
-    transactionColumns.includes(column),
-  ),
-  transactionColumns.join(','),
-);
 
 const reminderColumns = columnsOf('reminders');
 check(
@@ -441,31 +432,25 @@ async function runScenario(store) {
   });
   snapshot.renamedTag = await store.getTag('p_tag');
 
-  // A repayment with an armed reminder: the Home money list and the launch
-  // resync both read these rows, so they must be identical on both engines.
+  // A plain expense with an armed reminder: the launch resync reads these
+  // rows, so they must be identical on both engines.
   await store.insertTransaction({
-    id: 'p_repay',
+    id: 'p_reminder_tx',
     budget_id: 'p_budget',
     type: 'expense',
     amount: 50_000,
     tag_id: 'p_tag',
     account_id: null,
     to_account_id: null,
-    description: 'John owes me',
+    description: 'Internet bill',
     transaction_date: '2026-10-06',
-    repayment_direction: 'owed_to_me',
-    repayment_status: 'pending',
-    due_date: '2026-10-20',
-    paid_at: null,
     created_at: STAMP,
     updated_at: STAMP,
   });
-  snapshot.pendingRepayments = await store.listRepayments({ status: 'pending' });
-  snapshot.paidRepaymentsBeforeSettlement = await store.listRepayments({ status: 'paid' });
 
   await store.insertReminder({
     id: 'p_reminder',
-    transaction_id: 'p_repay',
+    transaction_id: 'p_reminder_tx',
     enabled: 1,
     remind_date: '2026-10-19',
     remind_time: '09:00',
@@ -474,14 +459,14 @@ async function runScenario(store) {
     created_at: STAMP,
     updated_at: STAMP,
   });
-  snapshot.reminder = await store.getReminderByTransaction('p_repay');
+  snapshot.reminder = await store.getReminderByTransaction('p_reminder_tx');
   snapshot.reminders = await store.listReminders();
-  snapshot.repaymentWithReminder = await store.getTransaction('p_repay');
+  snapshot.reminderTransaction = await store.getTransaction('p_reminder_tx');
 
   // Rescheduling replaces the OS id in place — still one row per transaction.
   await store.updateReminder({
     id: 'p_reminder',
-    transaction_id: 'p_repay',
+    transaction_id: 'p_reminder_tx',
     enabled: 1,
     remind_date: '2026-10-19',
     remind_time: '10:00',
@@ -490,12 +475,12 @@ async function runScenario(store) {
     created_at: STAMP,
     updated_at: STAMP,
   });
-  snapshot.rescheduledReminder = await store.getReminderByTransaction('p_repay');
+  snapshot.rescheduledReminder = await store.getReminderByTransaction('p_reminder_tx');
 
   // Disabling keeps the row (and its date/time) but drops the notification id.
   await store.updateReminder({
     id: 'p_reminder',
-    transaction_id: 'p_repay',
+    transaction_id: 'p_reminder_tx',
     enabled: 0,
     remind_date: '2026-10-19',
     remind_time: '10:00',
@@ -504,14 +489,14 @@ async function runScenario(store) {
     created_at: STAMP,
     updated_at: STAMP,
   });
-  snapshot.disabledReminder = await store.getReminderByTransaction('p_repay');
+  snapshot.disabledReminder = await store.getReminderByTransaction('p_reminder_tx');
   snapshot.remindersWhileDisabled = await store.listReminders();
 
   let duplicateReminderRejected = false;
   try {
     await store.insertReminder({
       id: 'p_reminder_2',
-      transaction_id: 'p_repay',
+      transaction_id: 'p_reminder_tx',
       enabled: 1,
       remind_date: '2026-10-21',
       remind_time: '09:00',
@@ -525,24 +510,6 @@ async function runScenario(store) {
   }
   snapshot.duplicateReminderRejected = duplicateReminderRejected;
 
-  // Settling moves the entry out of the pending list without losing it.
-  await store.updateTransaction({
-    id: 'p_repay',
-    type: 'expense',
-    amount: 50_000,
-    tag_id: 'p_tag',
-    description: 'John owes me',
-    transaction_date: '2026-10-06',
-    repayment_direction: 'owed_to_me',
-    repayment_status: 'paid',
-    due_date: '2026-10-20',
-    paid_at: STAMP,
-    updated_at: STAMP,
-  });
-  snapshot.pendingAfterSettlement = await store.listRepayments({ status: 'pending' });
-  snapshot.paidAfterSettlement = await store.listRepayments({ status: 'paid' });
-  snapshot.settledTransaction = await store.getTransaction('p_repay');
-
   await store.deleteTag('p_tag');
   snapshot.tagAfterDelete = await store.getTag('p_tag');
   snapshot.transactionKeepsAmount = await store.getTransaction('p_expense');
@@ -551,7 +518,6 @@ async function runScenario(store) {
   snapshot.budgetAfterDelete = await store.getBudget('p_budget');
   snapshot.transactionsAfterDelete = await store.listTransactionsByBudget('p_budget');
   snapshot.remindersAfterDelete = await store.listReminders();
-  snapshot.repaymentsAfterDelete = await store.listRepayments({ status: 'pending' });
 
   snapshot.schemaVersion = await store.getSchemaVersion();
 
@@ -815,54 +781,6 @@ check(
   octoberWeeks.flat().join('|') === octoberGrid.join('|'),
 );
 
-console.log('\n--- repayment rules ---');
-const pendingOwed = { repayment_direction: 'owed_to_me', repayment_status: 'pending', due_date: '2026-10-10' };
-const pendingOwing = { repayment_direction: 'owed_by_me', repayment_status: 'pending', due_date: '2026-10-10' };
-const settledRepayment = { ...pendingOwed, repayment_status: 'paid', paid_at: '2026-10-08T10:00:00.000Z' };
-const notARepayment = { repayment_direction: null, repayment_status: null, due_date: null };
-
-check(
-  'a pending repayment before its due date reads as pending',
-  computeRepaymentState(pendingOwed, new Date(2026, 9, 7)) === 'pending',
-);
-check(
-  'a pending repayment past its due date reads as overdue',
-  computeRepaymentState(pendingOwed, new Date(2026, 9, 11)) === 'overdue',
-);
-check(
-  'the due date itself is not yet overdue',
-  computeRepaymentState(pendingOwing, new Date(2026, 9, 10)) === 'pending',
-);
-check(
-  'a settled repayment stays paid however late the reference date',
-  computeRepaymentState(settledRepayment, new Date(2026, 9, 20)) === 'paid',
-);
-check(
-  'a transaction that is not a repayment has no state at all',
-  computeRepaymentState(notARepayment) === null,
-);
-check(
-  'transfers can never read as a repayment',
-  computeRepaymentState({ type: 'transfer', repayment_direction: null, repayment_status: null }) === null,
-);
-
-const unsortedRepayments = [
-  { id: 'late', due_date: '2026-10-25' },
-  { id: 'early', due_date: '2026-10-08' },
-  { id: 'mid', due_date: '2026-10-15' },
-];
-const sortedRepayments = sortRepayments(unsortedRepayments);
-check(
-  'repayments sort earliest due date first',
-  sortedRepayments.map((entry) => entry.id).join(',') === 'early,mid,late',
-  sortedRepayments.map((entry) => entry.id).join(','),
-);
-check(
-  'sorting leaves the caller\'s array untouched',
-  unsortedRepayments.map((entry) => entry.id).join(',') === 'late,early,mid',
-  unsortedRepayments.map((entry) => entry.id).join(','),
-);
-
 console.log('\n--- reminder rules ---');
 check(
   'a real local date is accepted',
@@ -910,48 +828,40 @@ check(
   reminderValidationError('2026-10-06', '09:00', new Date(2026, 9, 7)) === 'Pick a time in the future.',
 );
 
-const freshSuggestion = suggestReminderValues({ dueDate: '2026-10-20', reference: new Date(2026, 9, 7) });
+const freshSuggestion = suggestReminderValues({ reference: new Date(2026, 9, 7) });
 check(
-  'a fresh reminder defaults to the due date at 9:00 AM',
-  freshSuggestion.date === '2026-10-20' && freshSuggestion.time === '09:00',
+  'a fresh reminder defaults to today at 9:00 AM',
+  freshSuggestion.date === '2026-10-07' && freshSuggestion.time === '09:00',
   JSON.stringify(freshSuggestion),
 );
-const overdueSuggestion = suggestReminderValues({ dueDate: '2026-10-01', reference: new Date(2026, 9, 7) });
+const lateSuggestion = suggestReminderValues({ reference: new Date(2026, 9, 7, 10, 0) });
 check(
-  'a due date already behind us still yields a valid choice',
-  reminderValidationError(overdueSuggestion.date, overdueSuggestion.time, new Date(2026, 9, 7)) === null,
-  JSON.stringify(overdueSuggestion),
+  'once 9:00 AM has passed the suggestion steps a day forward',
+  reminderValidationError(lateSuggestion.date, lateSuggestion.time, new Date(2026, 9, 7, 10, 0)) === null &&
+    lateSuggestion.date === '2026-10-08',
+  JSON.stringify(lateSuggestion),
 );
 
-const owedCopy = buildReminderNotification({
-  transaction: { description: 'John', amount: 200_000, repayment_direction: 'owed_to_me', due_date: '2026-10-20' },
+const billCopy = buildReminderNotification({
+  transaction: { description: 'Internet bill', amount: 200_000 },
   currency: 'PHP',
-  reference: new Date(2026, 9, 7),
 });
 check(
-  'owed copy names the person and the money',
-  owedCopy.body.includes('John') && owedCopy.body.includes('₱2,000.00'),
-  owedCopy.body,
+  'the notification names the transaction and the money',
+  billCopy.body.includes('Internet bill') && billCopy.body.includes('₱2,000.00'),
+  billCopy.body,
 );
-const owingCopy = buildReminderNotification({
-  transaction: { description: 'Landlord', amount: 150_000, repayment_direction: 'owed_by_me', due_date: '2026-10-07' },
+check('the notification is titled as a MoneyQ reminder', billCopy.title.includes('MoneyQ Reminder'), billCopy.title);
+check('the notification is generic', !/owe|owed|repay|paid/i.test(billCopy.body), billCopy.body);
+
+const unnamedCopy = buildReminderNotification({
+  transaction: { description: '', amount: 150_000 },
   currency: 'PHP',
-  reference: new Date(2026, 9, 7),
 });
 check(
-  'owing copy says the money is due today',
-  owingCopy.body.includes('Landlord') && owingCopy.body.includes('today'),
-  owingCopy.body,
-);
-const plainCopy = buildReminderNotification({
-  transaction: { description: 'Lunch', amount: 150_000, repayment_direction: null, due_date: null },
-  currency: 'PHP',
-  reference: new Date(2026, 9, 7),
-});
-check(
-  'a plain entry makes no repayment claim',
-  !plainCopy.body.includes('owe') && plainCopy.body.includes('Lunch') && plainCopy.body.includes('₱1,500.00'),
-  plainCopy.body,
+  'a descriptionless transaction still yields readable copy',
+  unnamedCopy.body.includes('MoneyQ entry') && unnamedCopy.body.includes('₱1,500.00'),
+  unnamedCopy.body,
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

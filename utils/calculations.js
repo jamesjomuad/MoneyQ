@@ -8,32 +8,6 @@
  * expense transactions recorded against it.
  */
 
-import { toIsoDate } from './dates';
-
-/**
- * Repayment state for one transaction: null when the entry is not a repayment,
- * otherwise 'paid', 'overdue' or 'pending'.
- *
- * Overdue only means the due date has passed — it never changes the money
- * itself. The user settles a repayment explicitly, which is why a past due
- * date can never flip an entry to paid on its own.
- */
-export function computeRepaymentState(transaction, reference = new Date()) {
-  if (!transaction?.repayment_direction) return null;
-  if (transaction.repayment_status === 'paid') return 'paid';
-
-  const today = toIsoDate(reference);
-  if (transaction.due_date && transaction.due_date < today) return 'overdue';
-  return 'pending';
-}
-
-/** Transactions waiting to be settled, ordered by how soon they are due. */
-export function sortRepayments(transactions) {
-  return [...transactions].sort((a, b) =>
-    String(a.due_date ?? '').localeCompare(String(b.due_date ?? '')),
-  );
-}
-
 export function computeTotals(transactions) {
   let income = 0;
   let expense = 0;

@@ -8,17 +8,30 @@
  * stored state.
  *
  * Expo Go on Android removed push (remote) notifications from SDK 53.
- * Local notifications still work, but some permission / scheduling calls in
- * Expo Go internally hit the removed push path and throw this exact error.
- * We catch it everywhere and treat the platform as unsupported — the reminder
- * row is still saved (source of truth); it simply cannot fire until the app
- * runs in a development build.
+ * Some local-notification calls internally hit the removed push path and
+ * throw this exact error. We detect Expo Go Android up front and treat the
+ * platform as unsupported; the catch blocks remain as a safety net. The
+ * reminder row is still saved (source of truth); it simply cannot fire until
+ * the app runs in a development build.
  */
 
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
-export const isSupported = true;
+// Expo Go on Android removed the push-notification subsystem from SDK 53,
+// and several local-notification APIs internally hit that removed path and
+// throw. Detect the environment up front so we never call those APIs.
+function isUnsupportedEnvironment() {
+  if (Platform.OS !== 'android') return false;
+  try {
+    const { expoGoConfig } = require('expo-constants').default;
+    return expoGoConfig != null;
+  } catch {
+    return false;
+  }
+}
+
+export const isSupported = !isUnsupportedEnvironment();
 
 export const REMINDER_CHANNEL_ID = 'reminders';
 
@@ -32,17 +45,19 @@ function isExpoGoPushError(error) {
  * Notifications that arrive while the app is open are still shown — a
  * reminder the user is staring at the phone for must not be swallowed.
  */
-try {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-} catch {
-  // Handler registration is best-effort; the row-based reminder still works.
+if (isSupported) {
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+  } catch {
+    // Handler registration is best-effort; the row-based reminder still works.
+  }
 }
 
 let channelReady = false;
@@ -50,7 +65,7 @@ let channelReady = false;
 /** Android 8+ shows nothing without a channel, and Android 13 will not even
  *  prompt for permission until one exists. */
 async function ensureChannel() {
-  if (Platform.OS !== 'android' || channelReady) return;
+  if (!isSupported || Platform.OS !== 'android' || channelReady) return;
   try {
     await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
       name: 'Reminders',
@@ -66,8 +81,11 @@ async function ensureChannel() {
   }
 }
 
+const UNSUPPORTED_STATUS = { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
+
 /** Read-only: safe to call whenever the UI wants to display current status. */
 export async function getPermissionStatusAsync() {
+  if (!isSupported) return UNSUPPORTED_STATUS;
   try {
     const settings = await Notifications.getPermissionsAsync();
     return {
@@ -85,6 +103,7 @@ export async function getPermissionStatusAsync() {
 /** Asks once. An already-denied permission answers without showing a prompt,
  *  so opening a transaction never nags the user. */
 export async function requestPermissionAsync() {
+  if (!isSupported) return UNSUPPORTED_STATUS;
   await ensureChannel();
   try {
     const settings = await Notifications.requestPermissionsAsync();
@@ -106,6 +125,7 @@ export async function requestPermissionAsync() {
  * can find the transaction it came from.
  */
 export async function scheduleAsync({ title, body, data = {}, remindAt }) {
+  if (!isSupported) return null;
   await ensureChannel();
   try {
     return await Notifications.scheduleNotificationAsync({

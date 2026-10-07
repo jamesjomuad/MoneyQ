@@ -75,7 +75,7 @@ export async function saveReminder({ transactionId, enabled, date, time, notific
 
 /**
  * Records which OS notification a reminder currently owns, so a later edit,
- * payment or deletion can cancel exactly that one. The payload is built from
+ * or a deletion can cancel exactly that one. The payload is built from
  * the reminder's own columns only: callers may hold a row joined with its
  * transaction, and those extra fields must not leak into storage.
  */

@@ -10,7 +10,7 @@
  * only delivery. That is why nothing here trusts the notification to be
  * correct: every schedule can be rebuilt from the rows with `resyncReminders`,
  * which is what keeps the feature honest after a reinstall, a denied
- * permission, an edit, a payment or a cleared notification tray.
+ * permission, an edit or a cleared notification tray.
  */
 
 import {
@@ -19,7 +19,6 @@ import {
   saveReminder,
   saveReminderNotification,
 } from '../storage/repositories/reminderRepository';
-import { getTransaction } from '../storage/repositories/transactionRepository';
 import { getSetting, SETTING_KEYS } from '../storage/repositories/settingsRepository';
 import { DEFAULT_CURRENCY } from '../utils/currency';
 import { buildReminderNotification, isRemindAtPast } from '../utils/reminders';
@@ -71,7 +70,7 @@ async function scheduleNow(reminder, transaction, currency) {
  * Editing cancels the previous notification before anything else, so a date
  * or time change can never leave two notifications behind. Returns a status
  * the form can act on: 'scheduled', 'disabled', 'blocked' (permission off),
- * 'unsupported' (browser preview), 'inactive' (already paid) or 'failed'.
+ * 'unsupported' (browser preview) or 'failed'.
  */
 export async function applyReminder({ transaction, reminder, requestPermission = true }) {
   if (!transaction?.id) throw new Error('A reminder needs a transaction.');
@@ -101,9 +100,6 @@ export async function applyReminder({ transaction, reminder, requestPermission =
     notificationId: null,
   });
 
-  if (transaction.repayment_status === 'paid') {
-    return { status: 'inactive', reminder: row };
-  }
   if (!notifications.isSupported) {
     return { status: 'unsupported', reminder: row };
   }
@@ -122,34 +118,9 @@ export async function applyReminder({ transaction, reminder, requestPermission =
 }
 
 /**
- * Re-schedules a reminder that already exists in the database — used when a
- * repayment is switched back to unpaid, or by the launch resync. It never
- * asks for permission: prompting belongs to an explicit user action.
- */
-export async function scheduleSavedReminder(transactionId) {
-  const row = await getReminderForTransaction(transactionId);
-  if (!row || !row.enabled) return { status: 'disabled' };
-  if (isRemindAtPast(row.remind_at)) return { status: 'past', reminder: row };
-
-  const transaction = await getTransaction(transactionId);
-  if (!transaction || transaction.repayment_status === 'paid') {
-    return { status: 'inactive', reminder: row };
-  }
-  if (!notifications.isSupported) return { status: 'unsupported', reminder: row };
-
-  const permission = await notifications.getPermissionStatusAsync();
-  if (!permission.granted) return { status: 'blocked', permission, reminder: row };
-
-  if (row.notification_id) await notifications.cancelAsync(row.notification_id);
-  const currency = await currencyOf();
-  const outcome = await scheduleNow(row, transaction, currency);
-  return { ...outcome, permission, reminder: row };
-}
-
-/**
  * Cancels the notification a transaction owns and clears its id, leaving the
- * reminder row (and the transaction) intact. This is the payment path: the
- * record of what was owed stays, only the delivery stops.
+ * reminder row (and the transaction) intact. Used when a reminder is disabled
+ * or its transaction is deleted: the record stays, only the delivery stops.
  */
 export async function cancelScheduledReminder(transactionId) {
   const row = await getReminderForTransaction(transactionId);
@@ -168,10 +139,10 @@ export async function cancelScheduledRemindersForBudget(budgetId) {
 
 /**
  * Reconciles the OS with the database: schedules anything active that is not
- * scheduled, cancels anything scheduled that is no longer active (paid,
- * disabled, past, deleted) and repairs ids that drifted. Runs once at launch,
- * which is what allows MoneyQ to be correct even when a notification failed,
- * was cleared, or the app was reinstalled.
+ * scheduled, cancels anything scheduled that is no longer active (disabled,
+ * past, deleted) and repairs ids that drifted. Runs once at launch, which is
+ * what allows MoneyQ to be correct even when a notification failed, was
+ * cleared, or the app was reinstalled.
  */
 export async function resyncReminders() {
   if (!notifications.isSupported) return { scheduled: 0, cancelled: 0 };
@@ -202,7 +173,6 @@ export async function resyncReminders() {
   for (const row of rows) {
     const active =
       row.enabled === 1 &&
-      row.repayment_status !== 'paid' &&
       !isRemindAtPast(row.remind_at, now);
 
     if (!active) continue;
@@ -222,8 +192,6 @@ export async function resyncReminders() {
       budget_id: row.budget_id,
       amount: row.amount,
       description: row.description,
-      repayment_direction: row.repayment_direction,
-      due_date: row.due_date,
     };
     const outcome = await scheduleNow(row, transaction, currency);
     if (outcome.status === 'scheduled') scheduledCount += 1;

@@ -7,14 +7,9 @@ import {
   createTransaction,
   deleteTransaction,
   getTransactionsForBudget,
-  setRepaymentStatus,
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
-import {
-  applyReminder,
-  cancelScheduledReminder,
-  scheduleSavedReminder,
-} from '../services/reminderService';
+import { applyReminder, cancelScheduledReminder } from '../services/reminderService';
 import { computeSpendByTag, computeTotals } from '../utils/calculations';
 
 /**
@@ -121,21 +116,6 @@ export const useBudgetDetailStore = create((set, get) => ({
     await cancelScheduledReminder(transactionId);
     await deleteTransaction(transactionId);
     await get().load(get().budgetId);
-  },
-
-  /**
-   * Settling a repayment is an explicit user action that also stops its
-   * reminder; switching it back to unpaid offers the reminder again.
-   */
-  setRepayment: async (transactionId, status) => {
-    const transaction = await setRepaymentStatus(transactionId, status);
-    if (status === 'paid') {
-      await cancelScheduledReminder(transactionId);
-    } else {
-      await scheduleSavedReminder(transactionId);
-    }
-    await get().load(get().budgetId);
-    return transaction;
   },
 
   refresh: async () => {

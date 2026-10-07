@@ -13,15 +13,13 @@ import { Text } from '../../components/ui/Text';
 import { TextField } from '../../components/ui/TextField';
 import { useTheme } from '../../components/ui/ThemeProvider';
 import { ReminderFields } from '../../components/reminders/ReminderFields';
-import { RepaymentFields } from '../../components/repayments/RepaymentFields';
 import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
 import { useRemindersStore } from '../../stores/remindersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
-import { computeRepaymentState } from '../../utils/calculations';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
 import { parseFlexibleDate, toIsoDate } from '../../utils/dates';
-import { isValidLocalDate, reminderValidationError, suggestReminderValues } from '../../utils/reminders';
+import { reminderValidationError, suggestReminderValues } from '../../utils/reminders';
 
 const TYPE_OPTIONS = [
   { value: 'expense', label: 'Expense' },
@@ -48,7 +46,6 @@ export default function TransactionFormScreen() {
   const loadTags = useTagsStore((state) => state.load);
   const addTransaction = useBudgetDetailStore((state) => state.addTransaction);
   const updateTransaction = useBudgetDetailStore((state) => state.updateTransaction);
-  const setRepayment = useBudgetDetailStore((state) => state.setRepayment);
   const entries = useBudgetDetailStore((state) => state.entries);
   const storeBudgetId = useBudgetDetailStore((state) => state.budgetId);
   const isLoadingBudget = useBudgetDetailStore((state) => state.isLoading);
@@ -69,14 +66,11 @@ export default function TransactionFormScreen() {
   const [date, setDate] = useState(() => toIsoDate(new Date()));
   const [description, setDescription] = useState('');
   const [query, setQuery] = useState('');
-  const [direction, setDirection] = useState(null);
-  const [dueDate, setDueDate] = useState(() => toIsoDate(new Date()));
   const [reminderOn, setReminderOn] = useState(false);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
-  const [settling, setSettling] = useState(false);
   const [hydratedFrom, setHydratedFrom] = useState(null);
 
   useEffect(() => {
@@ -88,8 +82,8 @@ export default function TransactionFormScreen() {
   }, [refreshPermission]);
 
   // A transaction can be opened without its budget screen in front of it —
-  // from Home's money list or from a tapped notification — so make sure the
-  // store actually holds this entry before deciding it is missing.
+  // from a tapped notification — so make sure the store actually holds this
+  // entry before deciding it is missing.
   const loadRequestedFor = useRef(null);
   useEffect(() => {
     if (!transactionId || !budgetId) return;
@@ -113,8 +107,6 @@ export default function TransactionFormScreen() {
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
     setDescription(editing.description ?? '');
-    setDirection(editing.repayment_direction ?? null);
-    setDueDate(editing.due_date ?? editing.transaction_date);
     setReminderOn(editing.reminder?.enabled === 1);
     setReminderDate(editing.reminder?.remind_date ?? '');
     setReminderTime(editing.reminder?.remind_time ?? '');
@@ -138,13 +130,12 @@ export default function TransactionFormScreen() {
   }, [tags, query]);
 
   const stillLoading = Boolean(transactionId) && (isLoadingBudget || storeBudgetId !== budgetId);
-  const repaymentState = editing ? computeRepaymentState(editing) : null;
 
   function handleReminderToggle(next) {
     setReminderOn(next);
     if (!next) return;
     // Only seed a first choice; an edited reminder keeps what it already has.
-    const suggestion = suggestReminderValues({ dueDate: direction ? dueDate : null });
+    const suggestion = suggestReminderValues();
     setReminderDate((current) => current || suggestion.date);
     setReminderTime((current) => current || suggestion.time);
   }
@@ -181,7 +172,6 @@ export default function TransactionFormScreen() {
     if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
     if (type !== 'transfer' && !tagId) nextErrors.tag = 'Choose a tag.';
     if (!resolvedDate) nextErrors.date = 'Pick a date.';
-    if (direction && !isValidLocalDate(dueDate)) nextErrors.dueDate = 'Pick a due date.';
     if (reminderOn) {
       const reminderError = reminderValidationError(reminderDate, reminderTime);
       if (reminderError) nextErrors.reminder = reminderError;
@@ -201,8 +191,6 @@ export default function TransactionFormScreen() {
       tagId,
       description: description.trim() || null,
       date: resolvedDate,
-      repaymentDirection: type === 'transfer' ? null : direction || null,
-      dueDate: direction ? dueDate : null,
       reminder: {
         enabled: reminderOn,
         date: reminderDate,
@@ -219,17 +207,6 @@ export default function TransactionFormScreen() {
     } catch (error) {
       setSaving(false);
       Alert.alert('Could not save', error?.message ?? 'Please try again.');
-    }
-  }
-
-  async function handleSetRepayment(status) {
-    setSettling(true);
-    try {
-      await setRepayment(transactionId, status);
-    } catch (error) {
-      Alert.alert('Could not update', error?.message ?? 'Please try again.');
-    } finally {
-      setSettling(false);
     }
   }
 
@@ -382,28 +359,6 @@ export default function TransactionFormScreen() {
           returnKeyType="done"
         />
 
-        {type !== 'transfer' ? (
-          <>
-            <View style={{ height: spacing.lg }} />
-            <RepaymentFields
-              direction={direction}
-              onDirectionChange={(next) => {
-                setDirection(next);
-                if (next && !isValidLocalDate(dueDate)) setDueDate(date);
-              }}
-              dueDate={dueDate}
-              onDueDateChange={setDueDate}
-              errors={errors}
-              state={repaymentState}
-              paidAt={editing?.paid_at}
-              isExisting={Boolean(transactionId)}
-              busy={settling}
-              onMarkPaid={() => handleSetRepayment('paid')}
-              onMarkUnpaid={() => handleSetRepayment('pending')}
-            />
-          </>
-        ) : null}
-
         <View style={{ height: spacing.lg }} />
 
         <ReminderFields
@@ -415,7 +370,6 @@ export default function TransactionFormScreen() {
           onTimeChange={setReminderTime}
           error={errors.reminder}
           permission={permission}
-          isSettled={repaymentState === 'paid'}
           onOpenSettings={openDeviceSettings}
         />
 
@@ -423,7 +377,7 @@ export default function TransactionFormScreen() {
         <Button
           label={saving ? 'Saving…' : transactionId ? 'Save changes' : 'Add transaction'}
           onPress={handleSave}
-          disabled={saving || settling}
+          disabled={saving}
         />
       </Screen>
     </View>

@@ -149,9 +149,8 @@ export function createSqliteAdapter(getDb) {
       await run(
         `INSERT INTO transactions
            (id, budget_id, type, amount, tag_id, account_id, to_account_id, description,
-            transaction_date, repayment_direction, repayment_status, due_date, paid_at,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            transaction_date, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.budget_id,
         row.type,
@@ -161,10 +160,6 @@ export function createSqliteAdapter(getDb) {
         row.to_account_id ?? null,
         row.description ?? null,
         row.transaction_date,
-        row.repayment_direction ?? null,
-        row.repayment_status ?? null,
-        row.due_date ?? null,
-        row.paid_at ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -174,18 +169,13 @@ export function createSqliteAdapter(getDb) {
       const result = await run(
         `UPDATE transactions
             SET type = ?, amount = ?, tag_id = ?, description = ?,
-                transaction_date = ?, repayment_direction = ?, repayment_status = ?,
-                due_date = ?, paid_at = ?, updated_at = ?
+                transaction_date = ?, updated_at = ?
           WHERE id = ?`,
         row.type,
         row.amount,
         row.tag_id ?? null,
         row.description ?? null,
         row.transaction_date,
-        row.repayment_direction ?? null,
-        row.repayment_status ?? null,
-        row.due_date ?? null,
-        row.paid_at ?? null,
         row.updated_at,
         row.id,
       );
@@ -195,24 +185,6 @@ export function createSqliteAdapter(getDb) {
     async deleteTransaction(id) {
       const result = await run('DELETE FROM transactions WHERE id = ?', id);
       return result.changes ?? 0;
-    },
-
-    /** Pending repayments across every budget, earliest due date first. */
-    async listRepayments({ status = 'pending' } = {}) {
-      // Budget name and reminder flag ride along so the Home money list can
-      // render a whole row without one query per transaction.
-      return query(
-        `SELECT t.*,
-                b.name       AS budget_name,
-                COALESCE(r.enabled, 0) AS reminder_enabled,
-                r.remind_at  AS reminder_at
-           FROM transactions t
-           JOIN budgets b ON b.id = t.budget_id
-           LEFT JOIN reminders r ON r.transaction_id = t.id
-          WHERE t.repayment_direction IS NOT NULL AND t.repayment_status = ?
-          ORDER BY t.due_date ASC, t.created_at ASC`,
-        status,
-      );
     },
 
     // --- reminders -----------------------------------------------------
@@ -227,10 +199,7 @@ export function createSqliteAdapter(getDb) {
                t.budget_id            AS budget_id,
                t.amount               AS amount,
                t.description          AS description,
-               t.transaction_date    AS transaction_date,
-               t.repayment_direction AS repayment_direction,
-               t.repayment_status    AS repayment_status,
-               t.due_date            AS due_date
+               t.transaction_date    AS transaction_date
           FROM reminders r
           JOIN transactions t ON t.id = r.transaction_id
          ORDER BY r.remind_at ASC
