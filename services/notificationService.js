@@ -7,28 +7,23 @@
  * wrapper over the library: no MoneyQ rules, no transaction knowledge, no
  * stored state.
  *
- * Expo Go on Android removed push (remote) notifications from SDK 53.
- * Some local-notification calls internally hit the removed push path and
- * throw this exact error. We detect Expo Go Android up front and treat the
- * platform as unsupported; the catch blocks remain as a safety net. The
- * reminder row is still saved (source of truth); it simply cannot fire until
- * the app runs in a development build.
+ * Expo Go on Android removed push (remote) notifications from SDK 53. The
+ * library throws during its own module initialization when imported in Expo
+ * Go Android, so we must avoid a static import. We detect that environment
+ * with `expo-constants` and dynamically import `expo-notifications` only in
+ * supported builds. The reminder row is still saved (source of truth); it
+ * simply cannot fire until the app runs in a development build.
  */
 
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // Expo Go on Android removed the push-notification subsystem from SDK 53,
-// and several local-notification APIs internally hit that removed path and
-// throw. Detect the environment up front so we never call those APIs.
+// and `expo-notifications` throws at import time there. Detect it before any
+// call to the library so the module is never loaded in that environment.
 function isUnsupportedEnvironment() {
   if (Platform.OS !== 'android') return false;
-  try {
-    const { expoGoConfig } = require('expo-constants').default;
-    return expoGoConfig != null;
-  } catch {
-    return false;
-  }
+  return Constants.expoGoConfig != null;
 }
 
 export const isSupported = !isUnsupportedEnvironment();
@@ -41,11 +36,22 @@ function isExpoGoPushError(error) {
   return typeof error?.message === 'string' && error.message.includes(EXPONENT_GO_PUSH);
 }
 
+const UNSUPPORTED_STATUS = { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
+
+/** Lazily loads the native notifications module. Returns null when unsupported. */
+async function getNotificationsModule() {
+  if (!isSupported) return null;
+  return import('expo-notifications');
+}
+
+let handlerSet = false;
+
 /**
  * Notifications that arrive while the app is open are still shown — a
  * reminder the user is staring at the phone for must not be swallowed.
  */
-if (isSupported) {
+async function ensureHandler(Notifications) {
+  if (handlerSet || !Notifications) return;
   try {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
@@ -55,6 +61,7 @@ if (isSupported) {
         shouldSetBadge: false,
       }),
     });
+    handlerSet = true;
   } catch {
     // Handler registration is best-effort; the row-based reminder still works.
   }
@@ -64,8 +71,8 @@ let channelReady = false;
 
 /** Android 8+ shows nothing without a channel, and Android 13 will not even
  *  prompt for permission until one exists. */
-async function ensureChannel() {
-  if (!isSupported || Platform.OS !== 'android' || channelReady) return;
+async function ensureChannel(Notifications) {
+  if (!Notifications || Platform.OS !== 'android' || channelReady) return;
   try {
     await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
       name: 'Reminders',
@@ -81,11 +88,12 @@ async function ensureChannel() {
   }
 }
 
-const UNSUPPORTED_STATUS = { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
-
 /** Read-only: safe to call whenever the UI wants to display current status. */
 export async function getPermissionStatusAsync() {
   if (!isSupported) return UNSUPPORTED_STATUS;
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return UNSUPPORTED_STATUS;
+  await ensureHandler(Notifications);
   try {
     const settings = await Notifications.getPermissionsAsync();
     return {
@@ -95,7 +103,7 @@ export async function getPermissionStatusAsync() {
       status: settings.status,
     };
   } catch (error) {
-    if (isExpoGoPushError(error)) return { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
+    if (isExpoGoPushError(error)) return UNSUPPORTED_STATUS;
     return { supported: true, granted: false, canAskAgain: true, status: 'undetermined' };
   }
 }
@@ -104,7 +112,9 @@ export async function getPermissionStatusAsync() {
  *  so opening a transaction never nags the user. */
 export async function requestPermissionAsync() {
   if (!isSupported) return UNSUPPORTED_STATUS;
-  await ensureChannel();
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return UNSUPPORTED_STATUS;
+  await ensureChannel(Notifications);
   try {
     const settings = await Notifications.requestPermissionsAsync();
     return {
@@ -114,7 +124,7 @@ export async function requestPermissionAsync() {
       status: settings.status,
     };
   } catch (error) {
-    if (isExpoGoPushError(error)) return { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
+    if (isExpoGoPushError(error)) return UNSUPPORTED_STATUS;
     return { supported: true, granted: false, canAskAgain: false, status: 'denied' };
   }
 }
@@ -126,7 +136,9 @@ export async function requestPermissionAsync() {
  */
 export async function scheduleAsync({ title, body, data = {}, remindAt }) {
   if (!isSupported) return null;
-  await ensureChannel();
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return null;
+  await ensureChannel(Notifications);
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
@@ -150,6 +162,9 @@ export async function scheduleAsync({ title, body, data = {}, remindAt }) {
 /** Never throws: cancelling something already gone is a success. */
 export async function cancelAsync(notificationId) {
   if (!notificationId) return;
+  if (!isSupported) return;
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return;
   try {
     await Notifications.cancelScheduledNotificationAsync(notificationId);
   } catch {
@@ -158,6 +173,10 @@ export async function cancelAsync(notificationId) {
 }
 
 export async function listScheduledAsync() {
+  if (!isSupported) return [];
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return [];
+  await ensureHandler(Notifications);
   try {
     return await Notifications.getAllScheduledNotificationsAsync();
   } catch {
@@ -166,11 +185,23 @@ export async function listScheduledAsync() {
 }
 
 export function subscribeToResponses(listener) {
-  const subscription = Notifications.addNotificationResponseReceivedListener(listener);
-  return () => subscription.remove();
+  if (!isSupported) return () => {};
+  // This is the one API that must stay synchronous (it returns an unsubscribe
+  // function). We use a conditional require here because a static import would
+  // crash at module-evaluation time in Expo Go Android.
+  try {
+    const Notifications = require('expo-notifications');
+    const subscription = Notifications.addNotificationResponseReceivedListener(listener);
+    return () => subscription.remove();
+  } catch {
+    return () => {};
+  }
 }
 
 export async function getLastResponseAsync() {
+  if (!isSupported) return null;
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return null;
   try {
     return await Notifications.getLastNotificationResponseAsync();
   } catch {
@@ -179,6 +210,9 @@ export async function getLastResponseAsync() {
 }
 
 export async function clearLastResponseAsync() {
+  if (!isSupported) return;
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return;
   try {
     await Notifications.clearLastNotificationResponseAsync();
   } catch {
