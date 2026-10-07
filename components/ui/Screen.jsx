@@ -1,18 +1,26 @@
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icon } from './Icon';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
 /**
- * Standard scrollable screen body. Keeping this in one place means every tab
+ * Standard scrollable screen body. Keeping it in one place means every tab
  * shares identical padding and background handling.
  */
 export function Screen({ children, scroll = true, contentContainerStyle, refreshing, onRefresh }) {
   const { colors, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const contentStyle = [
     styles.content,
-    { padding: spacing.lg },
+    {
+      padding: spacing.lg,
+      // Content runs edge-to-edge behind Android's navigation bar, so the last
+      // row needs the inset added to keep it tappable.
+      paddingBottom: spacing.lg + insets.bottom,
+    },
     contentContainerStyle,
   ];
 
@@ -48,16 +56,45 @@ export function ScreenTitle({ title, subtitle }) {
   );
 }
 
-export function SectionHeader({ title, action }) {
-  const { spacing } = useTheme();
+/**
+ * Section heading. Pass `collapsed` + `onToggle` to make it fold its section —
+ * the header stays visible (title and action remain) so a folded list is still
+ * navigable.
+ */
+export function SectionHeader({ title, action, collapsed, onToggle, fontSize }) {
+  const { colors, spacing } = useTheme();
 
-  return (
+  const content = (
     <View style={[styles.sectionHeader, { marginBottom: spacing.sm }]}>
-      <Text variant="label" tone="muted">
-        {title.toUpperCase()}
-      </Text>
+      <View style={styles.titleGroup}>
+        {onToggle ? (
+          <Icon
+            name="chevronRight"
+            size={14}
+            color={colors.text}
+            style={collapsed ? null : styles.chevronDown}
+          />
+        ) : null}
+        <Text variant="label" tone="muted" style={fontSize ? { fontSize } : null}>
+          {title.toUpperCase()}
+        </Text>
+      </View>
       {action ?? null}
     </View>
+  );
+
+  if (!onToggle) return content;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ expanded: !collapsed }}
+      accessibilityLabel={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+      onPress={onToggle}
+      hitSlop={8}
+    >
+      {content}
+    </Pressable>
   );
 }
 
@@ -72,5 +109,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  titleGroup: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  chevronDown: {
+    transform: [{ rotate: '90deg' }],
   },
 });

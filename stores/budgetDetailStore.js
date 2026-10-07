@@ -6,6 +6,7 @@ import {
   createTransaction,
   deleteTransaction,
   getTransactionsForBudget,
+  updateTransaction,
 } from '../storage/repositories/transactionRepository';
 import { computeSpendByTag, computeTotals } from '../utils/calculations';
 
@@ -69,6 +70,11 @@ export const useBudgetDetailStore = create((set, get) => ({
 
   addTransaction: async (input) => {
     await createTransaction(input);
+    await get().load(get().budgetId);
+  },
+
+  updateTransaction: async (input) => {
+    await updateTransaction(input.id, input);
     await get().load(get().budgetId);
   },
 

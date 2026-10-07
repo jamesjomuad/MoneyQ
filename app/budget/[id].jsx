@@ -1,5 +1,5 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { TagSpendRow } from '../../components/tags/TagSpendRow';
@@ -36,6 +36,11 @@ export default function BudgetDetailScreen() {
   const setActiveTag = useBudgetDetailStore((state) => state.setActiveTag);
   const removeTransaction = useBudgetDetailStore((state) => state.removeTransaction);
   const removeBudget = useBudgetsStore((state) => state.removeBudget);
+
+  // Fold long lists so the summary card stays in reach; the headers remain so
+  // a folded section can be reopened.
+  const [tagsOpen, setTagsOpen] = useState(true);
+  const [transactionsOpen, setTransactionsOpen] = useState(true);
 
   useFocusEffect(
     useCallback(() => {
@@ -171,6 +176,9 @@ export default function BudgetDetailScreen() {
 
         <SectionHeader
           title={`Tags · ${tagSummaries.length}`}
+          fontSize={14}
+          collapsed={!tagsOpen}
+          onToggle={() => setTagsOpen((open) => !open)}
           action={
             activeTag ? (
               <Pressable accessibilityRole="button" onPress={() => setActiveTag(null)} hitSlop={8}>
@@ -182,31 +190,35 @@ export default function BudgetDetailScreen() {
           }
         />
 
-        {tagSummaries.length === 0 ? (
-          <EmptyState
-            icon="tag"
-            title="No tags yet"
-            description="Tags are a shared library you reuse across budgets. Add one so transactions can be grouped."
-          >
-            <Button label="Manage tags" onPress={() => router.push('/tags')} />
-          </EmptyState>
-        ) : (
-          tagSummaries.map(({ tag, spent }) => (
-            <TagSpendRow
-              key={tag.id}
-              tag={tag}
-              spent={spent}
-              currency={currency}
-              active={tag.id === activeTagId}
-              onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
-            />
-          ))
-        )}
+        {tagsOpen &&
+          (tagSummaries.length === 0 ? (
+            <EmptyState
+              icon="tag"
+              title="No tags yet"
+              description="Tags are a shared library you reuse across budgets. Add one so transactions can be grouped."
+            >
+              <Button label="Manage tags" onPress={() => router.push('/tags')} />
+            </EmptyState>
+          ) : (
+            tagSummaries.map(({ tag, spent }) => (
+              <TagSpendRow
+                key={tag.id}
+                tag={tag}
+                spent={spent}
+                currency={currency}
+                active={tag.id === activeTagId}
+                onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
+              />
+            ))
+          ))}
 
         <View style={{ height: spacing.lg }} />
 
         <SectionHeader
           title={`Transactions · ${transactions.length}`}
+          fontSize={14}
+          collapsed={!transactionsOpen}
+          onToggle={() => setTransactionsOpen((open) => !open)}
           action={
             activeTag ? (
               <Text variant="caption" tone="muted">
@@ -216,39 +228,46 @@ export default function BudgetDetailScreen() {
           }
         />
 
-        {transactions.length === 0 ? (
-          <EmptyState
-            icon="list"
-            title={activeTag ? `No ${activeTag.name} transactions` : 'No transactions yet'}
-            description={
-              activeTag
-                ? 'Nothing has been recorded under this tag inside this budget.'
-                : 'Add income or expenses to this budget and they will show up here, grouped by day.'
-            }
-          >
-            <Button label="Add transaction" onPress={() => router.push({ pathname: '/transaction/form', params: { budgetId: budget.id } })} />
-          </EmptyState>
-        ) : (
-          groups.map((group) => (
-            <View key={group.date}>
-              <Text variant="label" tone="muted" style={{ marginBottom: spacing.sm, marginTop: spacing.sm }}>
-                {dayLabel(group.date)}
-              </Text>
-              <Card padded={false}>
-                {group.items.map((transaction, index) => (
-                  <TransactionRow
-                    key={transaction.id}
-                    transaction={transaction}
-                    tag={tagById.get(transaction.tag_id) ?? null}
-                    currency={currency}
-                    isLast={index === group.items.length - 1}
-                    onDelete={() => confirmDeleteTransaction(transaction)}
-                  />
-                ))}
-              </Card>
-            </View>
-          ))
-        )}
+        {transactionsOpen &&
+          (transactions.length === 0 ? (
+            <EmptyState
+              icon="list"
+              title={activeTag ? `No ${activeTag.name} transactions` : 'No transactions yet'}
+              description={
+                activeTag
+                  ? 'Nothing has been recorded under this tag inside this budget.'
+                  : 'Add income or expenses to this budget and they will show up here, grouped by day.'
+              }
+            >
+              <Button label="Add transaction" onPress={() => router.push({ pathname: '/transaction/form', params: { budgetId: budget.id } })} />
+            </EmptyState>
+          ) : (
+            groups.map((group) => (
+              <View key={group.date}>
+                <Text variant="label" tone="muted" style={{ marginBottom: spacing.sm, marginTop: spacing.sm }}>
+                  {dayLabel(group.date)}
+                </Text>
+                <Card padded={false}>
+                  {group.items.map((transaction, index) => (
+                    <TransactionRow
+                      key={transaction.id}
+                      transaction={transaction}
+                      tag={tagById.get(transaction.tag_id) ?? null}
+                      currency={currency}
+                      isLast={index === group.items.length - 1}
+                      onEdit={(entry) =>
+                        router.push({
+                          pathname: '/transaction/form',
+                          params: { budgetId: budget.id, transactionId: entry.id },
+                        })
+                      }
+                      onDelete={() => confirmDeleteTransaction(transaction)}
+                    />
+                  ))}
+                </Card>
+              </View>
+            ))
+          ))}
       </Screen>
 
       <Fab

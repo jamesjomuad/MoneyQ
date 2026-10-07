@@ -149,6 +149,18 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       store.transactions.push({ ...row });
     },
 
+    async updateTransaction(row) {
+      const existing = store.transactions.find((transaction) => transaction.id === row.id);
+      if (!existing) return 0;
+      existing.type = row.type;
+      existing.amount = row.amount;
+      existing.tag_id = row.tag_id ?? null;
+      existing.description = row.description ?? null;
+      existing.transaction_date = row.transaction_date;
+      existing.updated_at = row.updated_at;
+      return 1;
+    },
+
     async deleteTransaction(id) {
       const before = store.transactions.length;
       store.transactions = store.transactions.filter((transaction) => transaction.id !== id);

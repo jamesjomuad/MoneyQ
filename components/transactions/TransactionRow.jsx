@@ -12,7 +12,7 @@ import { dayLabel } from '../../utils/dates';
  * neutral amount, because they move money between accounts rather than
  * counting as income or spending.
  */
-export function TransactionRow({ transaction, tag, currency, onDelete, isLast }) {
+export function TransactionRow({ transaction, tag, currency, onEdit, onDelete, isLast }) {
   const { colors, spacing } = useTheme();
 
   const isExpense = transaction.type === 'expense';
@@ -28,10 +28,15 @@ export function TransactionRow({ transaction, tag, currency, onDelete, isLast })
     : [tag?.name, dayLabel(transaction.transaction_date)].filter(Boolean).join(' · ');
 
   return (
-    <View
-      style={[
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Edit ${title}`}
+      onPress={onEdit ? () => onEdit(transaction) : undefined}
+      disabled={!onEdit}
+      style={({ pressed }) => [
         styles.row,
         {
+          backgroundColor: pressed && onEdit ? colors.surfaceMuted : 'transparent',
           borderBottomColor: colors.border,
           borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
           paddingHorizontal: spacing.lg,
@@ -71,7 +76,7 @@ export function TransactionRow({ transaction, tag, currency, onDelete, isLast })
           </Pressable>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 

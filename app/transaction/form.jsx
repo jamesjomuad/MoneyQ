@@ -14,7 +14,7 @@ import { useTheme } from '../../components/ui/ThemeProvider';
 import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
-import { formatCurrency, getCurrency, toMinor } from '../../utils/currency';
+import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
 import { parseFlexibleDate, toIsoDate } from '../../utils/dates';
 
 const TYPE_OPTIONS = [
@@ -34,9 +34,15 @@ export default function TransactionFormScreen() {
   const tags = useTagsStore((state) => state.tags);
   const loadTags = useTagsStore((state) => state.load);
   const addTransaction = useBudgetDetailStore((state) => state.addTransaction);
+  const updateTransaction = useBudgetDetailStore((state) => state.updateTransaction);
+  const entries = useBudgetDetailStore((state) => state.entries);
 
   const budgetId = typeof params.budgetId === 'string' ? params.budgetId : '';
   const preselectedTagId = typeof params.tagId === 'string' ? params.tagId : '';
+  const transactionId = typeof params.transactionId === 'string' ? params.transactionId : '';
+  const editing = transactionId
+    ? entries.find((entry) => entry.id === transactionId) ?? null
+    : null;
 
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
@@ -46,10 +52,34 @@ export default function TransactionFormScreen() {
   const [query, setQuery] = useState('');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
 
   useEffect(() => {
     loadTags();
   }, [loadTags]);
+
+  // Seed the form once the stored row is available: the modal opens over the
+  // budget detail screen, which already has the entry in its store.
+  useEffect(() => {
+    if (!editing || prefilled) return;
+    setType(editing.type);
+    setAmount(String(fromMinor(editing.amount, currency)));
+    setTagId(editing.tag_id ?? '');
+    setDate(editing.transaction_date);
+    setDescription(editing.description ?? '');
+    setPrefilled(true);
+  }, [editing, prefilled, currency]);
+
+  // Transfers have no creation UI yet, but an existing one must stay editable.
+  const typeOptions = useMemo(() => {
+    if (!editing || TYPE_OPTIONS.some((option) => option.value === editing.type)) {
+      return TYPE_OPTIONS;
+    }
+    return [
+      ...TYPE_OPTIONS,
+      { value: editing.type, label: editing.type === 'transfer' ? 'Transfer' : editing.type },
+    ];
+  }, [editing]);
 
   const visibleTags = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -75,14 +105,25 @@ export default function TransactionFormScreen() {
     setSaving(true);
 
     try {
-      await addTransaction({
-        budgetId,
-        type,
-        amount: minorAmount,
-        tagId,
-        description: description.trim() || null,
-        date: resolvedDate,
-      });
+      if (transactionId) {
+        await updateTransaction({
+          id: transactionId,
+          type,
+          amount: minorAmount,
+          tagId,
+          description: description.trim() || null,
+          date: resolvedDate,
+        });
+      } else {
+        await addTransaction({
+          budgetId,
+          type,
+          amount: minorAmount,
+          tagId,
+          description: description.trim() || null,
+          date: resolvedDate,
+        });
+      }
       router.back();
     } catch (error) {
       setSaving(false);
@@ -104,14 +145,28 @@ export default function TransactionFormScreen() {
     );
   }
 
+  if (transactionId && !editing && !prefilled) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <EmptyState
+          icon="list"
+          title="Transaction not found"
+          description="This entry may have been deleted. Go back and pick another one."
+        >
+          <Button label="Back" onPress={() => router.back()} />
+        </EmptyState>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.fill}>
-      <Stack.Screen options={{ title: 'Add Transaction' }} />
+      <Stack.Screen options={{ title: transactionId ? 'Edit Transaction' : 'Add Transaction' }} />
 
       <Screen contentContainerStyle={{ paddingBottom: 48 }}>
         <SectionHeader title="Type" />
         <SegmentedControl
-          options={TYPE_OPTIONS}
+          options={typeOptions}
           value={type}
           onChange={setType}
           style={{ marginBottom: spacing.lg }}
@@ -122,7 +177,7 @@ export default function TransactionFormScreen() {
           symbol={getCurrency(currency).symbol}
           value={amount}
           onChangeText={setAmount}
-          autoFocus
+          autoFocus={!transactionId}
         />
         {errors.amount ? (
           <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
@@ -217,7 +272,11 @@ export default function TransactionFormScreen() {
         />
 
         <View style={{ height: spacing.sm }} />
-        <Button label={saving ? 'Saving…' : 'Add transaction'} onPress={handleSave} disabled={saving} />
+        <Button
+          label={saving ? 'Saving…' : transactionId ? 'Save changes' : 'Add transaction'}
+          onPress={handleSave}
+          disabled={saving}
+        />
       </Screen>
     </View>
   );

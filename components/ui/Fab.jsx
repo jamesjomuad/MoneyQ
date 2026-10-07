@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from './Icon';
 import { useTheme } from './ThemeProvider';
@@ -6,6 +7,7 @@ import { useTheme } from './ThemeProvider';
 /** Floating action button, rendered as a sibling of <Screen/> inside a flex:1 View. */
 export function Fab({ onPress, icon = 'add', accessibilityLabel = 'Add' }) {
   const { colors, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Pressable
@@ -18,7 +20,9 @@ export function Fab({ onPress, icon = 'add', accessibilityLabel = 'Add' }) {
         {
           backgroundColor: colors.primary,
           right: spacing.lg,
-          bottom: spacing.xl,
+          // Clear Android's system navigation bar: content extends behind it
+          // edge-to-edge, so a fixed offset leaves the button under the toolbar.
+          bottom: spacing.xl + insets.bottom,
           transform: [{ scale: pressed ? 0.94 : 1 }],
         },
       ]}

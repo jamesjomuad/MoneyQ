@@ -324,6 +324,26 @@ async function runScenario(store) {
   snapshot.budgets = await store.listBudgets();
   snapshot.transactions = await store.listTransactionsByBudget('p_budget');
   snapshot.duplicateName = await store.findTagByName('Parity Tag');
+
+  snapshot.transactionUpdateChanges = await store.updateTransaction({
+    id: 'p_expense',
+    type: 'expense',
+    amount: 175_000,
+    tag_id: 'p_tag',
+    description: 'Lunch and a drink',
+    transaction_date: '2026-10-05',
+    updated_at: STAMP,
+  });
+  snapshot.updatedTransaction = await store.getTransaction('p_expense');
+  snapshot.transactionUpdateMissing = await store.updateTransaction({
+    id: 'p_missing',
+    type: 'expense',
+    amount: 1,
+    tag_id: null,
+    description: null,
+    transaction_date: '2026-10-05',
+    updated_at: STAMP,
+  });
   snapshot.duplicateNameIgnoringSelf = await store.findTagByName('Parity Tag', 'p_tag');
   snapshot.duplicateNameAgainstOther = await store.findTagByName('Parity Tag', 'someone_else');
   snapshot.tagUsage = await store.countTransactionsUsingTag('p_tag');

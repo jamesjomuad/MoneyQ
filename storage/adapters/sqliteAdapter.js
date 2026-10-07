@@ -161,6 +161,23 @@ export function createSqliteAdapter(getDb) {
       );
     },
 
+    async updateTransaction(row) {
+      const result = await run(
+        `UPDATE transactions
+            SET type = ?, amount = ?, tag_id = ?, description = ?,
+                transaction_date = ?, updated_at = ?
+          WHERE id = ?`,
+        row.type,
+        row.amount,
+        row.tag_id ?? null,
+        row.description ?? null,
+        row.transaction_date,
+        row.updated_at,
+        row.id,
+      );
+      return result.changes ?? 0;
+    },
+
     async deleteTransaction(id) {
       const result = await run('DELETE FROM transactions WHERE id = ?', id);
       return result.changes ?? 0;
