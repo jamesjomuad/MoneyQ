@@ -172,6 +172,8 @@ npx eas-cli@latest update
 
 Docs: https://docs.expo.dev/eas/index.md
 
+A full MoneyQ-specific walkthrough — verification gates, APK/AAB build profiles, local builds, changing the app icon — lives in [docs/building.md](docs/building.md).
+
 ## Project Structure
 
 ```text
