@@ -6,6 +6,13 @@
  * `expo-notifications` never enters the web bundle. Everything here is a thin
  * wrapper over the library: no MoneyQ rules, no transaction knowledge, no
  * stored state.
+ *
+ * Expo Go on Android removed push (remote) notifications from SDK 53.
+ * Local notifications still work, but some permission / scheduling calls in
+ * Expo Go internally hit the removed push path and throw this exact error.
+ * We catch it everywhere and treat the platform as unsupported — the reminder
+ * row is still saved (source of truth); it simply cannot fire until the app
+ * runs in a development build.
  */
 
 import * as Notifications from 'expo-notifications';
@@ -15,18 +22,28 @@ export const isSupported = true;
 
 export const REMINDER_CHANNEL_ID = 'reminders';
 
+const EXPONENT_GO_PUSH = 'was removed from Expo Go';
+
+function isExpoGoPushError(error) {
+  return typeof error?.message === 'string' && error.message.includes(EXPONENT_GO_PUSH);
+}
+
 /**
  * Notifications that arrive while the app is open are still shown — a
  * reminder the user is staring at the phone for must not be swallowed.
  */
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+} catch {
+  // Handler registration is best-effort; the row-based reminder still works.
+}
 
 let channelReady = false;
 
@@ -44,8 +61,8 @@ async function ensureChannel() {
       showBadge: false,
     });
     channelReady = true;
-  } catch {
-    // A missing channel degrades to the OS fallback channel, never a crash.
+  } catch (error) {
+    if (isExpoGoPushError(error)) channelReady = true; // don't retry; scheduling will also be caught
   }
 }
 
@@ -59,7 +76,8 @@ export async function getPermissionStatusAsync() {
       canAskAgain: settings.canAskAgain !== false,
       status: settings.status,
     };
-  } catch {
+  } catch (error) {
+    if (isExpoGoPushError(error)) return { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
     return { supported: true, granted: false, canAskAgain: true, status: 'undetermined' };
   }
 }
@@ -76,7 +94,8 @@ export async function requestPermissionAsync() {
       canAskAgain: settings.canAskAgain !== false,
       status: settings.status,
     };
-  } catch {
+  } catch (error) {
+    if (isExpoGoPushError(error)) return { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
     return { supported: true, granted: false, canAskAgain: false, status: 'denied' };
   }
 }
@@ -88,19 +107,24 @@ export async function requestPermissionAsync() {
  */
 export async function scheduleAsync({ title, body, data = {}, remindAt }) {
   await ensureChannel();
-  return Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      data: { ...data, source: 'moneyq' },
-      sound: true,
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DATE,
-      date: new Date(remindAt),
-      channelId: REMINDER_CHANNEL_ID,
-    },
-  });
+  try {
+    return await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { ...data, source: 'moneyq' },
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(remindAt),
+        channelId: REMINDER_CHANNEL_ID,
+      },
+    });
+  } catch (error) {
+    if (isExpoGoPushError(error)) return null;
+    throw error;
+  }
 }
 
 /** Never throws: cancelling something already gone is a success. */
