@@ -4,6 +4,7 @@ import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 import { formatCurrency } from '../../utils/currency';
+import { computeBudgetBalance } from '../../utils/calculations';
 import { formatDateRange } from '../../utils/dates';
 
 /**
@@ -13,11 +14,12 @@ import { formatDateRange } from '../../utils/dates';
  */
 export function BudgetCard({ budget, onPress, currency }) {
   const { colors, radius, spacing } = useTheme();
+  const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${budget.name}, ${formatCurrency(budget.spent, { currency })} spent`}
+      accessibilityLabel={`${budget.name}, ${formatCurrency(budget.spent, { currency })} spent, ${formatCurrency(balance, { currency })} balance`}
       onPress={onPress}
       style={({ pressed }) => [{ marginBottom: spacing.lg }, pressed && { opacity: 0.82 }]}
     >
@@ -43,16 +45,26 @@ export function BudgetCard({ budget, onPress, currency }) {
 
         <Text variant="caption" style={{ color: colors.folderInk, marginTop: 2, opacity: 0.85 }}>
           {formatDateRange(budget.start_date, budget.end_date)}
+          {' · '}
+          {budget.transaction_count} {budget.transaction_count === 1 ? 'transaction' : 'transactions'}
         </Text>
 
         <View style={[styles.divider, { backgroundColor: colors.folderBorder }]} />
 
         <View style={styles.statsRow}>
-          <Text variant="heading" style={{ color: colors.folderInk }}>
+          <Text
+            variant="heading"
+            numberOfLines={1}
+            style={[styles.stat, { color: colors.folderInk }]}
+          >
             {formatCurrency(budget.spent, { currency })} spent
           </Text>
-          <Text variant="caption" style={{ color: colors.folderInk, opacity: 0.85 }}>
-            {budget.transaction_count} {budget.transaction_count === 1 ? 'transaction' : 'transactions'}
+          <Text
+            variant="heading"
+            numberOfLines={1}
+            style={[styles.stat, { color: colors.folderInk, textAlign: 'right' }]}
+          >
+            {formatCurrency(balance, { currency })} balance
           </Text>
         </View>
       </View>
@@ -88,6 +100,9 @@ const styles = StyleSheet.create({
   statsRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
+  },
+  stat: {
+    flex: 1,
   },
 });

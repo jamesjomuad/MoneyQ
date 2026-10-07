@@ -56,13 +56,15 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         .sort(byBudgetPeriod)
         .map((budget) => {
           let spent = 0;
+          let income = 0;
           let transactionCount = 0;
           for (const transaction of store.transactions) {
             if (transaction.budget_id !== budget.id) continue;
             transactionCount += 1;
             if (transaction.type === 'expense') spent += transaction.amount;
+            else if (transaction.type === 'income') income += transaction.amount;
           }
-          return { ...budget, spent, transaction_count: transactionCount };
+          return { ...budget, spent, income, transaction_count: transactionCount };
         });
     },
 

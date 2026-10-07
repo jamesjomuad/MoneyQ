@@ -25,6 +25,15 @@ export function computeTotals(transactions) {
   };
 }
 
+/**
+ * Folder balance for one budget period: what it brought in minus what it spent,
+ * in the same minor units as everything else. Negative is valid and simply
+ * means the period spent more than it earned.
+ */
+export function computeBudgetBalance(income = 0, spent = 0) {
+  return income - spent;
+}
+
 export function computeAccountBalance(account, transactions) {
   let balance = account?.initial_balance ?? 0;
 

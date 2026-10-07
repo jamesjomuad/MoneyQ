@@ -6,6 +6,7 @@ import { createMemoryAdapter } from '../storage/adapters/memoryAdapter.js';
 import { createSqliteAdapter } from '../storage/adapters/sqliteAdapter.js';
 import {
   computeAccountBalance,
+  computeBudgetBalance,
   computeSpendByTag,
   computeTotals,
   computeTotalAssets,
@@ -22,7 +23,7 @@ import {
   parseFlexibleDate,
   toIsoDate,
 } from '../utils/dates.js';
-import { sanitizeAmount, toMinor } from '../utils/currency.js';
+import { sanitizeAmount, formatCurrency, toMinor } from '../utils/currency.js';
 
 let passed = 0;
 let failed = 0;
@@ -215,6 +216,16 @@ check('every tag keeps a row so the list stays complete',
 );
 check('totals also report the transaction count', totals.transactionCount === 3, String(totals.transactionCount));
 
+const sqliteBudgets = await createSqliteAdapter(async () => adapter).listBudgets();
+const octoberRow = sqliteBudgets.find((budget) => budget.id === 'b_oct');
+check('folder row carries income for its period', octoberRow.income === 4_000_000, String(octoberRow?.income));
+check('folder row keeps the spent figure unchanged', octoberRow.spent === 1_450_000, String(octoberRow?.spent));
+check(
+  'folder balance = income - spent',
+  computeBudgetBalance(octoberRow.income, octoberRow.spent) === 2_550_000,
+  String(computeBudgetBalance(octoberRow.income, octoberRow.spent)),
+);
+
 console.log('\n--- storage-level constraints ---');
 const rejected = [
   ['transaction without a budget', { id: 'x0', type: 'expense', amount: 100, tag_id: 'default_work', account_id: 'acc_bdo', transaction_date: '2026-10-05' }],
@@ -397,6 +408,12 @@ check(
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
 check('both adapters report the same schema version', LATEST_VERSION === 2);
+const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
+check(
+  'both adapters report period income on the folder row',
+  parityBudget?.income === 400_000 && memoryResult.budgets.find((budget) => budget.id === 'p_budget')?.income === 400_000,
+  String(parityBudget?.income),
+);
 
 console.log('\n--- legacy milestone-1 upgrade ---');
 
@@ -492,6 +509,81 @@ check(
   'a sanitised amount converts to minor units',
   toMinor(sanitizeAmount('₱1,450.50')) === 145_050,
   String(toMinor(sanitizeAmount('₱1,450.50'))),
+);
+
+console.log('\n--- folder balance ---');
+const folderStore = createMemoryAdapter();
+
+async function insertFolder(id, income, spent) {
+  await folderStore.insertBudget({
+    id,
+    name: id,
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await folderStore.insertTransaction({
+    id: `${id}_in`,
+    budget_id: id,
+    type: 'income',
+    amount: income,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Salary',
+    transaction_date: '2026-10-02',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  if (spent > 0) {
+    await folderStore.insertTransaction({
+      id: `${id}_out`,
+      budget_id: id,
+      type: 'expense',
+      amount: spent,
+      tag_id: null,
+      account_id: null,
+      to_account_id: null,
+      description: 'Spending',
+      transaction_date: '2026-10-05',
+      created_at: STAMP,
+      updated_at: STAMP,
+    });
+  }
+}
+
+await insertFolder('b_positive', 5_000_000, 3_250_000);
+await insertFolder('b_even', 5_000_000, 5_000_000);
+await insertFolder('b_negative', 5_000_000, 5_500_000);
+
+const folderRows = await folderStore.listBudgets();
+const folderRow = (id) => folderRows.find((budget) => budget.id === id);
+const folderBalance = (row) => computeBudgetBalance(row.income, row.spent);
+
+check(
+  'Income ₱50,000 / Spent ₱32,500 → Balance ₱17,500',
+  folderRow('b_positive').income === 5_000_000 &&
+    folderRow('b_positive').spent === 3_250_000 &&
+    formatCurrency(folderBalance(folderRow('b_positive'))) === '₱17,500.00',
+  formatCurrency(folderBalance(folderRow('b_positive'))),
+);
+check(
+  'Income ₱50,000 / Spent ₱50,000 → Balance ₱0.00',
+  folderBalance(folderRow('b_even')) === 0 && formatCurrency(folderBalance(folderRow('b_even'))) === '₱0.00',
+  formatCurrency(folderBalance(folderRow('b_even'))),
+);
+check(
+  'Income ₱50,000 / Spent ₱55,000 → Balance -₱5,000',
+  folderRow('b_negative').income === 5_000_000 &&
+    folderRow('b_negative').spent === 5_500_000 &&
+    formatCurrency(folderBalance(folderRow('b_negative'))) === '-₱5,000.00',
+  formatCurrency(folderBalance(folderRow('b_negative'))),
+);
+check(
+  'the folder row still reports spent unchanged',
+  folderRow('b_positive').spent === 3_250_000,
+  String(folderRow('b_positive').spent),
 );
 
 console.log('\n--- date handling ---');

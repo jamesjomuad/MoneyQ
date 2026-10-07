@@ -9,9 +9,9 @@ import {
 } from '../storage/repositories/budgetRepository';
 
 /**
- * Home screen state. Each entry already carries `spent` and
- * `transaction_count`, both computed by SQLite rather than reconstructed here.
- * This store is a cache: every action reads through to the repository so
+ * Home screen state. Each entry already carries `spent`, `income` and
+ * `transaction_count`, all computed by the adapters rather than reconstructed
+ * here. This store is a cache: every action reads through to the repository so
  * SQLite stays the source of truth.
  */
 export const useBudgetsStore = create((set, get) => ({
