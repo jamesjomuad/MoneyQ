@@ -37,6 +37,24 @@ export function fromMinor(minorUnits, currency = DEFAULT_CURRENCY) {
   return minorUnits / 10 ** precision;
 }
 
+/**
+ * Keep only what an amount field may contain: digits and at most one decimal
+ * point, never more fraction digits than the currency has. The separator is
+ * kept while typing ('12.' stays '12.') so entry is not fought at every
+ * keystroke. Paste is cleaned the same way as typing.
+ */
+export function sanitizeAmount(text, decimalPlaces = 2) {
+  const raw = String(text ?? '').replace(/[^0-9.]/g, '');
+  const dot = raw.indexOf('.');
+  if (dot === -1) return raw;
+
+  const whole = raw.slice(0, dot);
+  // A second '.' is a mistake, not extra digits: the first one is the point.
+  const fraction = raw.slice(dot + 1).split('.')[0];
+  if (decimalPlaces <= 0) return whole;
+  return `${whole}.${fraction.slice(0, decimalPlaces)}`;
+}
+
 function groupThousands(digits, separator) {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, separator);
 }

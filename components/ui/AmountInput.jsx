@@ -1,15 +1,31 @@
 import { StyleSheet, TextInput, View } from 'react-native';
 
+import { sanitizeAmount } from '../../utils/currency';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
 /**
- * Large right-aligned amount entry. Amounts are typed as digits and converted
- * with toMinor() before they touch a repository, so the storage layer only
- * ever sees integer minor units.
+ * Large right-aligned amount entry. Only digits and one decimal separator get
+ * through (`sanitizeAmount`), and toMinor() converts what is left before it
+ * touches a repository, so the storage layer only ever sees integer minor
+ * units.
  */
-export function AmountInput({ symbol = '₱', value, onChangeText, autoFocus, editable = true, inputRef, style }) {
+export function AmountInput({
+  symbol = '₱',
+  value,
+  onChangeText,
+  autoFocus,
+  editable = true,
+  inputRef,
+  decimalPlaces = 2,
+  style,
+}) {
   const { colors, radius, spacing } = useTheme();
+
+  function handleChange(text) {
+    if (!onChangeText) return;
+    onChangeText(sanitizeAmount(text, decimalPlaces));
+  }
 
   return (
     <View
@@ -31,7 +47,7 @@ export function AmountInput({ symbol = '₱', value, onChangeText, autoFocus, ed
       <TextInput
         ref={inputRef}
         value={value}
-        onChangeText={onChangeText}
+        onChangeText={handleChange}
         editable={editable}
         autoFocus={autoFocus}
         placeholder="0.00"

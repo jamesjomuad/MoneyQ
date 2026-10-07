@@ -22,6 +22,7 @@ import {
   parseFlexibleDate,
   toIsoDate,
 } from '../utils/dates.js';
+import { sanitizeAmount, toMinor } from '../utils/currency.js';
 
 let passed = 0;
 let failed = 0;
@@ -478,6 +479,20 @@ try {
   legacyInsertWorked = false;
 }
 check('create budget works on a rebuilt legacy database', legacyInsertWorked);
+
+console.log('\n--- amount entry ---');
+check('strips letters from an amount', sanitizeAmount('12a3b') === '123', sanitizeAmount('12a3b'));
+check('keeps a single decimal point', sanitizeAmount('1.2.3') === '1.2', sanitizeAmount('1.2.3'));
+check('caps fractions at the currency precision', sanitizeAmount('1.259', 2) === '1.25', sanitizeAmount('1.259', 2));
+check('allows a trailing separator while typing', sanitizeAmount('12.') === '12.', sanitizeAmount('12.'));
+check('cleans a pasted amount', sanitizeAmount('₱1,250.75') === '1250.75', sanitizeAmount('₱1,250.75'));
+check('whole amounts for zero-decimal currencies', sanitizeAmount('12.5', 0) === '12', sanitizeAmount('12.5', 0));
+check('non-numeric text becomes empty', sanitizeAmount('abc') === '' && sanitizeAmount('') === '');
+check(
+  'a sanitised amount converts to minor units',
+  toMinor(sanitizeAmount('₱1,450.50')) === 145_050,
+  String(toMinor(sanitizeAmount('₱1,450.50'))),
+);
 
 console.log('\n--- date handling ---');
 check('toIsoDate builds a local date', toIsoDate(new Date(2026, 0, 5)) === '2026-01-05');

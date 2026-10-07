@@ -186,6 +186,7 @@ export default function TransactionFormScreen() {
           symbol={getCurrency(currency).symbol}
           value={amount}
           onChangeText={setAmount}
+          decimalPlaces={getCurrency(currency).minorUnits}
           autoFocus={!transactionId}
         />
         {errors.amount ? (
