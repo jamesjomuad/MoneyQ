@@ -12,8 +12,10 @@ import { Button } from "../components/ui/Button";
 import { Screen } from "../components/ui/Screen";
 import { Text } from "../components/ui/Text";
 import { ThemeProvider, useTheme } from "../components/ui/ThemeProvider";
+import { NotificationTapHandler } from "../components/notifications/NotificationTapHandler";
 import { initStorage } from "../storage/adapters/adapter";
 import { useAppStore } from "../stores/appStore";
+import { useRemindersStore } from "../stores/remindersStore";
 
 export { ErrorBoundary } from "expo-router";
 
@@ -98,8 +100,17 @@ function NavigationShell() {
   const { scheme } = useTheme();
   const navigationTheme = scheme === "dark" ? DarkTheme : DefaultTheme;
 
+  // This shell only mounts once storage is ready, which is the only moment
+  // a schedule can be reconciled against the rows: rebuild what the OS holds
+  // in step with SQLite, then read the current permission state. Once per
+  // launch — an edit, a payment or a delete does its own cancel/schedule.
+  useEffect(() => {
+    useRemindersStore.getState().resyncOnLaunch();
+  }, []);
+
   return (
     <NavigationThemeProvider value={navigationTheme}>
+      <NotificationTapHandler />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen

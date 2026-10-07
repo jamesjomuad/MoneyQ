@@ -7,6 +7,7 @@ import {
   getBudgets,
   updateBudget,
 } from '../storage/repositories/budgetRepository';
+import { cancelScheduledRemindersForBudget } from '../services/reminderService';
 
 /**
  * Home screen state. Each entry already carries `spent`, `income` and
@@ -43,6 +44,9 @@ export const useBudgetsStore = create((set, get) => ({
   },
 
   removeBudget: async (id) => {
+    // Notifications first: the cascade below deletes the reminder rows that
+    // tell us which OS notifications to cancel.
+    await cancelScheduledRemindersForBudget(id);
     await deleteBudget(id);
     await get().load();
   },

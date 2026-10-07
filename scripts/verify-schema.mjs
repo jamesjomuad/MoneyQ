@@ -7,9 +7,11 @@ import { createSqliteAdapter } from '../storage/adapters/sqliteAdapter.js';
 import {
   computeAccountBalance,
   computeBudgetBalance,
+  computeRepaymentState,
   computeSpendByTag,
   computeTotals,
   computeTotalAssets,
+  sortRepayments,
 } from '../utils/calculations.js';
 import {
   addDaysIso,
@@ -24,6 +26,16 @@ import {
   toIsoDate,
 } from '../utils/dates.js';
 import { sanitizeAmount, formatCurrency, toMinor } from '../utils/currency.js';
+import {
+  buildRemindAt,
+  buildReminderNotification,
+  isRemindAtPast,
+  isValidLocalDate,
+  isValidReminderTime,
+  remindAtDate,
+  reminderValidationError,
+  suggestReminderValues,
+} from '../utils/reminders.js';
 
 let passed = 0;
 let failed = 0;
@@ -84,7 +96,7 @@ const tables = (
   await adapter.getAllAsync(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
 ).map((row) => row.name);
 
-for (const expected of ['accounts', 'budgets', 'settings', 'tags', 'transactions']) {
+for (const expected of ['accounts', 'budgets', 'reminders', 'settings', 'tags', 'transactions']) {
   check(`table ${expected} exists`, tables.includes(expected));
 }
 
@@ -111,8 +123,33 @@ check(
   transactionColumns.join(','),
 );
 check('transactions no longer use categories', !transactionColumns.includes('category_id'));
+check(
+  'transactions carry their repayment fields',
+  ['repayment_direction', 'repayment_status', 'due_date', 'paid_at'].every((column) =>
+    transactionColumns.includes(column),
+  ),
+  transactionColumns.join(','),
+);
 
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 2, String(LATEST_VERSION));
+const reminderColumns = columnsOf('reminders');
+check(
+  'reminders hold the schedule and the notification id',
+  ['transaction_id', 'enabled', 'remind_date', 'remind_time', 'remind_at', 'notification_id'].every(
+    (column) => reminderColumns.includes(column),
+  ),
+  reminderColumns.join(','),
+);
+const reminderIndexes = db
+  .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'reminders'`)
+  .all()
+  .map((row) => row.name);
+check(
+  'one reminder per transaction is indexed',
+  reminderIndexes.includes('idx_reminders_transaction'),
+  reminderIndexes.join(','),
+);
+
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 3, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -265,6 +302,28 @@ const orphan = await adapter.getFirstAsync(
 check('deleting a tag keeps its transactions', orphan.amount === 100, String(orphan.amount));
 check('deleting a tag clears the reference', orphan.tag_id === null, String(orphan.tag_id));
 
+// A reminder belongs to exactly one transaction — enforced by the schema.
+await adapter.runAsync(
+  `INSERT INTO reminders
+     (id, transaction_id, enabled, remind_date, remind_time, remind_at, notification_id, created_at, updated_at)
+   VALUES ('rem_one', 't_cascade', 1, '2026-10-05', '09:00', '2026-10-05T09:00:00+08:00', NULL, ?, ?)`,
+  '2026-10-06T00:00:00.000Z',
+  '2026-10-06T00:00:00.000Z',
+);
+let secondReminderRejected = false;
+try {
+  await adapter.runAsync(
+    `INSERT INTO reminders
+       (id, transaction_id, enabled, remind_date, remind_time, remind_at, notification_id, created_at, updated_at)
+     VALUES ('rem_two', 't_cascade', 1, '2026-10-05', '09:00', '2026-10-05T09:00:00+08:00', NULL, ?, ?)`,
+    '2026-10-06T00:00:00.000Z',
+    '2026-10-06T00:00:00.000Z',
+  );
+} catch {
+  secondReminderRejected = true;
+}
+check('a second reminder for one transaction is rejected', secondReminderRejected);
+
 let accountDeleteBlocked = false;
 try {
   await adapter.runAsync(`DELETE FROM accounts WHERE id = 'acc_bdo'`);
@@ -278,6 +337,8 @@ const afterCascade = await adapter.getFirstAsync(
   `SELECT COUNT(*) AS total FROM transactions WHERE budget_id = 'b_oct'`,
 );
 check('deleting a budget cascades to its transactions', afterCascade.total === 0, String(afterCascade.total));
+const afterReminderCascade = await adapter.getFirstAsync('SELECT COUNT(*) AS total FROM reminders');
+check('deleting a budget also removes its reminders', afterReminderCascade.total === 0, String(afterReminderCascade.total));
 
 console.log('\n--- storage adapter parity (sqlite vs memory) ---');
 
@@ -380,6 +441,108 @@ async function runScenario(store) {
   });
   snapshot.renamedTag = await store.getTag('p_tag');
 
+  // A repayment with an armed reminder: the Home money list and the launch
+  // resync both read these rows, so they must be identical on both engines.
+  await store.insertTransaction({
+    id: 'p_repay',
+    budget_id: 'p_budget',
+    type: 'expense',
+    amount: 50_000,
+    tag_id: 'p_tag',
+    account_id: null,
+    to_account_id: null,
+    description: 'John owes me',
+    transaction_date: '2026-10-06',
+    repayment_direction: 'owed_to_me',
+    repayment_status: 'pending',
+    due_date: '2026-10-20',
+    paid_at: null,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.pendingRepayments = await store.listRepayments({ status: 'pending' });
+  snapshot.paidRepaymentsBeforeSettlement = await store.listRepayments({ status: 'paid' });
+
+  await store.insertReminder({
+    id: 'p_reminder',
+    transaction_id: 'p_repay',
+    enabled: 1,
+    remind_date: '2026-10-19',
+    remind_time: '09:00',
+    remind_at: '2026-10-19T09:00:00+08:00',
+    notification_id: 'os-123',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.reminder = await store.getReminderByTransaction('p_repay');
+  snapshot.reminders = await store.listReminders();
+  snapshot.repaymentWithReminder = await store.getTransaction('p_repay');
+
+  // Rescheduling replaces the OS id in place — still one row per transaction.
+  await store.updateReminder({
+    id: 'p_reminder',
+    transaction_id: 'p_repay',
+    enabled: 1,
+    remind_date: '2026-10-19',
+    remind_time: '10:00',
+    remind_at: '2026-10-19T10:00:00+08:00',
+    notification_id: 'os-456',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.rescheduledReminder = await store.getReminderByTransaction('p_repay');
+
+  // Disabling keeps the row (and its date/time) but drops the notification id.
+  await store.updateReminder({
+    id: 'p_reminder',
+    transaction_id: 'p_repay',
+    enabled: 0,
+    remind_date: '2026-10-19',
+    remind_time: '10:00',
+    remind_at: '2026-10-19T10:00:00+08:00',
+    notification_id: null,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.disabledReminder = await store.getReminderByTransaction('p_repay');
+  snapshot.remindersWhileDisabled = await store.listReminders();
+
+  let duplicateReminderRejected = false;
+  try {
+    await store.insertReminder({
+      id: 'p_reminder_2',
+      transaction_id: 'p_repay',
+      enabled: 1,
+      remind_date: '2026-10-21',
+      remind_time: '09:00',
+      remind_at: '2026-10-21T09:00:00+08:00',
+      notification_id: null,
+      created_at: STAMP,
+      updated_at: STAMP,
+    });
+  } catch {
+    duplicateReminderRejected = true;
+  }
+  snapshot.duplicateReminderRejected = duplicateReminderRejected;
+
+  // Settling moves the entry out of the pending list without losing it.
+  await store.updateTransaction({
+    id: 'p_repay',
+    type: 'expense',
+    amount: 50_000,
+    tag_id: 'p_tag',
+    description: 'John owes me',
+    transaction_date: '2026-10-06',
+    repayment_direction: 'owed_to_me',
+    repayment_status: 'paid',
+    due_date: '2026-10-20',
+    paid_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.pendingAfterSettlement = await store.listRepayments({ status: 'pending' });
+  snapshot.paidAfterSettlement = await store.listRepayments({ status: 'paid' });
+  snapshot.settledTransaction = await store.getTransaction('p_repay');
+
   await store.deleteTag('p_tag');
   snapshot.tagAfterDelete = await store.getTag('p_tag');
   snapshot.transactionKeepsAmount = await store.getTransaction('p_expense');
@@ -387,6 +550,8 @@ async function runScenario(store) {
   snapshot.deletedBudgets = await store.deleteBudget('p_budget');
   snapshot.budgetAfterDelete = await store.getBudget('p_budget');
   snapshot.transactionsAfterDelete = await store.listTransactionsByBudget('p_budget');
+  snapshot.remindersAfterDelete = await store.listReminders();
+  snapshot.repaymentsAfterDelete = await store.listRepayments({ status: 'pending' });
 
   snapshot.schemaVersion = await store.getSchemaVersion();
 
@@ -407,7 +572,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 2);
+check('both adapters report the same schema version', LATEST_VERSION === 3);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -453,7 +618,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has one pending migration', pending.length === 1, String(pending.length));
+check('legacy database has two pending migrations', pending.length === 2, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -466,7 +631,7 @@ const legacyTables = legacyDb
 for (const removed of ['budget_categories', 'categories']) {
   check(`legacy table ${removed} was dropped`, !legacyTables.includes(removed));
 }
-for (const expected of ['accounts', 'budgets', 'settings', 'tags', 'transactions']) {
+for (const expected of ['accounts', 'budgets', 'reminders', 'settings', 'tags', 'transactions']) {
   check(`rebuilt table ${expected} exists`, legacyTables.includes(expected));
 }
 
@@ -648,6 +813,145 @@ check(
 check(
   'calendar weeks cover the same cells as the grid',
   octoberWeeks.flat().join('|') === octoberGrid.join('|'),
+);
+
+console.log('\n--- repayment rules ---');
+const pendingOwed = { repayment_direction: 'owed_to_me', repayment_status: 'pending', due_date: '2026-10-10' };
+const pendingOwing = { repayment_direction: 'owed_by_me', repayment_status: 'pending', due_date: '2026-10-10' };
+const settledRepayment = { ...pendingOwed, repayment_status: 'paid', paid_at: '2026-10-08T10:00:00.000Z' };
+const notARepayment = { repayment_direction: null, repayment_status: null, due_date: null };
+
+check(
+  'a pending repayment before its due date reads as pending',
+  computeRepaymentState(pendingOwed, new Date(2026, 9, 7)) === 'pending',
+);
+check(
+  'a pending repayment past its due date reads as overdue',
+  computeRepaymentState(pendingOwed, new Date(2026, 9, 11)) === 'overdue',
+);
+check(
+  'the due date itself is not yet overdue',
+  computeRepaymentState(pendingOwing, new Date(2026, 9, 10)) === 'pending',
+);
+check(
+  'a settled repayment stays paid however late the reference date',
+  computeRepaymentState(settledRepayment, new Date(2026, 9, 20)) === 'paid',
+);
+check(
+  'a transaction that is not a repayment has no state at all',
+  computeRepaymentState(notARepayment) === null,
+);
+check(
+  'transfers can never read as a repayment',
+  computeRepaymentState({ type: 'transfer', repayment_direction: null, repayment_status: null }) === null,
+);
+
+const unsortedRepayments = [
+  { id: 'late', due_date: '2026-10-25' },
+  { id: 'early', due_date: '2026-10-08' },
+  { id: 'mid', due_date: '2026-10-15' },
+];
+const sortedRepayments = sortRepayments(unsortedRepayments);
+check(
+  'repayments sort earliest due date first',
+  sortedRepayments.map((entry) => entry.id).join(',') === 'early,mid,late',
+  sortedRepayments.map((entry) => entry.id).join(','),
+);
+check(
+  'sorting leaves the caller\'s array untouched',
+  unsortedRepayments.map((entry) => entry.id).join(',') === 'late,early,mid',
+  unsortedRepayments.map((entry) => entry.id).join(','),
+);
+
+console.log('\n--- reminder rules ---');
+check(
+  'a real local date is accepted',
+  isValidLocalDate('2026-10-15') && !isValidLocalDate('2026-10-32') && !isValidLocalDate('Oct 15'),
+);
+check(
+  'a real 24-hour time is accepted',
+  isValidReminderTime('09:00') && isValidReminderTime('23:59') && !isValidReminderTime('9:00') && !isValidReminderTime('24:00'),
+);
+
+const remindAt = buildRemindAt('2026-10-15', '09:00');
+check(
+  'remind_at keeps the local wall-clock time with an offset',
+  remindAt.startsWith('2026-10-15T09:00:00') && !remindAt.endsWith('Z'),
+  remindAt,
+);
+check(
+  'the stored instant reads back as its own local date',
+  toIsoDate(remindAtDate(remindAt)) === '2026-10-15',
+  toIsoDate(remindAtDate(remindAt)),
+);
+check(
+  'an instant already behind us is past',
+  isRemindAtPast(buildRemindAt('2026-10-06', '09:00'), new Date(2026, 9, 7)) === true,
+);
+check(
+  'an instant still ahead is not past',
+  isRemindAtPast(buildRemindAt('2026-10-08', '09:00'), new Date(2026, 9, 7)) === false,
+);
+
+check(
+  'a future date and time passes validation',
+  reminderValidationError('2026-10-15', '09:00', new Date(2026, 9, 7)) === null,
+);
+check(
+  'a missing date is rejected',
+  reminderValidationError('', '09:00', new Date(2026, 9, 7)) === 'Pick a reminder date.',
+);
+check(
+  'a missing time is rejected',
+  reminderValidationError('2026-10-15', '', new Date(2026, 9, 7)) === 'Pick a reminder time.',
+);
+check(
+  'an instant in the past is rejected',
+  reminderValidationError('2026-10-06', '09:00', new Date(2026, 9, 7)) === 'Pick a time in the future.',
+);
+
+const freshSuggestion = suggestReminderValues({ dueDate: '2026-10-20', reference: new Date(2026, 9, 7) });
+check(
+  'a fresh reminder defaults to the due date at 9:00 AM',
+  freshSuggestion.date === '2026-10-20' && freshSuggestion.time === '09:00',
+  JSON.stringify(freshSuggestion),
+);
+const overdueSuggestion = suggestReminderValues({ dueDate: '2026-10-01', reference: new Date(2026, 9, 7) });
+check(
+  'a due date already behind us still yields a valid choice',
+  reminderValidationError(overdueSuggestion.date, overdueSuggestion.time, new Date(2026, 9, 7)) === null,
+  JSON.stringify(overdueSuggestion),
+);
+
+const owedCopy = buildReminderNotification({
+  transaction: { description: 'John', amount: 200_000, repayment_direction: 'owed_to_me', due_date: '2026-10-20' },
+  currency: 'PHP',
+  reference: new Date(2026, 9, 7),
+});
+check(
+  'owed copy names the person and the money',
+  owedCopy.body.includes('John') && owedCopy.body.includes('₱2,000.00'),
+  owedCopy.body,
+);
+const owingCopy = buildReminderNotification({
+  transaction: { description: 'Landlord', amount: 150_000, repayment_direction: 'owed_by_me', due_date: '2026-10-07' },
+  currency: 'PHP',
+  reference: new Date(2026, 9, 7),
+});
+check(
+  'owing copy says the money is due today',
+  owingCopy.body.includes('Landlord') && owingCopy.body.includes('today'),
+  owingCopy.body,
+);
+const plainCopy = buildReminderNotification({
+  transaction: { description: 'Lunch', amount: 150_000, repayment_direction: null, due_date: null },
+  currency: 'PHP',
+  reference: new Date(2026, 9, 7),
+});
+check(
+  'a plain entry makes no repayment claim',
+  !plainCopy.body.includes('owe') && plainCopy.body.includes('Lunch') && plainCopy.body.includes('₱1,500.00'),
+  plainCopy.body,
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

@@ -1,8 +1,9 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
 import { BudgetCard } from '../../components/budgets/BudgetCard';
+import { RepaymentRow } from '../../components/repayments/RepaymentRow';
 import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Fab } from '../../components/ui/Fab';
@@ -10,6 +11,7 @@ import { Screen, ScreenTitle, SectionHeader } from '../../components/ui/Screen';
 import { Text } from '../../components/ui/Text';
 import { useTheme } from '../../components/ui/ThemeProvider';
 import { useBudgetsStore } from '../../stores/budgetsStore';
+import { useRepaymentsStore } from '../../stores/repaymentsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 export default function HomeScreen() {
@@ -18,12 +20,55 @@ export default function HomeScreen() {
   const isLoading = useBudgetsStore((state) => state.isLoading);
   const load = useBudgetsStore((state) => state.load);
   const currency = useSettingsStore((state) => state.currency);
+  const repayments = useRepaymentsStore((state) => state.pending);
+  const loadRepayments = useRepaymentsStore((state) => state.load);
+  const markPaid = useRepaymentsStore((state) => state.markPaid);
+  const [settlingId, setSettlingId] = useState(null);
 
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      loadRepayments();
+    }, [load, loadRepayments]),
   );
+
+  // Money owed to me first, then money I owe — both earliest due date first,
+  // both derived from the same pending rows the budget screens use.
+  const owedToMe = repayments.filter((entry) => entry.repayment_direction === 'owed_to_me');
+  const owedByMe = repayments.filter((entry) => entry.repayment_direction === 'owed_by_me');
+
+  function openRepayment(transaction) {
+    router.push({
+      pathname: '/transaction/form',
+      params: { budgetId: transaction.budget_id, transactionId: transaction.id },
+    });
+  }
+
+  async function handleMarkPaid(transaction) {
+    setSettlingId(transaction.id);
+    try {
+      await markPaid(transaction.id);
+    } catch (error) {
+      Alert.alert('Could not update', error?.message ?? 'Please try again.');
+    } finally {
+      setSettlingId(null);
+    }
+  }
+
+  function renderMoneyList(rows) {
+    return rows.map((transaction, index) => (
+      <RepaymentRow
+        key={transaction.id}
+        transaction={transaction}
+        budgetName={transaction.budget_name}
+        currency={currency}
+        onOpen={openRepayment}
+        onMarkPaid={handleMarkPaid}
+        busy={settlingId === transaction.id}
+        isLast={index === rows.length - 1}
+      />
+    ));
+  }
 
   return (
     <View style={styles.fill}>
@@ -59,6 +104,20 @@ export default function HomeScreen() {
             />
           ))
         )}
+
+        {owedToMe.length > 0 ? (
+          <View style={{ marginTop: spacing.lg }}>
+            <SectionHeader title={`Money Owed · ${owedToMe.length}`} />
+            {renderMoneyList(owedToMe)}
+          </View>
+        ) : null}
+
+        {owedByMe.length > 0 ? (
+          <View style={{ marginTop: spacing.lg }}>
+            <SectionHeader title={`Money Due · ${owedByMe.length}`} />
+            {renderMoneyList(owedByMe)}
+          </View>
+        ) : null}
       </Screen>
 
       <Fab onPress={() => router.push('/budget/form')} accessibilityLabel="Create budget" />

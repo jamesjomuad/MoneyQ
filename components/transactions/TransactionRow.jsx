@@ -4,8 +4,9 @@ import { Icon } from '../ui/Icon';
 import { TagBadge } from '../ui/TagBadge';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
+import { computeRepaymentState } from '../../utils/calculations';
 import { formatCurrency } from '../../utils/currency';
-import { dayLabel } from '../../utils/dates';
+import { dayLabel, formatShortDate } from '../../utils/dates';
 
 /**
  * One transaction in a budget. Transfers are shown without a tag and with a
@@ -23,9 +24,27 @@ export function TransactionRow({ transaction, tag, currency, onEdit, onDelete, i
   const title =
     transaction.description ||
     (transaction.type === 'transfer' ? 'Transfer' : tag?.name ?? 'Transaction');
-  const subtitle = transaction.type === 'transfer'
-    ? dayLabel(transaction.transaction_date)
-    : [tag?.name, dayLabel(transaction.transaction_date)].filter(Boolean).join(' · ');
+
+  // Status markers ride on the second line: settlement state first (it is the
+  // thing that can go wrong), then whether a reminder is armed.
+  const state = computeRepaymentState(transaction);
+  const hasReminder = transaction.reminder?.enabled === 1;
+  const subtitleParts =
+    transaction.type === 'transfer'
+      ? [dayLabel(transaction.transaction_date)]
+      : [
+          tag?.name,
+          dayLabel(transaction.transaction_date),
+          state ? repaymentMarker(state, transaction.due_date) : null,
+          hasReminder ? '🔔' : null,
+        ];
+  const subtitle = subtitleParts.filter(Boolean).join(' · ');
+  const a11ySuffix = [
+    state === 'paid' ? 'paid' : state === 'overdue' ? 'overdue' : state ? 'payment pending' : null,
+    hasReminder ? 'reminder set' : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <View
@@ -43,7 +62,7 @@ export function TransactionRow({ transaction, tag, currency, onEdit, onDelete, i
           nested pressables render as buttons inside buttons on web. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Edit ${title}`}
+        accessibilityLabel={`Edit ${title}${a11ySuffix ? `, ${a11ySuffix}` : ''}`}
         onPress={onEdit ? () => onEdit(transaction) : undefined}
         disabled={!onEdit}
         style={({ pressed }) => [
@@ -91,6 +110,12 @@ export function TransactionRow({ transaction, tag, currency, onEdit, onDelete, i
       ) : null}
     </View>
   );
+}
+
+function repaymentMarker(state, dueDate) {
+  if (state === 'paid') return '🟢 Paid';
+  if (state === 'overdue') return `🔴 Overdue · Due ${formatShortDate(dueDate)}`;
+  return `🔵 Due ${formatShortDate(dueDate)}`;
 }
 
 const styles = StyleSheet.create({

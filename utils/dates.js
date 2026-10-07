@@ -173,6 +173,20 @@ export function formatShortDate(isoDate) {
   return formatDate(isoDate, { style: 'short' });
 }
 
+/**
+ * '9:00 AM' from a stored 24-hour 'HH:MM' value. Anything that is not a real
+ * time is passed through untouched so a broken value never renders 'NaN'.
+ */
+export function formatTime(hhmm) {
+  const raw = String(hhmm ?? '');
+  const match = raw.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return raw;
+  const hour = Number(match[1]);
+  const suffix = hour < 12 ? 'AM' : 'PM';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${match[2]} ${suffix}`;
+}
+
 /** 'Oct 1 – Oct 31, 2026', falling back to two full dates across a year break. */
 export function formatDateRange(startIso, endIso) {
   const start = parseIsoDate(startIso);

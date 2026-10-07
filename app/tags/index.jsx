@@ -1,16 +1,16 @@
-import { Stack, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Stack, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 
-import { TagForm } from '../../components/tags/TagForm';
-import { EmptyState } from '../../components/ui/EmptyState';
-import { Fab } from '../../components/ui/Fab';
-import { Icon } from '../../components/ui/Icon';
-import { Screen, SectionHeader } from '../../components/ui/Screen';
-import { TagBadge } from '../../components/ui/TagBadge';
-import { Text } from '../../components/ui/Text';
-import { useTheme } from '../../components/ui/ThemeProvider';
-import { useTagsStore } from '../../stores/tagsStore';
+import { TagForm } from "../../components/tags/TagForm";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Fab } from "../../components/ui/Fab";
+import { Icon } from "../../components/ui/Icon";
+import { Screen, SectionHeader } from "../../components/ui/Screen";
+import { TagBadge } from "../../components/ui/TagBadge";
+import { Text } from "../../components/ui/Text";
+import { useTheme } from "../../components/ui/ThemeProvider";
+import { useTagsStore } from "../../stores/tagsStore";
 
 export default function TagsScreen() {
   const { colors, radius, spacing } = useTheme();
@@ -50,7 +50,7 @@ export default function TagsScreen() {
       setFormOpen(false);
       setEditing(null);
     } catch (error) {
-      Alert.alert('Could not save tag', error?.message ?? 'Please try again.');
+      Alert.alert("Could not save tag", error?.message ?? "Please try again.");
     } finally {
       setSaving(false);
     }
@@ -61,18 +61,21 @@ export default function TagsScreen() {
       Alert.alert(
         `Delete ${tag.name}?`,
         usage > 0
-          ? `${usage} transaction${usage === 1 ? '' : 's'} will keep their amount but lose this tag.`
-          : 'No transactions use this tag.',
+          ? `${usage} transaction${usage === 1 ? "" : "s"} will keep their amount but lose this tag.`
+          : "No transactions use this tag.",
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: "Cancel", style: "cancel" },
           {
-            text: 'Delete',
-            style: 'destructive',
+            text: "Delete",
+            style: "destructive",
             onPress: async () => {
               try {
                 await removeTag(tag.id);
               } catch (error) {
-                Alert.alert('Could not delete tag', error?.message ?? 'Please try again.');
+                Alert.alert(
+                  "Could not delete tag",
+                  error?.message ?? "Please try again.",
+                );
               }
             },
           },
@@ -83,11 +86,11 @@ export default function TagsScreen() {
 
   return (
     <View style={styles.fill}>
-      <Stack.Screen options={{ title: 'Tags' }} />
-
+      <Stack.Screen options={{ title: "Tags" }} />
       <Screen contentContainerStyle={{ paddingBottom: 96 }}>
         <Text variant="body" tone="muted" style={{ marginBottom: spacing.lg }}>
-          One shared library for every budget. Tap a tag to rename it or change its colour.
+          One shared library for every budget. Tap a tag to rename it or change
+          its colour.
         </Text>
 
         {formOpen ? (
@@ -106,7 +109,11 @@ export default function TagsScreen() {
           title={`All Tags · ${tags.length}`}
           action={
             !formOpen && tags.length > 0 ? (
-              <Pressable accessibilityRole="button" onPress={openCreate} hitSlop={8}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={openCreate}
+                hitSlop={8}
+              >
                 <Text variant="label" tone="primary">
                   Add tag
                 </Text>
@@ -125,7 +132,11 @@ export default function TagsScreen() {
             title="No tags yet"
             description="Add tags such as Household, Car or Daily Expenses so transactions can be grouped by what they were for."
           >
-            <Pressable accessibilityRole="button" onPress={openCreate} hitSlop={8}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={openCreate}
+              hitSlop={8}
+            >
               <Text variant="heading" tone="primary">
                 Add your first tag
               </Text>
@@ -151,7 +162,10 @@ export default function TagsScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Rename ${tag.name}`}
                 onPress={() => openEdit(tag)}
-                style={({ pressed }) => [styles.rowMain, pressed && { opacity: 0.7 }]}
+                style={({ pressed }) => [
+                  styles.rowMain,
+                  pressed && { opacity: 0.7 },
+                ]}
               >
                 <TagBadge tag={tag} />
               </Pressable>
@@ -162,7 +176,9 @@ export default function TagsScreen() {
                   accessibilityLabel={`Edit ${tag.name}`}
                   onPress={() => openEdit(tag)}
                   hitSlop={8}
-                  style={({ pressed }) => [{ padding: 4, opacity: pressed ? 0.6 : 1 }]}
+                  style={({ pressed }) => [
+                    { padding: 4, opacity: pressed ? 0.6 : 1 },
+                  ]}
                 >
                   <Icon name="pencil" size={17} color={colors.textMuted} />
                 </Pressable>
@@ -171,7 +187,9 @@ export default function TagsScreen() {
                   accessibilityLabel={`Delete ${tag.name}`}
                   onPress={() => confirmDelete(tag)}
                   hitSlop={8}
-                  style={({ pressed }) => [{ padding: 4, opacity: pressed ? 0.6 : 1 }]}
+                  style={({ pressed }) => [
+                    { padding: 4, opacity: pressed ? 0.6 : 1 },
+                  ]}
                 >
                   <Icon name="trash" size={17} color={colors.expense} />
                 </Pressable>
@@ -181,12 +199,16 @@ export default function TagsScreen() {
         )}
 
         {tags.length > 0 ? (
-          <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
-            Deleting a tag keeps its transactions; only the tag reference is cleared.
+          <Text
+            variant="caption"
+            tone="faint"
+            style={{ marginTop: spacing.sm }}
+          >
+            Deleting a tag keeps its transactions; only the tag reference is
+            cleared.
           </Text>
         ) : null}
       </Screen>
-
       {!formOpen ? (
         <Fab onPress={openCreate} accessibilityLabel="Add tag" />
       ) : null}
@@ -197,9 +219,9 @@ export default function TagsScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   row: {
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
+    flexDirection: "row",
   },
   rowMain: {
     flex: 1,
@@ -208,8 +230,8 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   rowActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
   },
 });

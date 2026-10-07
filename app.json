@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.moneyq.app",
+      "permissions": ["android.permission.SCHEDULE_EXACT_ALARM"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -35,7 +36,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "color": "#0F6B4B"
+        }
+      ]
     ],
     "extra": {
       "router": {},

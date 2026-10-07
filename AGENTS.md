@@ -5,7 +5,7 @@ This is an Expo/React Native mobile application. Prioritize mobile-first pattern
 - **JavaScript + ESM only.** No TypeScript anywhere: JSX screens are `.jsx`, pure logic is `.js`. Do not add `tsconfig`, do not run `tsc`, do not write `.tsx`.
 - **npm project** (`package-lock.json` present) → use `npx`, not `bunx`.
 - **No backend.** No API, auth, cloud database or sync. Everything is local to the device.
-- **No lint tooling yet.** `npx expo lint` would install ESLint and its dependencies, which the project deliberately avoids. Do not add linters or other tooling unless asked.
+- **Linting.** `npm run lint` runs ESLint (`eslint-config-expo`); clean on last check. `npx expo lint` also works.
 
 ## Expo has changed — do not trust your training data
 
@@ -27,7 +27,7 @@ npx expo-doctor                     # dependency and config issues
 npx expo install --fix              # fix incompatible package versions
 npx expo export --platform android  # production bundle — use to prove native still builds
 npx expo export --platform web      # web bundle — use to prove web still builds
-npx expo lint                       # NOT installed; would prompt to add dependencies
+npx expo lint                       # runs ESLint; clean
 ```
 
 ## Architecture
@@ -81,7 +81,7 @@ storage/
 Run and report all four:
 
 ```bash
-npm run verify:db      # must be 48/48 or better
+npm run verify:db      # must be 122/122 or better
 npx expo-doctor        # must be 21/21
 npx expo export --platform android
 npx expo export --platform web

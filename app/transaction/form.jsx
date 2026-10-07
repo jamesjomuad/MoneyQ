@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, View } from 'react-native';
 
 import { DatePicker } from '../../components/dates/DatePicker';
 import { AmountInput } from '../../components/ui/AmountInput';
@@ -12,11 +12,16 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { Text } from '../../components/ui/Text';
 import { TextField } from '../../components/ui/TextField';
 import { useTheme } from '../../components/ui/ThemeProvider';
+import { ReminderFields } from '../../components/reminders/ReminderFields';
+import { RepaymentFields } from '../../components/repayments/RepaymentFields';
 import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
+import { useRemindersStore } from '../../stores/remindersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
+import { computeRepaymentState } from '../../utils/calculations';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
 import { parseFlexibleDate, toIsoDate } from '../../utils/dates';
+import { isValidLocalDate, reminderValidationError, suggestReminderValues } from '../../utils/reminders';
 
 const TYPE_OPTIONS = [
   { value: 'expense', label: 'Expense' },
@@ -43,7 +48,13 @@ export default function TransactionFormScreen() {
   const loadTags = useTagsStore((state) => state.load);
   const addTransaction = useBudgetDetailStore((state) => state.addTransaction);
   const updateTransaction = useBudgetDetailStore((state) => state.updateTransaction);
+  const setRepayment = useBudgetDetailStore((state) => state.setRepayment);
   const entries = useBudgetDetailStore((state) => state.entries);
+  const storeBudgetId = useBudgetDetailStore((state) => state.budgetId);
+  const isLoadingBudget = useBudgetDetailStore((state) => state.isLoading);
+  const loadBudget = useBudgetDetailStore((state) => state.load);
+  const refreshPermission = useRemindersStore((state) => state.refreshPermission);
+  const permission = useRemindersStore((state) => state.permission);
 
   const budgetId = typeof params.budgetId === 'string' ? params.budgetId : '';
   const preselectedTagId = typeof params.tagId === 'string' ? params.tagId : '';
@@ -58,13 +69,38 @@ export default function TransactionFormScreen() {
   const [date, setDate] = useState(() => toIsoDate(new Date()));
   const [description, setDescription] = useState('');
   const [query, setQuery] = useState('');
+  const [direction, setDirection] = useState(null);
+  const [dueDate, setDueDate] = useState(() => toIsoDate(new Date()));
+  const [reminderOn, setReminderOn] = useState(false);
+  const [reminderDate, setReminderDate] = useState('');
+  const [reminderTime, setReminderTime] = useState('');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [settling, setSettling] = useState(false);
   const [hydratedFrom, setHydratedFrom] = useState(null);
 
   useEffect(() => {
     loadTags();
   }, [loadTags]);
+
+  useEffect(() => {
+    refreshPermission();
+  }, [refreshPermission]);
+
+  // A transaction can be opened without its budget screen in front of it —
+  // from Home's money list or from a tapped notification — so make sure the
+  // store actually holds this entry before deciding it is missing.
+  const loadRequestedFor = useRef(null);
+  useEffect(() => {
+    if (!transactionId || !budgetId) return;
+    if (storeBudgetId === budgetId && entries.some((entry) => entry.id === transactionId)) return;
+    // A ref, not state: the guard must not trigger a render of its own, and
+    // it is keyed so opening a second entry still asks the store for it.
+    const key = `${budgetId}:${transactionId}`;
+    if (loadRequestedFor.current === key) return;
+    loadRequestedFor.current = key;
+    loadBudget(budgetId);
+  }, [transactionId, budgetId, storeBudgetId, entries, loadBudget]);
 
   // Seed the form from the stored row while rendering: the modal opens over
   // the budget detail screen, whose store already holds the entry. React
@@ -77,6 +113,11 @@ export default function TransactionFormScreen() {
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
     setDescription(editing.description ?? '');
+    setDirection(editing.repayment_direction ?? null);
+    setDueDate(editing.due_date ?? editing.transaction_date);
+    setReminderOn(editing.reminder?.enabled === 1);
+    setReminderDate(editing.reminder?.remind_date ?? '');
+    setReminderTime(editing.reminder?.remind_time ?? '');
   }
 
   // Transfers have no creation UI yet, but an existing one must stay editable.
@@ -96,6 +137,42 @@ export default function TransactionFormScreen() {
     return tags.filter((tag) => tag.name.toLowerCase().includes(needle));
   }, [tags, query]);
 
+  const stillLoading = Boolean(transactionId) && (isLoadingBudget || storeBudgetId !== budgetId);
+  const repaymentState = editing ? computeRepaymentState(editing) : null;
+
+  function handleReminderToggle(next) {
+    setReminderOn(next);
+    if (!next) return;
+    // Only seed a first choice; an edited reminder keeps what it already has.
+    const suggestion = suggestReminderValues({ dueDate: direction ? dueDate : null });
+    setReminderDate((current) => current || suggestion.date);
+    setReminderTime((current) => current || suggestion.time);
+  }
+
+  function openDeviceSettings() {
+    if (Platform.OS !== 'web') Linking.openSettings();
+  }
+
+  /** The device cannot deliver a reminder — never a reason to lose the save. */
+  function announceReminderOutcome(outcome) {
+    if (!outcome) return;
+    if (outcome.status === 'blocked') {
+      Alert.alert(
+        'Notifications are off',
+        'Your reminder is saved, but MoneyQ cannot show it until notifications are allowed for this app.',
+        [
+          { text: 'Open Settings', onPress: openDeviceSettings },
+          { text: 'Not now', style: 'cancel' },
+        ],
+      );
+    } else if (outcome.status === 'failed') {
+      Alert.alert(
+        'Reminder saved',
+        'The notification could not be scheduled. MoneyQ will try again the next time it opens.',
+      );
+    }
+  }
+
   async function handleSave() {
     const nextErrors = {};
     const resolvedDate = parseFlexibleDate(date);
@@ -104,6 +181,11 @@ export default function TransactionFormScreen() {
     if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
     if (type !== 'transfer' && !tagId) nextErrors.tag = 'Choose a tag.';
     if (!resolvedDate) nextErrors.date = 'Pick a date.';
+    if (direction && !isValidLocalDate(dueDate)) nextErrors.dueDate = 'Pick a due date.';
+    if (reminderOn) {
+      const reminderError = reminderValidationError(reminderDate, reminderTime);
+      if (reminderError) nextErrors.reminder = reminderError;
+    }
 
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -113,30 +195,41 @@ export default function TransactionFormScreen() {
     setErrors({});
     setSaving(true);
 
+    const payload = {
+      type,
+      amount: minorAmount,
+      tagId,
+      description: description.trim() || null,
+      date: resolvedDate,
+      repaymentDirection: type === 'transfer' ? null : direction || null,
+      dueDate: direction ? dueDate : null,
+      reminder: {
+        enabled: reminderOn,
+        date: reminderDate,
+        time: reminderTime,
+      },
+    };
+
     try {
-      if (transactionId) {
-        await updateTransaction({
-          id: transactionId,
-          type,
-          amount: minorAmount,
-          tagId,
-          description: description.trim() || null,
-          date: resolvedDate,
-        });
-      } else {
-        await addTransaction({
-          budgetId,
-          type,
-          amount: minorAmount,
-          tagId,
-          description: description.trim() || null,
-          date: resolvedDate,
-        });
-      }
+      const result = transactionId
+        ? await updateTransaction({ id: transactionId, ...payload })
+        : await addTransaction({ budgetId, ...payload });
       router.back();
+      announceReminderOutcome(result?.reminder);
     } catch (error) {
       setSaving(false);
       Alert.alert('Could not save', error?.message ?? 'Please try again.');
+    }
+  }
+
+  async function handleSetRepayment(status) {
+    setSettling(true);
+    try {
+      await setRepayment(transactionId, status);
+    } catch (error) {
+      Alert.alert('Could not update', error?.message ?? 'Please try again.');
+    } finally {
+      setSettling(false);
     }
   }
 
@@ -150,6 +243,17 @@ export default function TransactionFormScreen() {
         >
           <Button label="Back to Home" onPress={() => router.replace('/')} />
         </EmptyState>
+      </View>
+    );
+  }
+
+  if (transactionId && !editing && stillLoading) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+        <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
+          Opening transaction…
+        </Text>
       </View>
     );
   }
@@ -278,11 +382,48 @@ export default function TransactionFormScreen() {
           returnKeyType="done"
         />
 
+        {type !== 'transfer' ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <RepaymentFields
+              direction={direction}
+              onDirectionChange={(next) => {
+                setDirection(next);
+                if (next && !isValidLocalDate(dueDate)) setDueDate(date);
+              }}
+              dueDate={dueDate}
+              onDueDateChange={setDueDate}
+              errors={errors}
+              state={repaymentState}
+              paidAt={editing?.paid_at}
+              isExisting={Boolean(transactionId)}
+              busy={settling}
+              onMarkPaid={() => handleSetRepayment('paid')}
+              onMarkUnpaid={() => handleSetRepayment('pending')}
+            />
+          </>
+        ) : null}
+
+        <View style={{ height: spacing.lg }} />
+
+        <ReminderFields
+          enabled={reminderOn}
+          onEnabledChange={handleReminderToggle}
+          date={reminderDate}
+          onDateChange={setReminderDate}
+          time={reminderTime}
+          onTimeChange={setReminderTime}
+          error={errors.reminder}
+          permission={permission}
+          isSettled={repaymentState === 'paid'}
+          onOpenSettings={openDeviceSettings}
+        />
+
         <View style={{ height: spacing.sm }} />
         <Button
           label={saving ? 'Saving…' : transactionId ? 'Save changes' : 'Add transaction'}
           onPress={handleSave}
-          disabled={saving}
+          disabled={saving || settling}
         />
       </Screen>
     </View>

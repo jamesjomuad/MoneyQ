@@ -10,7 +10,8 @@
 
 import { DEFAULT_TAGS } from '../../constants/finance';
 import { createId, nowIso } from '../../utils/id';
-import { suggestBudgetDates, toIsoDate } from '../../utils/dates';
+import { suggestBudgetDates, toIsoDate, addDaysIso } from '../../utils/dates';
+import { buildRemindAt } from '../../utils/reminders';
 import { LATEST_VERSION } from '../database/migrations';
 
 export function createMemoryAdapter({ seedDemo = false } = {}) {
@@ -18,6 +19,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     budgets: [],
     tags: [],
     transactions: [],
+    reminders: [],
     settings: new Map(),
   };
 
@@ -81,13 +83,19 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       if (index >= 0) store.budgets[index] = { ...store.budgets[index], ...row };
     },
 
-    /** Mirrors `ON DELETE CASCADE` on transactions. */
+    /** Mirrors `ON DELETE CASCADE` on transactions (and their reminders). */
     async deleteBudget(id) {
       const before = store.budgets.length;
       store.budgets = store.budgets.filter((budget) => budget.id !== id);
       const removed = before - store.budgets.length;
+      const doomed = new Set(
+        store.transactions.filter((transaction) => transaction.budget_id === id).map((t) => t.id),
+      );
       store.transactions = store.transactions.filter(
         (transaction) => transaction.budget_id !== id,
+      );
+      store.reminders = store.reminders.filter(
+        (reminder) => !doomed.has(reminder.transaction_id),
       );
       return removed;
     },
@@ -148,7 +156,15 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async insertTransaction(row) {
-      store.transactions.push({ ...row });
+      // SQLite always writes every repayment column (NULL when unset), so the
+      // in-memory row must carry the same keys or the parity comparison fails.
+      store.transactions.push({
+        repayment_direction: null,
+        repayment_status: null,
+        due_date: null,
+        paid_at: null,
+        ...row,
+      });
     },
 
     async updateTransaction(row) {
@@ -159,6 +175,10 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       existing.tag_id = row.tag_id ?? null;
       existing.description = row.description ?? null;
       existing.transaction_date = row.transaction_date;
+      existing.repayment_direction = row.repayment_direction ?? null;
+      existing.repayment_status = row.repayment_status ?? null;
+      existing.due_date = row.due_date ?? null;
+      existing.paid_at = row.paid_at ?? null;
       existing.updated_at = row.updated_at;
       return 1;
     },
@@ -166,7 +186,79 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     async deleteTransaction(id) {
       const before = store.transactions.length;
       store.transactions = store.transactions.filter((transaction) => transaction.id !== id);
+      store.reminders = store.reminders.filter((reminder) => reminder.transaction_id !== id);
       return before - store.transactions.length;
+    },
+
+    /** Pending repayments across every budget, earliest due date first. */
+    async listRepayments({ status = 'pending' } = {}) {
+      return store.transactions
+        .filter(
+          (transaction) =>
+            transaction.repayment_direction != null && transaction.repayment_status === status,
+        )
+        .sort(
+          (a, b) =>
+            String(a.due_date ?? '').localeCompare(String(b.due_date ?? '')) ||
+            a.created_at.localeCompare(b.created_at),
+        )
+        .map((transaction) => {
+          // Same projection as the SQLite join: budget name + reminder flag.
+          const budget = store.budgets.find((b) => b.id === transaction.budget_id);
+          const reminder = store.reminders.find(
+            (r) => r.transaction_id === transaction.id,
+          );
+          return {
+            ...copy(transaction),
+            budget_name: budget?.name ?? null,
+            reminder_enabled: reminder?.enabled ?? 0,
+            reminder_at: reminder?.remind_at ?? null,
+          };
+        });
+    },
+
+    // --- reminders -----------------------------------------------------
+
+    /** Same projection as the SQLite join: reminder row + transaction fields. */
+    async listReminders() {
+      return store.reminders
+        .map((reminder) => {
+          const transaction = store.transactions.find((tx) => tx.id === reminder.transaction_id);
+          if (!transaction) return null;
+          return {
+            ...reminder,
+            budget_id: transaction.budget_id,
+            amount: transaction.amount,
+            description: transaction.description ?? null,
+            transaction_date: transaction.transaction_date,
+            repayment_direction: transaction.repayment_direction ?? null,
+            repayment_status: transaction.repayment_status ?? null,
+            due_date: transaction.due_date ?? null,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
+    },
+
+    async getReminderByTransaction(transactionId) {
+      return copy(
+        store.reminders.find((reminder) => reminder.transaction_id === transactionId) ?? null,
+      );
+    },
+
+    async insertReminder(row) {
+      // The UNIQUE (transaction_id) constraint lives in the schema on SQLite;
+      // mirror it here so both adapters reject a second reminder the same way.
+      if (store.reminders.some((reminder) => reminder.transaction_id === row.transaction_id)) {
+        throw new Error('UNIQUE constraint failed: reminders.transaction_id');
+      }
+      store.reminders.push({ ...row });
+    },
+
+    async updateReminder(row) {
+      const index = store.reminders.findIndex((reminder) => reminder.id === row.id);
+      if (index >= 0) store.reminders[index] = { ...store.reminders[index], ...row };
+      return index >= 0 ? 1 : 0;
     },
 
     // --- settings ------------------------------------------------------
@@ -242,6 +334,48 @@ function seedDemoData(store, timestamp) {
 
   store.transactions.push(...transactions);
 
+  // One receivable with a reminder, so the browser harness shows the money
+  // owed list and the reminder editor populated instead of always empty.
+  const dueDate = addDaysIso(today, 10);
+  store.tags.push({
+    id: 'demo_tag_lent',
+    name: 'Money Lent',
+    emoji: '🤝',
+    color: '#1F5FA8',
+    is_default: 0,
+    archived: 0,
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+  store.transactions.push({
+    id: 'demo_tx_lent',
+    budget_id: budgets[0].id,
+    type: 'expense',
+    amount: 200_000, // ₱2,000.00
+    tag_id: 'demo_tag_lent',
+    account_id: null,
+    to_account_id: null,
+    description: 'John',
+    transaction_date: today,
+    repayment_direction: 'owed_to_me',
+    repayment_status: 'pending',
+    due_date: dueDate,
+    paid_at: null,
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+  store.reminders.push({
+    id: 'demo_reminder_lent',
+    transaction_id: 'demo_tx_lent',
+    enabled: 1,
+    remind_date: dueDate,
+    remind_time: '09:00',
+    remind_at: buildRemindAt(dueDate, '09:00'),
+    notification_id: null,
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+
   function tx(budget, type, amount, tagId, description, date) {
     return {
       id: createId('tx'),
@@ -253,6 +387,10 @@ function seedDemoData(store, timestamp) {
       to_account_id: null,
       description,
       transaction_date: date,
+      repayment_direction: null,
+      repayment_status: null,
+      due_date: null,
+      paid_at: null,
       created_at: timestamp,
       updated_at: timestamp,
     };

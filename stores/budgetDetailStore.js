@@ -1,19 +1,30 @@
 import { create } from 'zustand';
 
 import { getBudget } from '../storage/repositories/budgetRepository';
+import { getReminders } from '../storage/repositories/reminderRepository';
 import { getTags } from '../storage/repositories/tagRepository';
 import {
   createTransaction,
   deleteTransaction,
   getTransactionsForBudget,
+  setRepaymentStatus,
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
+import {
+  applyReminder,
+  cancelScheduledReminder,
+  scheduleSavedReminder,
+} from '../services/reminderService';
 import { computeSpendByTag, computeTotals } from '../utils/calculations';
 
 /**
  * State for a single opened Budget. The repository returns raw rows and this
  * store reduces them with the shared rules in utils/calculations.js, so the
  * summary and the per-tag breakdown can never disagree with each other.
+ *
+ * Reminder rows ride along on each entry (`entry.reminder`) so the form and
+ * the transaction list read one consistent snapshot; scheduling itself stays
+ * in the reminder service, never in a screen.
  */
 export const useBudgetDetailStore = create((set, get) => ({
   budgetId: null,
@@ -35,10 +46,11 @@ export const useBudgetDetailStore = create((set, get) => ({
     set({ isLoading: true, error: null, activeTagId });
 
     try {
-      const [budget, tags, entries] = await Promise.all([
+      const [budget, tags, entries, reminders] = await Promise.all([
         getBudget(budgetId),
         getTags(),
         getTransactionsForBudget(budgetId),
+        getReminders(),
       ]);
 
       if (!budget) {
@@ -46,13 +58,23 @@ export const useBudgetDetailStore = create((set, get) => ({
         return;
       }
 
+      const reminderByTransaction = new Map(
+        reminders.map((reminder) => [reminder.transaction_id, reminder]),
+      );
+      const hydrated = entries.map((entry) => ({
+        ...entry,
+        reminder: reminderByTransaction.get(entry.id) ?? null,
+      }));
+
       set({
         budgetId,
         budget,
-        summary: computeTotals(entries),
-        tagSummaries: computeSpendByTag(entries, tags),
-        entries,
-        transactions: activeTagId ? entries.filter((entry) => entry.tag_id === activeTagId) : entries,
+        summary: computeTotals(hydrated),
+        tagSummaries: computeSpendByTag(hydrated, tags),
+        entries: hydrated,
+        transactions: activeTagId
+          ? hydrated.filter((entry) => entry.tag_id === activeTagId)
+          : hydrated,
         isLoading: false,
       });
     } catch (error) {
@@ -68,19 +90,52 @@ export const useBudgetDetailStore = create((set, get) => ({
     });
   },
 
+  /**
+   * Saves the transaction first and its reminder second, so a notification
+   * problem can never lose the financial record. Returns the reminder outcome
+   * for the form to explain (permission denied, browser preview, …).
+   */
   addTransaction: async (input) => {
-    await createTransaction(input);
-    await get().load(get().budgetId);
+    const transaction = await createTransaction(input);
+    const reminder =
+      input.reminder === undefined
+        ? null
+        : await applyReminder({ transaction, reminder: input.reminder });
+    await get().load(get().budgetId ?? transaction.budget_id);
+    return { transaction, reminder };
   },
 
   updateTransaction: async (input) => {
-    await updateTransaction(input.id, input);
+    const transaction = await updateTransaction(input.id, input);
+    const reminder =
+      input.reminder === undefined
+        ? null
+        : await applyReminder({ transaction, reminder: input.reminder });
     await get().load(get().budgetId);
+    return { transaction, reminder };
   },
 
   removeTransaction: async (transactionId) => {
+    // The row cascades away with its reminder; the OS notification must be
+    // cancelled explicitly, or a deleted entry would still speak up.
+    await cancelScheduledReminder(transactionId);
     await deleteTransaction(transactionId);
     await get().load(get().budgetId);
+  },
+
+  /**
+   * Settling a repayment is an explicit user action that also stops its
+   * reminder; switching it back to unpaid offers the reminder again.
+   */
+  setRepayment: async (transactionId, status) => {
+    const transaction = await setRepaymentStatus(transactionId, status);
+    if (status === 'paid') {
+      await cancelScheduledReminder(transactionId);
+    } else {
+      await scheduleSavedReminder(transactionId);
+    }
+    await get().load(get().budgetId);
+    return transaction;
   },
 
   refresh: async () => {

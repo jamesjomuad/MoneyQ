@@ -6,6 +6,27 @@ export const TRANSACTION_TYPE_LABELS = {
   transfer: 'Transfer',
 };
 
+/**
+ * Repayments describe money that is owed rather than new money movement:
+ * `owed_to_me` is a receivable (someone pays the user back), `owed_by_me` is
+ * a payable (the user owes someone). A NULL direction means the transaction is
+ * not a repayment at all.
+ */
+export const REPAYMENT_DIRECTIONS = ['owed_to_me', 'owed_by_me'];
+
+export const REPAYMENT_DIRECTION_LABELS = {
+  none: 'Not a repayment',
+  owed_to_me: 'Owed to me',
+  owed_by_me: 'I owe',
+};
+
+export const REPAYMENT_STATUSES = ['pending', 'paid'];
+
+export const REPAYMENT_STATUS_LABELS = {
+  pending: 'Payment Pending',
+  paid: 'Paid',
+};
+
 export const ACCOUNT_TYPES = ['cash', 'bank', 'ewallet', 'credit_card', 'savings'];
 
 export const ACCOUNT_TYPE_LABELS = {

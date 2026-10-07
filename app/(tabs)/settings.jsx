@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { Card } from '../../components/ui/Card';
 import { Icon } from '../../components/ui/Icon';
@@ -10,6 +10,7 @@ import { useTheme } from '../../components/ui/ThemeProvider';
 import { CURRENCIES } from '../../utils/currency';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useAppStore } from '../../stores/appStore';
+import { useRemindersStore } from '../../stores/remindersStore';
 
 export default function SettingsScreen() {
   const { colors, spacing } = useTheme();
@@ -18,12 +19,44 @@ export default function SettingsScreen() {
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const storageSource = useAppStore((state) => state.storageSource);
   const isPreview = storageSource === 'memory';
+  const permission = useRemindersStore((state) => state.permission);
+  const refreshPermission = useRemindersStore((state) => state.refreshPermission);
+  const requestPermission = useRemindersStore((state) => state.requestPermission);
 
   useFocusEffect(
     useCallback(() => {
       loadSettings();
-    }, [loadSettings]),
+      refreshPermission();
+    }, [loadSettings, refreshPermission]),
   );
+
+  const supported = permission ? permission.supported !== false : true;
+  const granted = Boolean(permission?.granted);
+  const canAskAgain = permission?.canAskAgain !== false;
+
+  function openDeviceSettings() {
+    if (Platform.OS !== 'web') Linking.openSettings();
+  }
+
+  async function handleToggleNotifications(next) {
+    if (next) {
+      const result = await requestPermission();
+      if (result && !result.granted && result.canAskAgain === false) {
+        // The OS will not show the prompt again; only settings can help now.
+        Alert.alert(
+          'Notifications are off',
+          'Allow notifications for MoneyQ in your device settings to receive reminders.',
+          [
+            { text: 'Open Settings', onPress: openDeviceSettings },
+            { text: 'Not now', style: 'cancel' },
+          ],
+        );
+      }
+      return;
+    }
+    // Permission is the OS's to revoke, so turning this off opens settings.
+    openDeviceSettings();
+  }
 
   return (
     <Screen>
@@ -90,6 +123,49 @@ export default function SettingsScreen() {
 
       <View style={{ height: spacing.xl }} />
 
+      <SectionHeader title="Notifications" />
+      <Card>
+        <View style={styles.notificationRow}>
+          <View style={styles.flex}>
+            <Text variant="body">Reminder notifications</Text>
+            <Text variant="caption" tone="faint">
+              {describePermission(permission)}
+            </Text>
+          </View>
+          <Switch
+            accessibilityRole="switch"
+            accessibilityLabel="Reminder notifications"
+            value={granted}
+            disabled={!supported}
+            onValueChange={handleToggleNotifications}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.surface}
+            ios_backgroundColor={colors.border}
+          />
+        </View>
+
+        {supported && !granted && !canAskAgain ? (
+          <View style={{ marginTop: spacing.sm }}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={openDeviceSettings}
+              style={({ pressed }) => [styles.settingsLink, { opacity: pressed ? 0.7 : 1 }]}
+            >
+              <Text variant="label" tone="primary">
+                Open device settings
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
+          Reminders you set on a transaction are always saved, even while notifications are off —
+          they simply cannot fire until permission is granted.
+        </Text>
+      </Card>
+
+      <View style={{ height: spacing.xl }} />
+
       <SectionHeader title="About" />
       <Card>
         <Text variant="body" tone="muted">
@@ -105,9 +181,29 @@ export default function SettingsScreen() {
   );
 }
 
+function describePermission(permission) {
+  if (!permission) return 'Checking permission…';
+  if (permission.supported === false) {
+    return 'Not available in the browser preview — works in the Android app';
+  }
+  if (permission.granted) return 'Allowed — reminders fire at their scheduled time';
+  if (permission.canAskAgain === false) {
+    return 'Blocked — notifications are disabled for MoneyQ';
+  }
+  return 'Off — allow notifications to receive reminders';
+}
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  notificationRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  settingsLink: {
+    paddingVertical: 6,
   },
   option: {
     alignItems: 'center',
