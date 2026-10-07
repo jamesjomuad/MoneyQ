@@ -2,6 +2,7 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
+import { DatePicker } from '../../components/dates/DatePicker';
 import { AmountInput } from '../../components/ui/AmountInput';
 import { Button } from '../../components/ui/Button';
 import { Chip } from '../../components/ui/Chip';
@@ -26,6 +27,13 @@ const DATE_CHIPS = [
   { label: 'Today', offset: 0 },
   { label: 'Yesterday', offset: 1 },
 ];
+
+/** Today minus `offset` days, as a local 'YYYY-MM-DD' value. */
+function offsetIso(offset) {
+  const target = new Date();
+  target.setDate(target.getDate() - offset);
+  return toIsoDate(target);
+}
 
 export default function TransactionFormScreen() {
   const params = useLocalSearchParams();
@@ -52,23 +60,24 @@ export default function TransactionFormScreen() {
   const [query, setQuery] = useState('');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
-  const [prefilled, setPrefilled] = useState(false);
+  const [hydratedFrom, setHydratedFrom] = useState(null);
 
   useEffect(() => {
     loadTags();
   }, [loadTags]);
 
-  // Seed the form once the stored row is available: the modal opens over the
-  // budget detail screen, which already has the entry in its store.
-  useEffect(() => {
-    if (!editing || prefilled) return;
+  // Seed the form from the stored row while rendering: the modal opens over
+  // the budget detail screen, whose store already holds the entry. React
+  // re-runs the render right after these updates, so there is no effect and
+  // no flash of empty fields.
+  if (editing && hydratedFrom !== editing.id) {
+    setHydratedFrom(editing.id);
     setType(editing.type);
     setAmount(String(fromMinor(editing.amount, currency)));
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
     setDescription(editing.description ?? '');
-    setPrefilled(true);
-  }, [editing, prefilled, currency]);
+  }
 
   // Transfers have no creation UI yet, but an existing one must stay editable.
   const typeOptions = useMemo(() => {
@@ -94,7 +103,7 @@ export default function TransactionFormScreen() {
 
     if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
     if (type !== 'transfer' && !tagId) nextErrors.tag = 'Choose a tag.';
-    if (!resolvedDate) nextErrors.date = "Try a date like 2026-10-01 or 'today'.";
+    if (!resolvedDate) nextErrors.date = 'Pick a date.';
 
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
@@ -145,7 +154,7 @@ export default function TransactionFormScreen() {
     );
   }
 
-  if (transactionId && !editing && !prefilled) {
+  if (transactionId && !editing && hydratedFrom === null) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <EmptyState
@@ -238,25 +247,22 @@ export default function TransactionFormScreen() {
         <View style={{ height: spacing.lg }} />
 
         <SectionHeader title="Date" />
-        <TextField
+        <DatePicker
+          label="Transaction Date"
+          title="Transaction Date"
           value={date}
-          onChangeText={setDate}
-          placeholder="2026-10-01"
-          hint="YYYY-MM-DD, Oct 1 2026, or 'today'"
+          onChange={setDate}
+          shortcuts
           error={errors.date}
-          autoCapitalize="words"
-          autoCorrect={false}
+          hint={transactionId ? undefined : 'New transactions start on today.'}
         />
         <View style={styles.wrap}>
           {DATE_CHIPS.map((chip) => (
             <Chip
               key={chip.offset}
               label={chip.label}
-              onPress={() => {
-                const target = new Date();
-                target.setDate(target.getDate() - chip.offset);
-                setDate(toIsoDate(target));
-              }}
+              active={date === offsetIso(chip.offset)}
+              onPress={() => setDate(offsetIso(chip.offset))}
             />
           ))}
         </View>

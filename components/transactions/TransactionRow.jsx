@@ -28,15 +28,10 @@ export function TransactionRow({ transaction, tag, currency, onEdit, onDelete, i
     : [tag?.name, dayLabel(transaction.transaction_date)].filter(Boolean).join(' · ');
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Edit ${title}`}
-      onPress={onEdit ? () => onEdit(transaction) : undefined}
-      disabled={!onEdit}
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.row,
         {
-          backgroundColor: pressed && onEdit ? colors.surfaceMuted : 'transparent',
           borderBottomColor: colors.border,
           borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
           paddingHorizontal: spacing.lg,
@@ -44,39 +39,57 @@ export function TransactionRow({ transaction, tag, currency, onEdit, onDelete, i
         },
       ]}
     >
-      <View style={styles.left}>
-        <TagBadge tag={transaction.type === 'transfer' ? null : tag} size="sm" />
-        <View style={[styles.copy, { marginLeft: spacing.sm }]}>
-          <Text variant="body" numberOfLines={1}>
-            {title}
-          </Text>
-          {subtitle && subtitle !== title ? (
-            <Text variant="caption" tone="faint" numberOfLines={1} style={{ marginTop: 1 }}>
-              {subtitle}
+      {/* The row surface and the delete action are siblings, not nested —
+          nested pressables render as buttons inside buttons on web. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${title}`}
+        onPress={onEdit ? () => onEdit(transaction) : undefined}
+        disabled={!onEdit}
+        style={({ pressed }) => [
+          styles.pressable,
+          {
+            backgroundColor: pressed && onEdit ? colors.surfaceMuted : 'transparent',
+          },
+        ]}
+      >
+        <View style={styles.left}>
+          <TagBadge tag={transaction.type === 'transfer' ? null : tag} size="sm" />
+          <View style={[styles.copy, { marginLeft: spacing.sm }]}>
+            <Text variant="body" numberOfLines={1}>
+              {title}
             </Text>
-          ) : null}
+            {subtitle && subtitle !== title ? (
+              <Text variant="caption" tone="faint" numberOfLines={1} style={{ marginTop: 1 }}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
         </View>
-      </View>
 
-      <View style={styles.right}>
-        <Text variant="body" tone={tone} style={styles.amount}>
-          {sign}
-          {formatCurrency(transaction.amount, { currency })}
-        </Text>
+        <View style={styles.right}>
+          <Text variant="body" tone={tone} style={styles.amount}>
+            {sign}
+            {formatCurrency(transaction.amount, { currency })}
+          </Text>
+        </View>
+      </Pressable>
 
-        {onDelete ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Delete ${title}`}
-            onPress={onDelete}
-            hitSlop={10}
-            style={({ pressed }) => [{ marginTop: 4, opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Icon name="trash" size={16} color={colors.textFaint} />
-          </Pressable>
-        ) : null}
-      </View>
-    </Pressable>
+      {onDelete ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Delete ${title}`}
+          onPress={onDelete}
+          hitSlop={10}
+          style={({ pressed }) => [
+            styles.delete,
+            { marginLeft: spacing.sm, opacity: pressed ? 0.6 : 1 },
+          ]}
+        >
+          <Icon name="trash" size={16} color={colors.textFaint} />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -84,6 +97,18 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
     flexDirection: 'row',
+  },
+  pressable: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    minWidth: 0,
+  },
+  delete: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 32,
+    minWidth: 32,
   },
   left: {
     flex: 1,

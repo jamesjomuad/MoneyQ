@@ -10,7 +10,18 @@ import {
   computeTotals,
   computeTotalAssets,
 } from '../utils/calculations.js';
-import { formatDateRange, parseFlexibleDate, toIsoDate } from '../utils/dates.js';
+import {
+  addDaysIso,
+  DATE_SHORTCUTS,
+  daysInclusive,
+  formatDateRange,
+  friendlyDate,
+  isRelativeLabel,
+  monthGrid,
+  monthWeeks,
+  parseFlexibleDate,
+  toIsoDate,
+} from '../utils/dates.js';
 
 let passed = 0;
 let failed = 0;
@@ -477,6 +488,59 @@ check(
   'formats a period range',
   formatDateRange('2026-10-01', '2026-10-31').includes('2026'),
   formatDateRange('2026-10-01', '2026-10-31'),
+);
+check(
+  'friendlyDate labels today',
+  friendlyDate('2026-10-07', new Date(2026, 9, 7)) === 'Today',
+  friendlyDate('2026-10-07', new Date(2026, 9, 7)),
+);
+check(
+  'friendlyDate labels tomorrow',
+  friendlyDate('2026-10-08', new Date(2026, 9, 7)) === 'Tomorrow',
+  friendlyDate('2026-10-08', new Date(2026, 9, 7)),
+);
+check(
+  'friendlyDate falls back to a long date',
+  friendlyDate('2026-10-07', new Date(2026, 9, 9)) === 'October 7, 2026',
+  friendlyDate('2026-10-07', new Date(2026, 9, 9)),
+);
+check('relative labels are recognised', isRelativeLabel('Today') && !isRelativeLabel('Oct 7, 2026'));
+check('addDaysIso crosses a month boundary', addDaysIso('2026-10-31', 1) === '2026-11-01');
+check('addDaysIso goes backwards across a year', addDaysIso('2026-01-01', -1) === '2025-12-31');
+check('daysInclusive counts both ends', daysInclusive('2026-10-01', '2026-10-31') === 31);
+check('daysInclusive of one day is 1', daysInclusive('2026-10-07', '2026-10-07') === 1);
+
+const shortcutOffset = (label) => DATE_SHORTCUTS.find((shortcut) => shortcut.label === label)?.offset;
+check(
+  'shortcut offsets point the right way',
+  addDaysIso('2026-10-07', shortcutOffset('Yesterday')) === '2026-10-06' &&
+    addDaysIso('2026-10-07', shortcutOffset('Tomorrow')) === '2026-10-08' &&
+    addDaysIso('2026-10-07', shortcutOffset('Today')) === '2026-10-07',
+  DATE_SHORTCUTS.map((s) => `${s.label}:${s.offset}`).join(' '),
+);
+
+const octoberGrid = monthGrid('2026-10');
+check('month grid covers every day', octoberGrid.includes('2026-10-01') && octoberGrid.includes('2026-10-31'));
+check('month grid is whole weeks', octoberGrid.length % 7 === 0, String(octoberGrid.length));
+check(
+  'month grid starts on the right weekday',
+  octoberGrid.findIndex(Boolean) === new Date(2026, 9, 1).getDay(),
+  String(octoberGrid.findIndex(Boolean)),
+);
+check(
+  'month grid cells stay date-only strings',
+  octoberGrid.filter(Boolean).every((cell) => /^\d{4}-\d{2}-\d{2}$/.test(cell)),
+);
+
+const octoberWeeks = monthWeeks('2026-10');
+check(
+  'calendar weeks are exactly seven cells',
+  octoberWeeks.every((week) => week.length === 7),
+  octoberWeeks.map((week) => week.length).join(','),
+);
+check(
+  'calendar weeks cover the same cells as the grid',
+  octoberWeeks.flat().join('|') === octoberGrid.join('|'),
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

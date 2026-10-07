@@ -13,6 +13,7 @@ const ICONS = {
   tag: { ios: 'tag', android: 'label', web: 'label' },
   chevronLeft: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' },
   chevronRight: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
+  calendar: { ios: 'calendar', android: 'calendar_month', web: 'calendar_month' },
   close: { ios: 'xmark', android: 'close', web: 'close' },
   trash: { ios: 'trash', android: 'delete_outline', web: 'delete_outline' },
   search: { ios: 'magnifyingglass', android: 'search', web: 'search' },

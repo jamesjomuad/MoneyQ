@@ -85,6 +85,89 @@ export function dayLabel(isoDate, reference = new Date()) {
   return formatDate(isoDate);
 }
 
+const ISO_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Field-friendly label: 'Today', 'Yesterday', 'Tomorrow' or a long date such
+ * as 'October 7, 2026'. Anything that is not a real YYYY-MM-DD value is passed
+ * through untouched so a broken value never renders 'NaN undefined'.
+ */
+export function friendlyDate(isoDate, reference = new Date()) {
+  const raw = String(isoDate ?? '');
+  if (!raw) return '';
+  if (!ISO_PATTERN.test(raw)) return raw;
+  if (raw === toIsoDate(reference)) return 'Today';
+
+  const tomorrow = new Date(reference);
+  tomorrow.setDate(reference.getDate() + 1);
+  if (raw === toIsoDate(tomorrow)) return 'Tomorrow';
+
+  return dayLabel(raw, reference);
+}
+
+/** True when a friendly label ('Today' / 'Yesterday' / 'Tomorrow') stands in for the real date. */
+export function isRelativeLabel(label) {
+  return label === 'Today' || label === 'Yesterday' || label === 'Tomorrow';
+}
+
+/** Shift a 'YYYY-MM-DD' value by whole days without any timezone drift. */
+export function addDaysIso(isoDate, delta) {
+  const date = parseIsoDate(isoDate);
+  date.setDate(date.getDate() + delta);
+  return toIsoDate(date);
+}
+
+/**
+ * Quick picks offered by the calendar sheet. `offset` is a day delta applied
+ * with `addDaysIso`, so yesterday is negative and tomorrow positive.
+ */
+export const DATE_SHORTCUTS = [
+  { label: 'Today', offset: 0 },
+  { label: 'Yesterday', offset: -1 },
+  { label: 'Tomorrow', offset: 1 },
+];
+
+/** Inclusive day count between two dates, so Oct 1 → Oct 31 is 31 days. */
+export function daysInclusive(startIso, endIso) {
+  const start = parseIsoDate(startIso).getTime();
+  const end = parseIsoDate(endIso).getTime();
+  return Math.round((end - start) / 86_400_000) + 1;
+}
+
+export const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * Calendar cells for a 'YYYY-MM' month, Sunday-first, padded with nulls so the
+ * grid is always a whole number of weeks. Cells are plain 'YYYY-MM-DD' strings
+ * (or null for the leading/trailing blanks) — no Date objects leak out.
+ */
+export function monthGrid(monthKey) {
+  const [year, month] = String(monthKey).split('-').map(Number);
+  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  const totalDays = new Date(year, month, 0).getDate();
+
+  const cells = Array.from({ length: firstWeekday }, () => null);
+  for (let day = 1; day <= totalDays; day += 1) {
+    cells.push(toIsoDate(new Date(year, month - 1, day)));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+/**
+ * `monthGrid` grouped into whole weeks. The calendar renders one row per
+ * week with equal-width columns: a flat wrap of percentage-width cells can
+ * round past 100% and push the seventh column onto the next line.
+ */
+export function monthWeeks(monthKey) {
+  const cells = monthGrid(monthKey);
+  const weeks = [];
+  for (let index = 0; index < cells.length; index += 7) {
+    weeks.push(cells.slice(index, index + 7));
+  }
+  return weeks;
+}
+
 /** 'Oct 1, 2026' */
 export function formatShortDate(isoDate) {
   return formatDate(isoDate, { style: 'short' });

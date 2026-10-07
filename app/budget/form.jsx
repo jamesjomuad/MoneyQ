@@ -1,7 +1,8 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 
+import { DatePicker } from "../../components/dates/DatePicker";
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { Screen, ScreenTitle, SectionHeader } from "../../components/ui/Screen";
@@ -9,7 +10,7 @@ import { Text } from "../../components/ui/Text";
 import { TextField } from "../../components/ui/TextField";
 import { useTheme } from "../../components/ui/ThemeProvider";
 import { useBudgetsStore } from "../../stores/budgetsStore";
-import { parseFlexibleDate, suggestBudgetDates } from "../../utils/dates";
+import { daysInclusive, parseFlexibleDate, suggestBudgetDates } from "../../utils/dates";
 
 const PERIOD_CHIPS = [
   { label: "Last month", offset: -1 },
@@ -63,7 +64,7 @@ export default function BudgetFormScreen() {
     return () => {
       cancelled = true;
     };
-  }, [editing, id]);
+  }, [editing, id, fetchBudget]);
 
   const applyPeriod = useCallback((offset) => {
     const suggestion = suggestBudgetDates(offset);
@@ -74,16 +75,23 @@ export default function BudgetFormScreen() {
     setFormError(null);
   }, []);
 
+  // Live period length under the end date — display only, never saved.
+  const periodLength = useMemo(() => {
+    const start = parseFlexibleDate(startDate);
+    const end = parseFlexibleDate(endDate);
+    if (!start || !end || end < start) return undefined;
+    const days = daysInclusive(start, end);
+    return days === 1 ? 'A single day' : `${days} days long`;
+  }, [startDate, endDate]);
+
   async function handleSave() {
     const nextErrors = {};
     const resolvedStart = parseFlexibleDate(startDate);
     const resolvedEnd = parseFlexibleDate(endDate);
 
     if (!name.trim()) nextErrors.name = "Give this budget a name.";
-    if (!resolvedStart)
-      nextErrors.start = "Try a date like 2026-10-01 or Oct 1, 2026.";
-    if (!resolvedEnd)
-      nextErrors.end = "Try a date like 2026-10-31 or Oct 31, 2026.";
+    if (!resolvedStart) nextErrors.start = "Pick a start date.";
+    if (!resolvedEnd) nextErrors.end = "Pick an end date.";
     if (resolvedStart && resolvedEnd && resolvedEnd < resolvedStart) {
       nextErrors.end = "The end date must be on or after the start date.";
     }
@@ -181,26 +189,22 @@ export default function BudgetFormScreen() {
         returnKeyType="done"
       />
 
-      <TextField
+      <SectionHeader title="Dates" />
+      <DatePicker
         label="Starts on"
         value={startDate}
-        onChangeText={setStartDate}
-        placeholder="2026-10-01"
-        hint="YYYY-MM-DD, Oct 1 2026, or 'today'"
+        onChange={setStartDate}
+        maximumDate={endDate || undefined}
         error={errors.start}
-        autoCapitalize="words"
-        autoCorrect={false}
       />
 
-      <TextField
+      <DatePicker
         label="Ends on"
         value={endDate}
-        onChangeText={setEndDate}
-        placeholder="2026-10-31"
-        hint="YYYY-MM-DD, Oct 31 2026, or 'yesterday'"
+        onChange={setEndDate}
+        minimumDate={startDate || undefined}
+        hint={periodLength}
         error={errors.end}
-        autoCapitalize="words"
-        autoCorrect={false}
       />
 
       {formError ? (
