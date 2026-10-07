@@ -4,6 +4,18 @@ A mobile-first, offline personal budgeting app built with Expo and React Native.
 
 MoneyQ is an evolving project under active development.
 
+## Screenshots
+
+| Home | Budget detail |
+| --- | --- |
+| ![Home — budget list](screenshots/home.jpg) | ![Budget detail — summary, tags and transactions](screenshots/budget-detail.jpg) |
+
+| Add transaction | Settings |
+| --- | --- |
+| ![Add transaction form](screenshots/add-transaction.jpg) | ![Settings — currency, tags and about](screenshots/settings.jpg) |
+
+Screenshots are captured from the browser preview (`npm run web`) against seeded sample data.
+
 ## Features
 
 - **Budgets as period containers** — create, edit and delete named budgets with a start and end date. A budget has no spending limit; “spent” and “remaining” are always derived from the transactions recorded inside it.
