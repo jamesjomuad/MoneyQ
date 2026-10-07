@@ -61,7 +61,9 @@ const db = new DatabaseSync(':memory:');
 const adapter = createAdapter(db);
 
 console.log('\n--- schema ---');
-await migration.up(adapter);
+for (const entry of migrations) {
+  await entry.up(adapter);
+}
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
 
@@ -97,7 +99,7 @@ check(
 );
 check('transactions no longer use categories', !transactionColumns.includes('category_id'));
 
-check('LATEST_VERSION matches single migration', LATEST_VERSION === 1, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 2, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -362,7 +364,89 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 1);
+check('both adapters report the same schema version', LATEST_VERSION === 2);
+
+console.log('\n--- legacy milestone-1 upgrade ---');
+
+/** The schema milestone 1 shipped under the same user_version = 1. */
+const legacyDb = new DatabaseSync(':memory:');
+const legacyAdapter = createAdapter(legacyDb);
+legacyAdapter.execAsync(`
+  CREATE TABLE accounts (
+    id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'cash',
+    initial_balance INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE categories (
+    id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE, color TEXT, icon TEXT,
+    is_default INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE budgets (
+    id TEXT PRIMARY KEY NOT NULL, period TEXT NOT NULL DEFAULT 'monthly',
+    month_key TEXT NOT NULL, amount INTEGER NOT NULL CHECK (amount >= 0),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE (period, month_key));
+  CREATE TABLE budget_categories (
+    id TEXT PRIMARY KEY NOT NULL, budget_id TEXT NOT NULL REFERENCES budgets(id) ON DELETE CASCADE,
+    category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE, amount INTEGER NOT NULL,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE (budget_id, category_id));
+  CREATE TABLE transactions (
+    id TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'transfer')),
+    amount INTEGER NOT NULL CHECK (amount > 0), account_id TEXT NOT NULL REFERENCES accounts(id),
+    to_account_id TEXT REFERENCES accounts(id), category_id TEXT REFERENCES categories(id),
+    description TEXT, transaction_date TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE settings (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+  PRAGMA user_version = 1;
+`);
+await legacyAdapter.runAsync(
+  `INSERT INTO budgets (id, period, month_key, amount, created_at, updated_at)
+   VALUES ('old_budget', 'monthly', '2026-10', 500000, '2026-10-01', '2026-10-01')`,
+);
+
+// Exactly what runMigrations() does: apply only what is newer than user_version.
+const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
+const pending = migrations.filter((entry) => entry.version > fromVersion);
+check('legacy database has one pending migration', pending.length === 1, String(pending.length));
+for (const entry of pending) {
+  await entry.up(legacyAdapter);
+}
+legacyDb.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
+
+const legacyTables = legacyDb
+  .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
+  .all()
+  .map((row) => row.name);
+for (const removed of ['budget_categories', 'categories']) {
+  check(`legacy table ${removed} was dropped`, !legacyTables.includes(removed));
+}
+for (const expected of ['accounts', 'budgets', 'settings', 'tags', 'transactions']) {
+  check(`rebuilt table ${expected} exists`, legacyTables.includes(expected));
+}
+
+const legacyBudgetColumns = legacyDb.prepare('PRAGMA table_info(budgets)').all().map((c) => c.name);
+check(
+  'rebuilt budgets are period containers',
+  ['name', 'start_date', 'end_date'].every((column) => legacyBudgetColumns.includes(column)),
+  legacyBudgetColumns.join(','),
+);
+const legacyBudgets = await legacyAdapter.getAllAsync('SELECT * FROM budgets');
+check('legacy budget rows were wiped', legacyBudgets.length === 0, String(legacyBudgets.length));
+const legacyTags = await legacyAdapter.getFirstAsync('SELECT COUNT(*) AS total FROM tags');
+check('rebuilt schema seeds default tags', legacyTags.total === 6, `got ${legacyTags.total}`);
+check(
+  'user_version advanced to the latest migration',
+  legacyDb.prepare('PRAGMA user_version').get().user_version === LATEST_VERSION,
+);
+
+// The exact statement that failed on device: creating a budget.
+let legacyInsertWorked = true;
+try {
+  await legacyAdapter.runAsync(
+    `INSERT INTO budgets (id, name, start_date, end_date, created_at, updated_at)
+     VALUES ('b_new', 'November 2026', '2026-11-01', '2026-11-30', '2026-10-07', '2026-10-07')`,
+  );
+} catch {
+  legacyInsertWorked = false;
+}
+check('create budget works on a rebuilt legacy database', legacyInsertWorked);
 
 console.log('\n--- date handling ---');
 check('toIsoDate builds a local date', toIsoDate(new Date(2026, 0, 5)) === '2026-01-05');
