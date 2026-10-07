@@ -18,20 +18,20 @@ MoneyQ is an evolving project under active development.
 
 ## Tech Stack
 
-| Layer | Technology |
-| --- | --- |
-| Framework | Expo SDK 57 (`expo ~57.0.26`), React Native 0.86.3, React 19.2.3 |
-| Routing | Expo Router ~57 (file-based, routes in `app/`) |
-| State | Zustand ^5 (cache only, no persistence middleware) |
-| Storage (native) | `expo-sqlite ~57.0.3` (SQLite, WAL) |
-| Storage (web) | In-memory adapter (`memoryAdapter.js`), no SQL in the bundle |
-| Styling | React Native `StyleSheet` + theme provider (no NativeWind/Tailwind) |
-| Icons | `expo-symbols` via `components/ui/Icon.jsx` (not `@expo/vector-icons`) |
-| Animation | `react-native-reanimated` 4.5.1 |
-| Language | JavaScript + ESM only (no TypeScript) |
-| Tooling | Metro bundler, ESLint (`eslint-config-expo`), Node `node:sqlite` verification scripts |
-| Testing | `npm run verify:db` — schema, financial-rule and adapter-parity checks (no Jest/test runner) |
-| Build | EAS Build / EAS Update (cloud builds via `npx eas-cli@latest`) |
+| Layer            | Technology                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| Framework        | Expo SDK 57 (`expo ~57.0.26`), React Native 0.86.3, React 19.2.3                             |
+| Routing          | Expo Router ~57 (file-based, routes in `app/`)                                               |
+| State            | Zustand ^5 (cache only, no persistence middleware)                                           |
+| Storage (native) | `expo-sqlite ~57.0.3` (SQLite, WAL)                                                          |
+| Storage (web)    | In-memory adapter (`memoryAdapter.js`), no SQL in the bundle                                 |
+| Styling          | React Native `StyleSheet` + theme provider (no NativeWind/Tailwind)                          |
+| Icons            | `expo-symbols` via `components/ui/Icon.jsx` (not `@expo/vector-icons`)                       |
+| Animation        | `react-native-reanimated` 4.5.1                                                              |
+| Language         | JavaScript + ESM only (no TypeScript)                                                        |
+| Tooling          | Metro bundler, ESLint (`eslint-config-expo`), Node `node:sqlite` verification scripts        |
+| Testing          | `npm run verify:db` — schema, financial-rule and adapter-parity checks (no Jest/test runner) |
+| Build            | EAS Build / EAS Update (cloud builds via `npx eas-cli@latest`)                               |
 
 ## Architecture
 
@@ -240,6 +240,10 @@ Evidence is from `docs/budgeting-app-ai-project-plan.md` (the original kickoff p
 - Schema changes go in a **new** numbered migration; never edit a shipped one. If the schema changes, extend `sqliteAdapter.js`, `memoryAdapter.js` and the parity scenario together.
 - Use `npx expo install <package>`, `utils/dates.js` for dates, `utils/currency.js` for money, and `components/ui/Icon.jsx` for icons.
 - Verify before submitting: `npm run verify:db`, `npx expo-doctor`, and both `npx expo export` targets.
+
+## Copyright
+
+Copyright © 2026 James Jomuad. All rights reserved.
 
 ## License
 

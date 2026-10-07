@@ -42,6 +42,9 @@ export default function RootLayout() {
 }
 
 /**
+ * MoneyQ
+ *
+ * Copyright © 2026 James Jomuad
  * The storage engine is initialised before any screen renders, so no screen
  * ever has to handle a half-initialised database. On native that opens and
  * migrates SQLite; on web it swaps in the in-memory adapter.

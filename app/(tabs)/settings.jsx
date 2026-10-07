@@ -97,6 +97,9 @@ export default function SettingsScreen() {
             ? 'This build runs in a browser against in-memory sample data, so nothing you do here is saved. The Android app uses the on-device SQLite database instead.'
             : 'MoneyQ stores everything locally on this device. It works fully offline and does not send your financial data anywhere.'}
         </Text>
+        <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
+          Copyright © 2026 James Jomuad
+        </Text>
       </Card>
     </Screen>
   );
