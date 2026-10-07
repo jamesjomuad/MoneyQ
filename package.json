@@ -26,7 +26,12 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "verify:db": "node --import ./scripts/register.mjs ./scripts/verify-schema.mjs"
+    "verify:db": "node --import ./scripts/register.mjs ./scripts/verify-schema.mjs",
+    "lint": "expo lint"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.2"
+  }
 }

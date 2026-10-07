@@ -1,20 +1,20 @@
-import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 
-import { Button } from '../../components/ui/Button';
-import { Chip } from '../../components/ui/Chip';
-import { Screen, ScreenTitle, SectionHeader } from '../../components/ui/Screen';
-import { Text } from '../../components/ui/Text';
-import { TextField } from '../../components/ui/TextField';
-import { useTheme } from '../../components/ui/ThemeProvider';
-import { useBudgetsStore } from '../../stores/budgetsStore';
-import { parseFlexibleDate, suggestBudgetDates } from '../../utils/dates';
+import { Button } from "../../components/ui/Button";
+import { Chip } from "../../components/ui/Chip";
+import { Screen, ScreenTitle, SectionHeader } from "../../components/ui/Screen";
+import { Text } from "../../components/ui/Text";
+import { TextField } from "../../components/ui/TextField";
+import { useTheme } from "../../components/ui/ThemeProvider";
+import { useBudgetsStore } from "../../stores/budgetsStore";
+import { parseFlexibleDate, suggestBudgetDates } from "../../utils/dates";
 
 const PERIOD_CHIPS = [
-  { label: 'Last month', offset: -1 },
-  { label: 'This month', offset: 0 },
-  { label: 'Next month', offset: 1 },
+  { label: "Last month", offset: -1 },
+  { label: "This month", offset: 0 },
+  { label: "Next month", offset: 1 },
 ];
 
 export default function BudgetFormScreen() {
@@ -25,11 +25,17 @@ export default function BudgetFormScreen() {
   const editBudget = useBudgetsStore((state) => state.editBudget);
   const removeBudget = useBudgetsStore((state) => state.removeBudget);
 
-  const editing = typeof id === 'string' && id.length > 0;
+  const editing = typeof id === "string" && id.length > 0;
 
-  const [name, setName] = useState(() => (editing ? '' : suggestBudgetDates(0).name));
-  const [startDate, setStartDate] = useState(() => (editing ? '' : suggestBudgetDates(0).startDate));
-  const [endDate, setEndDate] = useState(() => (editing ? '' : suggestBudgetDates(0).endDate));
+  const [name, setName] = useState(() =>
+    editing ? "" : suggestBudgetDates(0).name,
+  );
+  const [startDate, setStartDate] = useState(() =>
+    editing ? "" : suggestBudgetDates(0).startDate,
+  );
+  const [endDate, setEndDate] = useState(() =>
+    editing ? "" : suggestBudgetDates(0).endDate,
+  );
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -47,7 +53,8 @@ export default function BudgetFormScreen() {
         setEndDate(budget.end_date);
       })
       .catch((error) => {
-        if (!cancelled) setFormError(error?.message ?? 'Could not load this budget.');
+        if (!cancelled)
+          setFormError(error?.message ?? "Could not load this budget.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -72,11 +79,13 @@ export default function BudgetFormScreen() {
     const resolvedStart = parseFlexibleDate(startDate);
     const resolvedEnd = parseFlexibleDate(endDate);
 
-    if (!name.trim()) nextErrors.name = 'Give this budget a name.';
-    if (!resolvedStart) nextErrors.start = 'Try a date like 2026-10-01 or Oct 1, 2026.';
-    if (!resolvedEnd) nextErrors.end = 'Try a date like 2026-10-31 or Oct 31, 2026.';
+    if (!name.trim()) nextErrors.name = "Give this budget a name.";
+    if (!resolvedStart)
+      nextErrors.start = "Try a date like 2026-10-01 or Oct 1, 2026.";
+    if (!resolvedEnd)
+      nextErrors.end = "Try a date like 2026-10-31 or Oct 31, 2026.";
     if (resolvedStart && resolvedEnd && resolvedEnd < resolvedStart) {
-      nextErrors.end = 'The end date must be on or after the start date.';
+      nextErrors.end = "The end date must be on or after the start date.";
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -102,9 +111,9 @@ export default function BudgetFormScreen() {
       }
 
       const budget = await addBudget(payload);
-      router.replace({ pathname: '/budget/[id]', params: { id: budget.id } });
+      router.replace({ pathname: "/budget/[id]", params: { id: budget.id } });
     } catch (error) {
-      setFormError(error?.message ?? 'Could not save this budget.');
+      setFormError(error?.message ?? "Could not save this budget.");
       setSaving(false);
     }
   }
@@ -114,9 +123,9 @@ export default function BudgetFormScreen() {
     try {
       await removeBudget(id);
       router.dismissAll();
-      router.replace('/');
+      router.replace("/");
     } catch (error) {
-      setFormError(error?.message ?? 'Could not delete this budget.');
+      setFormError(error?.message ?? "Could not delete this budget.");
       setSaving(false);
     }
   }
@@ -134,11 +143,11 @@ export default function BudgetFormScreen() {
   return (
     <Screen contentContainerStyle={{ paddingBottom: 48 }}>
       <ScreenTitle
-        title={editing ? 'Edit Budget' : 'New Budget'}
+        title={editing ? "Edit Budget" : "New Budget"}
         subtitle={
           editing
-            ? 'Change the name or period. Transactions stay exactly where they are.'
-            : 'A budget is a named period. It has no spending limit — it simply holds the transactions you record inside it.'
+            ? "Change the name or period. Transactions stay exactly where they are."
+            : "A budget is a named period. It has no spending limit — it simply holds the transactions you record inside it."
         }
       />
 
@@ -146,13 +155,17 @@ export default function BudgetFormScreen() {
         <>
           <SectionHeader title="Period" />
           <ScrollView
-            horizontal
+            vertical
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipRow}
             style={{ marginBottom: spacing.lg }}
           >
             {PERIOD_CHIPS.map((chip) => (
-              <Chip key={chip.offset} label={chip.label} onPress={() => applyPeriod(chip.offset)} />
+              <Chip
+                key={chip.offset}
+                label={chip.label}
+                onPress={() => applyPeriod(chip.offset)}
+              />
             ))}
           </ScrollView>
         </>
@@ -191,13 +204,21 @@ export default function BudgetFormScreen() {
       />
 
       {formError ? (
-        <Text variant="caption" tone="expense" style={{ marginBottom: spacing.md }}>
+        <Text
+          variant="caption"
+          tone="expense"
+          style={{ marginBottom: spacing.md }}
+        >
           {formError}
         </Text>
       ) : null}
 
       <View style={{ height: spacing.sm }} />
-      <Button label={saving ? 'Saving…' : editing ? 'Save changes' : 'Create budget'} onPress={handleSave} disabled={saving} />
+      <Button
+        label={saving ? "Saving…" : editing ? "Save changes" : "Create budget"}
+        onPress={handleSave}
+        disabled={saving}
+      />
 
       {editing ? (
         <Button
@@ -209,7 +230,11 @@ export default function BudgetFormScreen() {
         />
       ) : null}
 
-      <Text variant="caption" tone="faint" style={{ marginTop: spacing.md, color: colors.textFaint }}>
+      <Text
+        variant="caption"
+        tone="faint"
+        style={{ marginTop: spacing.md, color: colors.textFaint }}
+      >
         Everything stays on this device.
       </Text>
     </Screen>
