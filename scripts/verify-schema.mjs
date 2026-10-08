@@ -398,6 +398,8 @@ async function runScenario(store) {
   const snapshot = {};
   snapshot.budgets = await store.listBudgets();
   snapshot.transactions = await store.listTransactionsByBudget('p_budget');
+  snapshot.transactionsInRange = await store.listTransactionsInRange('2026-10-01', '2026-10-31');
+  snapshot.transactionsOutRange = await store.listTransactionsInRange('2026-11-01', '2026-11-30');
   snapshot.duplicateName = await store.findTagByName('Parity Tag');
 
   snapshot.transactionUpdateChanges = await store.updateTransaction({

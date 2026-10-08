@@ -5,6 +5,11 @@ export async function getTransactionsForBudget(budgetId) {
   return storage.listTransactionsByBudget(budgetId);
 }
 
+/** Inclusive 'YYYY-MM-DD' bounds; used by the calendar to load one month. */
+export async function getTransactionsInRange(startIso, endIso) {
+  return storage.listTransactionsInRange(startIso, endIso);
+}
+
 export async function getTransaction(id) {
   return storage.getTransaction(id);
 }

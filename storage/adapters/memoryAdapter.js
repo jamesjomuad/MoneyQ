@@ -153,6 +153,17 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         .map(copy);
     },
 
+    async listTransactionsInRange(startIso, endIso) {
+      return store.transactions
+        .filter(
+          (transaction) =>
+            transaction.transaction_date >= startIso &&
+            transaction.transaction_date <= endIso,
+        )
+        .sort(byTransactionDate)
+        .map(copy);
+    },
+
     async getTransaction(id) {
       return copy(store.transactions.find((transaction) => transaction.id === id) ?? null);
     },

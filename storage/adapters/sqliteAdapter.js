@@ -143,6 +143,16 @@ export function createSqliteAdapter(getDb) {
       );
     },
 
+    async listTransactionsInRange(startIso, endIso) {
+      return query(
+        `SELECT * FROM transactions
+          WHERE transaction_date >= ? AND transaction_date <= ?
+          ORDER BY transaction_date DESC, created_at DESC`,
+        startIso,
+        endIso,
+      );
+    },
+
     async getTransaction(id) {
       return first('SELECT * FROM transactions WHERE id = ?', id);
     },
