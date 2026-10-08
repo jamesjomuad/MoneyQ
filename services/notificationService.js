@@ -7,35 +7,18 @@
  * wrapper over the library: no MoneyQ rules, no transaction knowledge, no
  * stored state.
  *
- * Expo Go on Android removed push (remote) notifications from SDK 53. The
- * library throws during its own module initialization when imported in Expo
- * Go Android, so we must avoid a static import. We detect that environment
- * with `expo-constants` and dynamically import `expo-notifications` only in
- * supported builds. The reminder row is still saved (source of truth); it
- * simply cannot fire until the app runs in a development build.
+ * Every environment that resolves to this file supports local notifications:
+ * standalone builds, development builds and Expo Go alike. Only remote push
+ * was removed from Expo Go in SDK 53, and MoneyQ never calls a push API, so
+ * no environment gate is needed here — `notificationService.web.js` owns the
+ * one unsupported surface, the browser. The library still imports cleanly in
+ * Expo Go (it only warns), and the push-only entry points are guarded by
+ * `isExpoGoPushError` should one ever be reached.
  */
 
-import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-// Expo Go on Android removed the push-notification subsystem from SDK 53,
-// and `expo-notifications` throws at import time there. Detect it before any
-// call to the library so the module is never loaded in that environment.
-//
-// `Constants.expoGoConfig` must NOT be used for this: every Android build
-// embeds the app config as `assets/app.config` (expo-constants/android/
-// build.gradle → get-app-config-android.gradle) and the `expoGoConfig` getter
-// falls through to its embedded-manifest branch, returning that config in a
-// standalone APK too. On device that read the installed app as "Expo Go" and
-// silently disabled permissions, channels and scheduling. `expoVersion` and
-// `appOwnership` are only ever set by the Expo Go client, so they identify it
-// without a false positive.
-function isUnsupportedEnvironment() {
-  if (Platform.OS !== 'android') return false;
-  return Constants.expoVersion != null || Constants.appOwnership != null;
-}
-
-export const isSupported = !isUnsupportedEnvironment();
+export const isSupported = true;
 
 export const REMINDER_CHANNEL_ID = 'reminders';
 
@@ -196,8 +179,7 @@ export async function listScheduledAsync() {
 export function subscribeToResponses(listener) {
   if (!isSupported) return () => {};
   // This is the one API that must stay synchronous (it returns an unsubscribe
-  // function). We use a conditional require here because a static import would
-  // crash at module-evaluation time in Expo Go Android.
+  // function), so it needs a conditional require rather than a top-level import.
   try {
     const Notifications = require('expo-notifications');
     const subscription = Notifications.addNotificationResponseReceivedListener(listener);

@@ -1,4 +1,4 @@
-import { StyleSheet, Switch, View } from 'react-native';
+import { Platform, StyleSheet, Switch, View } from 'react-native';
 
 import { DatePicker } from '../dates/DatePicker';
 import { TimePicker } from '../dates/TimePicker';
@@ -116,7 +116,10 @@ function describePermission(permission) {
   if (permission.supported === false) {
     return {
       tone: 'faint',
-      text: 'Device notifications are not available in the browser preview. The reminder is still saved and will notify you in the Android app.',
+      text:
+        Platform.OS === 'web'
+          ? 'Device notifications are not available in the browser preview. The reminder is still saved and will notify you in the Android app.'
+          : 'Device notifications are unavailable in this build. The reminder is still saved.',
       canOpenSettings: false,
     };
   }

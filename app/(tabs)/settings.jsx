@@ -251,7 +251,9 @@ export default function SettingsScreen() {
 function describePermission(permission) {
   if (!permission) return "Checking permission…";
   if (permission.supported === false) {
-    return "Not available in the browser preview — works in the Android app";
+    return Platform.OS === "web"
+      ? "Not available in the browser preview — works in the Android app"
+      : "Notifications are unavailable in this build";
   }
   if (permission.granted)
     return "Allowed — reminders fire at their scheduled time";
