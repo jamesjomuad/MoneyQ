@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { BudgetCard } from "../../components/budgets/BudgetCard";
+import { PinnedFolders } from "../../components/budgets/PinnedFolders";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Fab } from "../../components/ui/Fab";
@@ -15,8 +16,10 @@ import { useSettingsStore } from "../../stores/settingsStore";
 export default function HomeScreen() {
   const { colors, spacing } = useTheme();
   const budgets = useBudgetsStore((state) => state.budgets);
+  const pinnedIds = useBudgetsStore((state) => state.pinnedIds);
   const isLoading = useBudgetsStore((state) => state.isLoading);
   const load = useBudgetsStore((state) => state.load);
+  const togglePinned = useBudgetsStore((state) => state.togglePinned);
   const currency = useSettingsStore((state) => state.currency);
 
   useFocusEffect(
@@ -24,6 +27,20 @@ export default function HomeScreen() {
       load();
     }, [load]),
   );
+
+  const openFolder = useCallback(
+    (budget) =>
+      router.push({
+        pathname: "/budget/[id]",
+        params: { id: budget.id },
+      }),
+    [],
+  );
+
+  // Pinned order follows the stored insertion order, not the folder list order.
+  const pinnedBudgets = pinnedIds
+    .map((id) => budgets.find((budget) => budget.id === id))
+    .filter(Boolean);
 
   return (
     <View style={styles.fill}>
@@ -58,15 +75,14 @@ export default function HomeScreen() {
               key={budget.id}
               budget={budget}
               currency={currency}
-              onPress={() =>
-                router.push({
-                  pathname: "/budget/[id]",
-                  params: { id: budget.id },
-                })
-              }
+              pinned={pinnedIds.includes(budget.id)}
+              onTogglePin={() => togglePinned(budget.id)}
+              onPress={() => openFolder(budget)}
             />
           ))
         )}
+
+        <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
       </Screen>
 
       <Fab

@@ -34,6 +34,8 @@ const ICONS = {
   other: { ios: 'ellipsis.circle', android: 'category', web: 'category' },
   empty: { ios: 'tray', android: 'inbox', web: 'inbox' },
   database: { ios: 'cylinder', android: 'storage', web: 'storage' },
+  pin: { ios: 'pin', android: 'push_pin', web: 'push_pin' },
+  pinFilled: { ios: 'pin.fill', android: 'push_pin', web: 'push_pin' },
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

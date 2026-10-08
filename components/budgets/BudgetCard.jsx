@@ -13,7 +13,7 @@ import { formatDateRange } from '../../utils/dates';
  * the period and derived spend inside it. There is no progress bar or limit,
  * because a budget only holds transactions rather than capping them.
  */
-export function BudgetCard({ budget, onPress, currency }) {
+export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency }) {
   const { colors, radius, spacing } = useTheme();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
   // A user-selected folder color paints identically in every theme; budgets
@@ -44,6 +44,18 @@ export function BudgetCard({ budget, onPress, currency }) {
           <Text variant="heading" numberOfLines={1} style={[styles.title, { color: folder.folderInk }]}>
             {budget.name}
           </Text>
+          {onTogglePin ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={pinned ? `Unpin ${budget.name}` : `Pin ${budget.name}`}
+              accessibilityState={{ selected: pinned }}
+              onPress={onTogglePin}
+              hitSlop={8}
+              style={pinned ? null : styles.pinDimmed}
+            >
+              <Icon name={pinned ? 'pinFilled' : 'pin'} size={16} color={folder.folderInk} />
+            </Pressable>
+          ) : null}
           <Icon name="chevronRight" size={16} color={folder.folderInk} />
         </View>
 
@@ -95,6 +107,9 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
+  },
+  pinDimmed: {
+    opacity: 0.45,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
