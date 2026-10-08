@@ -75,7 +75,9 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async insertBudget(row) {
-      store.budgets.push({ ...row });
+      // Mirror the SQLite schema: `color` always exists on the row (NULL when
+      // the budget keeps the theme-driven folder colors).
+      store.budgets.push({ color: null, ...row });
     },
 
     async updateBudget(row) {
@@ -272,6 +274,7 @@ function seedDemoData(store, timestamp) {
     name: entry.name,
     start_date: entry.startDate,
     end_date: entry.endDate,
+    color: null,
     created_at: timestamp,
     updated_at: timestamp,
   }));

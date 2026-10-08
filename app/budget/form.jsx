@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 
 import { DatePicker } from "../../components/dates/DatePicker";
+import { FolderColorField } from "../../components/budgets/FolderColorField";
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
 import { Screen, ScreenTitle, SectionHeader } from "../../components/ui/Screen";
@@ -37,6 +38,8 @@ export default function BudgetFormScreen() {
   const [endDate, setEndDate] = useState(() =>
     editing ? "" : suggestBudgetDates(0).endDate,
   );
+  // null keeps the theme-driven folder colors — custom colors are optional.
+  const [color, setColor] = useState(null);
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -52,6 +55,7 @@ export default function BudgetFormScreen() {
         setName(budget.name);
         setStartDate(budget.start_date);
         setEndDate(budget.end_date);
+        setColor(budget.color ?? null);
       })
       .catch((error) => {
         if (!cancelled)
@@ -110,6 +114,7 @@ export default function BudgetFormScreen() {
         name: name.trim(),
         startDate: resolvedStart,
         endDate: resolvedEnd,
+        color,
       };
 
       if (editing) {
@@ -188,6 +193,8 @@ export default function BudgetFormScreen() {
         error={errors.name}
         returnKeyType="done"
       />
+
+      <FolderColorField value={color} onChange={setColor} />
 
       <SectionHeader title="Dates" />
       <DatePicker

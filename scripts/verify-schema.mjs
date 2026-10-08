@@ -140,7 +140,7 @@ check(
   reminderIndexes.join(','),
 );
 
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 3, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 4, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -419,6 +419,28 @@ async function runScenario(store) {
     transaction_date: '2026-10-05',
     updated_at: STAMP,
   });
+  // The folder color round-trips identically on both engines, and clearing
+  // it falls back to NULL (theme-driven folder colors).
+  await store.updateBudget({
+    id: 'p_budget',
+    name: 'Parity',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    color: '#FF9800',
+    updated_at: STAMP,
+  });
+  snapshot.coloredBudget = await store.getBudget('p_budget');
+
+  await store.updateBudget({
+    id: 'p_budget',
+    name: 'Parity',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    color: null,
+    updated_at: STAMP,
+  });
+  snapshot.decoloredBudget = await store.getBudget('p_budget');
+
   snapshot.duplicateNameIgnoringSelf = await store.findTagByName('Parity Tag', 'p_tag');
   snapshot.duplicateNameAgainstOther = await store.findTagByName('Parity Tag', 'someone_else');
   snapshot.tagUsage = await store.countTransactionsUsingTag('p_tag');
@@ -538,7 +560,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 3);
+check('both adapters report the same schema version', LATEST_VERSION === 4);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -584,7 +606,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has two pending migrations', pending.length === 2, String(pending.length));
+check('legacy database has three pending migrations', pending.length === 3, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }

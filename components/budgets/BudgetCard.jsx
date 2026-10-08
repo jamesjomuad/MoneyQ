@@ -4,6 +4,7 @@ import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 import { formatCurrency } from '../../utils/currency';
+import { resolveFolderPalette } from '../../utils/colors';
 import { computeBudgetBalance } from '../../utils/calculations';
 import { formatDateRange } from '../../utils/dates';
 
@@ -15,6 +16,9 @@ import { formatDateRange } from '../../utils/dates';
 export function BudgetCard({ budget, onPress, currency }) {
   const { colors, radius, spacing } = useTheme();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
+  // A user-selected folder color paints identically in every theme; budgets
+  // without one fall back to the theme-driven folder colors.
+  const folder = resolveFolderPalette(budget.color, colors);
 
   return (
     <Pressable
@@ -23,46 +27,46 @@ export function BudgetCard({ budget, onPress, currency }) {
       onPress={onPress}
       style={({ pressed }) => [{ marginBottom: spacing.lg }, pressed && { opacity: 0.82 }]}
     >
-      <View style={[styles.tab, { backgroundColor: colors.folderBorder }]} />
+      <View style={[styles.tab, { backgroundColor: folder.folderBorder }]} />
 
       <View
         style={[
           styles.body,
           {
-            backgroundColor: colors.folder,
-            borderColor: colors.folderBorder,
+            backgroundColor: folder.folder,
+            borderColor: folder.folderBorder,
             borderRadius: radius.md,
           },
         ]}
       >
         <View style={styles.headerRow}>
-          <Icon name="folder" size={20} color={colors.folderInk} />
-          <Text variant="heading" numberOfLines={1} style={[styles.title, { color: colors.folderInk }]}>
+          <Icon name="folder" size={20} color={folder.folderInk} />
+          <Text variant="heading" numberOfLines={1} style={[styles.title, { color: folder.folderInk }]}>
             {budget.name}
           </Text>
-          <Icon name="chevronRight" size={16} color={colors.folderInk} />
+          <Icon name="chevronRight" size={16} color={folder.folderInk} />
         </View>
 
-        <Text variant="caption" style={{ color: colors.folderInk, marginTop: 2, opacity: 0.85 }}>
+        <Text variant="caption" style={{ color: folder.folderInk, marginTop: 2, opacity: 0.85 }}>
           {formatDateRange(budget.start_date, budget.end_date)}
           {' · '}
           {budget.transaction_count} {budget.transaction_count === 1 ? 'transaction' : 'transactions'}
         </Text>
 
-        <View style={[styles.divider, { backgroundColor: colors.folderBorder }]} />
+        <View style={[styles.divider, { backgroundColor: folder.folderBorder }]} />
 
         <View style={styles.statsRow}>
           <Text
             variant="heading"
             numberOfLines={1}
-            style={[styles.stat, { color: colors.folderInk }]}
+            style={[styles.stat, { color: folder.folderInk }]}
           >
             {formatCurrency(budget.spent, { currency })} spent
           </Text>
           <Text
             variant="heading"
             numberOfLines={1}
-            style={[styles.stat, { color: colors.folderInk, textAlign: 'right' }]}
+            style={[styles.stat, { color: folder.folderInk, textAlign: 'right' }]}
           >
             {formatCurrency(balance, { currency })} balance
           </Text>

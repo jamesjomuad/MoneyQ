@@ -47,11 +47,12 @@ export function createSqliteAdapter(getDb) {
 
     async insertBudget(row) {
       await run(
-        'INSERT INTO budgets (id, name, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO budgets (id, name, start_date, end_date, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
         row.id,
         row.name,
         row.start_date,
         row.end_date,
+        row.color ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -59,10 +60,11 @@ export function createSqliteAdapter(getDb) {
 
     async updateBudget(row) {
       await run(
-        'UPDATE budgets SET name = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?',
+        'UPDATE budgets SET name = ?, start_date = ?, end_date = ?, color = ?, updated_at = ? WHERE id = ?',
         row.name,
         row.start_date,
         row.end_date,
+        row.color ?? null,
         row.updated_at,
         row.id,
       );

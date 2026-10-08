@@ -18,6 +18,7 @@ import { useBudgetsStore } from '../../stores/budgetsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { groupByDate } from '../../utils/calculations';
 import { formatCurrency } from '../../utils/currency';
+import { resolveFolderPalette } from '../../utils/colors';
 import { dayLabel, formatDateRange } from '../../utils/dates';
 
 export default function BudgetDetailScreen() {
@@ -137,9 +138,20 @@ export default function BudgetDetailScreen() {
       />
 
       <Screen contentContainerStyle={{ paddingBottom: 96 }}>
-        <Text variant="body" tone="muted" style={{ marginBottom: spacing.lg }}>
-          {formatDateRange(budget.start_date, budget.end_date)}
-        </Text>
+        <View style={styles.periodRow}>
+          <View
+            style={[
+              styles.periodDot,
+              {
+                backgroundColor: resolveFolderPalette(budget.color, colors).folder,
+                borderColor: resolveFolderPalette(budget.color, colors).folderBorder,
+              },
+            ]}
+          />
+          <Text variant="body" tone="muted" style={{ marginBottom: spacing.lg }}>
+            {formatDateRange(budget.start_date, budget.end_date)}
+          </Text>
+        </View>
 
         <Card>
           <Text variant="label" tone="muted">
@@ -287,4 +299,13 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   stats: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
+  periodRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
+  periodDot: {
+    borderRadius: 6,
+    borderWidth: 2,
+    height: 12,
+    // Matches the Text's marginBottom (spacing.lg) so both align in the row.
+    marginBottom: 16,
+    width: 12,
+  },
 });
