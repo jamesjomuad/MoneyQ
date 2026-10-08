@@ -21,9 +21,18 @@ import { Platform } from 'react-native';
 // Expo Go on Android removed the push-notification subsystem from SDK 53,
 // and `expo-notifications` throws at import time there. Detect it before any
 // call to the library so the module is never loaded in that environment.
+//
+// `Constants.expoGoConfig` must NOT be used for this: every Android build
+// embeds the app config as `assets/app.config` (expo-constants/android/
+// build.gradle → get-app-config-android.gradle) and the `expoGoConfig` getter
+// falls through to its embedded-manifest branch, returning that config in a
+// standalone APK too. On device that read the installed app as "Expo Go" and
+// silently disabled permissions, channels and scheduling. `expoVersion` and
+// `appOwnership` are only ever set by the Expo Go client, so they identify it
+// without a false positive.
 function isUnsupportedEnvironment() {
   if (Platform.OS !== 'android') return false;
-  return Constants.expoGoConfig != null;
+  return Constants.expoVersion != null || Constants.appOwnership != null;
 }
 
 export const isSupported = !isUnsupportedEnvironment();
