@@ -7,10 +7,11 @@ import { formatCurrency } from '../../utils/currency';
 import { todayIso } from '../../utils/dates';
 
 /**
- * Single-series expense bars over time. Weekly = 7 Mon–Sun days, monthly =
- * every calendar day (labels thinned so they cannot collide on narrow
- * screens), yearly = 12 months. Zero periods keep a stub bar so gaps in
- * spending stay visible. Tapping a bar reveals its exact period and amount.
+ * Single-series expense bars over time. monthly = every calendar day,
+ * yearly = 12 months, allTime = one bar per calendar year. Labels are
+ * thinned when there are many bars so they cannot collide on narrow
+ * screens. Zero periods keep a stub bar so gaps in spending stay visible.
+ * Tapping a bar reveals its exact period and amount.
  */
 const BAR_AREA = 140;
 const MAX_BAR = 120;
@@ -26,19 +27,21 @@ export function ExpenseTrendChart({ view, buckets = [], currency }) {
   const max = buckets.reduce((peak, bucket) => Math.max(peak, bucket.amount), 0);
   if (buckets.length === 0 || max === 0) return null;
 
-  const today = view === 'yearly' ? null : todayIso();
+  const today = view === 'monthly' ? todayIso() : null;
   const selected = buckets.find((bucket) => bucket.id === selectedId) ?? null;
+  // Show every label unless the axis would crowd: days every 5, months or
+  // years roughly every third when there are many.
+  const labelEvery = view === 'monthly' ? 5 : buckets.length > 10 ? 3 : 1;
+  const lastBucket = buckets.length - 1;
 
   return (
     <View>
       <View style={[styles.row, { height: BAR_AREA + 22 }]}>
-        {buckets.map((bucket) => {
+        {buckets.map((bucket, index) => {
           const isToday = bucket.id === today;
           const isSelected = bucket.id === selectedId;
           const showLabel =
-            view !== 'monthly' ||
-            Number(bucket.shortLabel) % 5 === 1 ||
-            isToday;
+            index % labelEvery === 0 || isToday || index === lastBucket;
           return (
             <Pressable
               key={bucket.id}

@@ -1,13 +1,13 @@
 import { useFocusEffect } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 import { BarChart } from "../../components/reports/BarChart";
+import { DateRangeSheet } from "../../components/reports/DateRangeSheet";
 import { ExpenseTrendChart } from "../../components/reports/ExpenseTrendChart";
 import { PieChart } from "../../components/reports/PieChart";
 import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { Icon } from "../../components/ui/Icon";
 import { Screen, SectionHeader } from "../../components/ui/Screen";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { Stat } from "../../components/ui/Stat";
@@ -16,43 +16,45 @@ import { useTheme } from "../../components/ui/ThemeProvider";
 import { useReportsStore } from "../../stores/reportsStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { formatCurrency } from "../../utils/currency";
-import { REPORT_PERIODS, TREND_VIEWS } from "../../utils/reports";
+import { REPORT_PERIODS } from "../../utils/reports";
 
-const TREND_NOUN = { weekly: "week", monthly: "month", yearly: "year" };
+const TREND_GRANULARITY = {
+  monthly: "Daily",
+  months: "Monthly",
+  yearly: "Monthly",
+  allTime: "By Year",
+};
 
 /**
- * Reports tab: one filter (This Month / Last Month / This Year / All Time)
- * drives the summary, the income-vs-expenses bars and the expenses-by-tag
- * pie. The expenses-over-time chart adds its own Weekly/Monthly/Yearly
- * window with prev/next navigation that never enters future periods. All
- * figures come from the reports store, which reads transactions straight
- * from storage — the charts never hold their own numbers.
+ * Reports tab: one filter (This Month / Last Month / This Year / Custom
+ * range) drives the summary, the income-vs-expenses bars, the
+ * expenses-by-tag pie and the expenses-over-time chart, whose granularity
+ * follows the filter. Custom opens the DateRangeSheet and applies only on
+ * Apply. All figures come from the reports store, which reads transactions
+ * straight from storage — the charts never hold their own numbers.
  */
 export default function ReportsScreen() {
   const { colors, spacing } = useTheme();
+  const [rangeOpen, setRangeOpen] = useState(false);
   const filter = useReportsStore((state) => state.filter);
+  const custom = useReportsStore((state) => state.custom);
+  const setCustomRange = useReportsStore((state) => state.setCustomRange);
   const period = useReportsStore((state) => state.period);
   const summary = useReportsStore((state) => state.summary);
   const barGroups = useReportsStore((state) => state.barGroups);
   const tagSlices = useReportsStore((state) => state.tagSlices);
   const trend = useReportsStore((state) => state.trend);
   const trendView = useReportsStore((state) => state.trendView);
-  const trendOffset = useReportsStore((state) => state.trendOffset);
-  const isTrendLoading = useReportsStore((state) => state.isTrendLoading);
   const isLoading = useReportsStore((state) => state.isLoading);
   const error = useReportsStore((state) => state.error);
   const load = useReportsStore((state) => state.load);
-  const loadTrend = useReportsStore((state) => state.loadTrend);
   const setFilter = useReportsStore((state) => state.setFilter);
-  const setTrendView = useReportsStore((state) => state.setTrendView);
-  const shiftTrend = useReportsStore((state) => state.shiftTrend);
   const currency = useSettingsStore((state) => state.currency);
 
   useFocusEffect(
     useCallback(() => {
       load();
-      loadTrend();
-    }, [load, loadTrend]),
+    }, [load]),
   );
 
   return (
@@ -66,8 +68,41 @@ export default function ReportsScreen() {
         <SegmentedControl
           options={REPORT_PERIODS}
           value={filter}
-          onChange={setFilter}
+          onChange={(value) => {
+            if (value === "custom") setRangeOpen(true);
+            else setFilter(value);
+          }}
         />
+
+        {filter === "custom" ? (
+          <View style={[styles.rangeRow, { marginTop: spacing.md }]}>
+            <Text variant="body" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {period.label}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Edit date range"
+              onPress={() => setRangeOpen(true)}
+              hitSlop={8}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            >
+              <Text variant="label" tone="primary">
+                EDIT RANGE
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {rangeOpen ? (
+          <DateRangeSheet
+            initial={custom}
+            onClose={() => setRangeOpen(false)}
+            onApply={(range) => {
+              setRangeOpen(false);
+              setCustomRange(range);
+            }}
+          />
+        ) : null}
 
         {error ? (
           <Text variant="body" tone="expense" style={{ marginTop: spacing.md }}>
@@ -105,45 +140,28 @@ export default function ReportsScreen() {
             </Card>
 
             <View>
-              <SectionHeader title="Expenses Over Time" />
-              <SegmentedControl
-                options={TREND_VIEWS}
-                value={trendView}
-                onChange={setTrendView}
+              <SectionHeader
+                title={`Expenses Over Time · ${TREND_GRANULARITY[trendView] ?? "Daily"}`}
               />
-              <Card style={{ marginTop: spacing.sm }}>
-                <View style={styles.trendNav}>
-                  <TrendArrow
-                    icon="chevronLeft"
-                    label={`Previous ${TREND_NOUN[trendView]}`}
-                    onPress={() => shiftTrend(-1)}
-                  />
-                  <View style={styles.trendHead}>
-                    <Text variant="label" tone="muted" numberOfLines={1}>
-                      {trend.label}
-                    </Text>
-                    <Text variant="heading" tone="expense" numberOfLines={1}>
-                      {formatCurrency(trend.total, { currency })}
-                    </Text>
-                  </View>
-                  <TrendArrow
-                    icon="chevronRight"
-                    label={`Next ${TREND_NOUN[trendView]}`}
-                    disabled={trendOffset >= 0}
-                    onPress={() => shiftTrend(1)}
-                  />
+              <Card>
+                <View style={styles.trendHead}>
+                  <Text variant="label" tone="muted" numberOfLines={1}>
+                    {trend.label}
+                  </Text>
+                  <Text variant="heading" tone="expense" numberOfLines={1}>
+                    {formatCurrency(trend.total, { currency })}
+                  </Text>
                 </View>
 
-                {isTrendLoading && trend.buckets.length === 0 ? (
-                  <ActivityIndicator
-                    color={colors.primary}
-                    style={{ marginVertical: spacing.xl }}
-                  />
-                ) : trend.total === 0 ? (
+                {trend.total === 0 ? (
                   <EmptyState
                     icon="wallet"
-                    title={`No spending this ${TREND_NOUN[trendView]}`}
-                    description={`Nothing was recorded as an expense in ${trend.label.toLowerCase()}. Use the arrows to browse earlier periods.`}
+                    title="No spending in this period"
+                    description={
+                      filter === "custom"
+                        ? `Nothing was recorded as an expense in ${trend.label}. Widen the date range above.`
+                        : `Nothing was recorded as an expense in ${trend.label.toLowerCase()}. Switch the period filter above or record an expense to see bars.`
+                    }
                   />
                 ) : (
                   <ExpenseTrendChart
@@ -190,49 +208,14 @@ export default function ReportsScreen() {
   );
 }
 
-function TrendArrow({ icon, label, disabled = false, onPress }) {
-  const { colors, radius } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      hitSlop={8}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.arrow,
-        {
-          backgroundColor: colors.surfaceMuted,
-          borderRadius: radius.sm,
-          opacity: disabled ? 0.35 : pressed ? 0.7 : 1,
-        },
-      ]}
-    >
-      <Icon name={icon} size={16} color={disabled ? colors.disabled : colors.text} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   loading: { alignItems: "center", paddingVertical: 48 },
   summaryRow: { flexDirection: "row" },
-  arrow: {
-    alignItems: "center",
-    height: 32,
-    justifyContent: "center",
-    width: 32,
-  },
+  rangeRow: { alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" },
   trendHead: {
     alignItems: "center",
-    flex: 1,
     gap: 2,
-  },
-  trendNav: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
     marginBottom: 12,
   },
 });

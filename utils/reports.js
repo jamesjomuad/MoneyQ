@@ -3,9 +3,10 @@ import {
   addDaysIso,
   addMonths,
   currentMonthKey,
+  daysInclusive,
   formatDate,
-  formatDateRange,
   formatMonth,
+  formatShortDate,
   isWithin,
   monthRange,
   parseIsoDate,
@@ -21,12 +22,20 @@ export const REPORT_PERIODS = [
   { value: 'thisMonth', label: 'This Month' },
   { value: 'lastMonth', label: 'Last Month' },
   { value: 'thisYear', label: 'This Year' },
-  { value: 'allTime', label: 'All Time' },
+  { value: 'custom', label: 'Custom' },
 ];
 
 /** Inclusive storage bounds plus a display label for one report filter. */
-export function periodRange(filter) {
+export function periodRange(filter, custom = null) {
   const now = new Date();
+
+  if (filter === 'custom') {
+    const rawStart = custom?.start ?? `${now.getFullYear()}-01-01`;
+    const rawEnd = custom?.end ?? toIsoDate(now);
+    const start = rawStart <= rawEnd ? rawStart : rawEnd;
+    const end = rawStart <= rawEnd ? rawEnd : rawStart;
+    return { start, end, label: `${formatShortDate(start)} – ${formatShortDate(end)}` };
+  }
 
   if (filter === 'lastMonth') {
     const monthKey = addMonths(currentMonthKey(), -1);
@@ -41,10 +50,6 @@ export function periodRange(filter) {
       end: `${year}-12-31`,
       label: String(year),
     };
-  }
-
-  if (filter === 'allTime') {
-    return { start: '0000-01-01', end: '9999-12-31', label: 'All time' };
   }
 
   const monthKey = currentMonthKey();
@@ -74,10 +79,10 @@ function monthKeysBetween(startIso, endIso) {
  * collapses to a single pair. Transfers never count, because
  * computeTotals only reads income and expense rows.
  */
-export function buildBarGroups(transactions, filter) {
+export function buildBarGroups(transactions, filter, period = null) {
   if (filter !== 'thisYear') {
     const { income, expense } = computeTotals(transactions);
-    return [{ label: periodRange(filter).label, income, expense }];
+    return [{ label: (period ?? periodRange(filter)).label, income, expense }];
   }
 
   const byMonth = new Map();
@@ -117,28 +122,36 @@ export function formatPercent(percent) {
   return `${percent.toFixed(1)}%`;
 }
 
-export const TREND_VIEWS = [
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'yearly', label: 'Yearly' },
-];
-
-const WEEK_BAR_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+/**
+ * View granularity for the expenses-over-time chart, anchored to the page's
+ * period filter so the screen needs only one filter control. Custom ranges
+ * pick their own granularity from the span: daily up to ~6 weeks, monthly
+ * up to ~2 years, yearly beyond.
+ */
+export function trendForFilter(filter, period = null) {
+  if (filter === 'lastMonth') return { view: 'monthly', offset: -1 };
+  if (filter === 'thisYear') return { view: 'yearly', offset: 0 };
+  if (filter === 'custom') {
+    const range = period ?? periodRange('custom');
+    const days = daysInclusive(range.start, range.end);
+    const view = days <= 45 ? 'monthly' : days <= 750 ? 'months' : 'allTime';
+    return { view, offset: 0, range };
+  }
+  return { view: 'monthly', offset: 0 };
+}
 
 /**
  * Inclusive range for the expenses-over-time chart. `offset` is whole view
  * units back from the current one (0 = current); positive offsets would be
  * future periods and are clamped away — the chart never browses forward of
- * today. Weeks start on Monday, local dates only.
+ * today. Custom ranges skip this entirely and use the filter's own bounds.
  */
 export function trendRange(view, offset = 0) {
   const clamped = Math.min(offset, 0);
   const now = new Date();
 
-  if (view === 'monthly') {
-    const monthKey = addMonths(currentMonthKey(), clamped);
-    const { start, end } = monthRange(monthKey);
-    return { view, start, end, label: formatMonth(monthKey) };
+  if (view === 'allTime') {
+    return { view, start: '0000-01-01', end: toIsoDate(now), label: 'All time' };
   }
 
   if (view === 'yearly') {
@@ -151,18 +164,17 @@ export function trendRange(view, offset = 0) {
     };
   }
 
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  const start = addDaysIso(toIsoDate(monday), clamped * 7);
-  const end = addDaysIso(start, 6);
-  return { view, start, end, label: formatDateRange(start, end) };
+  const monthKey = addMonths(currentMonthKey(), clamped);
+  const { start, end } = monthRange(monthKey);
+  return { view, start, end, label: formatMonth(monthKey) };
 }
 
 /**
- * Expense totals per day (weekly/monthly) or per month (yearly) for one
- * trend range. Every expense row is counted exactly once by its local
- * transaction_date; income and transfers are skipped. Periods with no spend
- * still appear with amount 0 so gaps stay visible.
+ * Expense totals per day (monthly), per calendar month (yearly/months), or
+ * per calendar year (allTime) for one trend range. Every expense row is
+ * counted exactly once by its local transaction_date; income and transfers
+ * are skipped. Periods with no spend still appear with amount 0 so gaps
+ * stay visible.
  */
 export function buildTrendBuckets(view, range, transactions) {
   const dayTotals = new Map();
@@ -173,43 +185,65 @@ export function buildTrendBuckets(view, range, transactions) {
     dayTotals.set(iso, (dayTotals.get(iso) ?? 0) + transaction.amount);
   }
 
-  if (view === 'yearly') {
-    const year = range.start.slice(0, 4);
-    const monthTotals = new Map();
+  if (view === 'allTime' || view === 'yearly' || view === 'months') {
+    const keyLength = view === 'allTime' ? 4 : 7;
+    const periodTotals = new Map();
     for (const [iso, amount] of dayTotals) {
-      const key = iso.slice(0, 7);
-      monthTotals.set(key, (monthTotals.get(key) ?? 0) + amount);
+      const key = iso.slice(0, keyLength);
+      periodTotals.set(key, (periodTotals.get(key) ?? 0) + amount);
     }
+
+    if (view === 'allTime') {
+      const years = Array.from(periodTotals.keys()).sort();
+      if (years.length === 0) return [];
+      const first = Number(years[0]);
+      const last = Math.min(Number(years[years.length - 1]), new Date().getFullYear());
+      return Array.from({ length: Math.max(last - first + 1, 0) }, (_, index) => {
+        const label = String(first + index);
+        return {
+          id: label,
+          shortLabel: label,
+          periodLabel: label,
+          amount: periodTotals.get(label) ?? 0,
+        };
+      });
+    }
+
+    if (view === 'months') {
+      const keys = [];
+      let key = range.start.slice(0, 7);
+      const lastKey = range.end.slice(0, 7);
+      while (key <= lastKey) {
+        keys.push(key);
+        key = addMonths(key, 1);
+      }
+      return keys.map((monthKey) => ({
+        id: monthKey,
+        shortLabel: formatMonth(monthKey, { style: 'short' }).slice(0, 3),
+        periodLabel: formatMonth(monthKey),
+        amount: periodTotals.get(monthKey) ?? 0,
+      }));
+    }
+
+    const year = range.start.slice(0, 4);
     return Array.from({ length: 12 }, (_, index) => {
       const key = `${year}-${String(index + 1).padStart(2, '0')}`;
       return {
         id: key,
         shortLabel: formatMonth(key, { style: 'short' }).slice(0, 3),
         periodLabel: formatMonth(key),
-        amount: monthTotals.get(key) ?? 0,
+        amount: periodTotals.get(key) ?? 0,
       };
     });
   }
 
-  if (view === 'monthly') {
-    const days = parseIsoDate(range.end).getDate();
-    return Array.from({ length: days }, (_, index) => {
-      const iso = addDaysIso(range.start, index);
-      return {
-        id: iso,
-        shortLabel: String(parseIsoDate(iso).getDate()),
-        periodLabel: formatDate(iso),
-        amount: dayTotals.get(iso) ?? 0,
-      };
-    });
-  }
-
-  return Array.from({ length: 7 }, (_, index) => {
+  const days = daysInclusive(range.start, range.end);
+  return Array.from({ length: days }, (_, index) => {
     const iso = addDaysIso(range.start, index);
     return {
       id: iso,
-      shortLabel: WEEK_BAR_LABELS[index],
-      periodLabel: `${WEEK_BAR_LABELS[index]}, ${formatDate(iso)}`,
+      shortLabel: String(parseIsoDate(iso).getDate()),
+      periodLabel: formatDate(iso),
       amount: dayTotals.get(iso) ?? 0,
     };
   });
