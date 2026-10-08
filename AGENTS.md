@@ -15,6 +15,16 @@ Expo ships breaking changes every SDK release. APIs you remember are likely rena
 2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/` (append `.md` for markdown).
 3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
 
+## Priority Rule
+
+When instructions conflict, prioritize:
+
+1. The user's current request.
+2. These project rules.
+3. Existing project architecture and conventions.
+
+Do not interpret "Definition of Done" as requiring full-project verification for every task. Verification must be proportional to the scope and risk of the change.
+
 ## Commands
 
 ```bash
@@ -75,6 +85,104 @@ storage/
 - **Navigation & routing**: Expo Router, routes in `app/` (not `src/app/`) — every file is a screen, `_layout.jsx` files define navigators, non-route code stays outside `app/`. Import `Link`, `router`, `useLocalSearchParams` from `expo-router`.
 - **No new dependencies** without asking; prefer built-in Expo modules. `ios/` and `android/` are generated — never hand-edit them.
 - Peers that must **not** be removed from `package.json`: `expo-font`, `expo-linking`, `react-native-safe-area-context`, `react-native-reanimated`, `expo-constants`.
+
+## Task Scope and Agent Behavior
+
+### Follow the user's requested scope
+
+- The user's current request is the source of truth.
+- Implement only what is explicitly requested.
+- Do not add related features, improvements, refactors, redesigns, or "nice to have" functionality unless requested.
+- If you identify an unrelated improvement, do not implement it. Mention it only if it blocks the requested task.
+
+### Small changes should stay small
+
+For small UI changes, styling changes, navigation changes, or isolated feature changes:
+
+- Inspect only the files directly relevant to the request.
+- Do not perform a project-wide audit.
+- Do not explore unrelated architecture unless required to implement the change.
+- Reuse existing components, stores, repositories, utilities, and patterns.
+- Do not create new abstractions when an existing pattern is sufficient.
+- Do not install new dependencies unless absolutely required.
+- Do not run Playwright, browser automation, Android/device automation, or other expensive tooling unless explicitly requested or necessary to diagnose a problem.
+- Do not run a production build for a small change unless the change affects build configuration or native functionality.
+
+### Match verification to the change
+
+Do not automatically run the complete Definition of Done for every task.
+
+Use proportional verification:
+
+**Small UI-only change**
+
+- Check the modified code for obvious errors.
+- Run `npx expo lint` when appropriate.
+- Stop when the requested change is complete.
+
+**Small feature change**
+
+- Run the relevant lint/check.
+- Run the relevant existing test or verification if one directly covers the changed functionality.
+- Stop when the requested feature works.
+
+**Database/schema/storage change**
+
+- Run `npm run verify:db`.
+- Run the relevant platform checks.
+
+**Expo/native/configuration change**
+
+- Run the relevant Expo validation or export required to verify the change.
+
+**Large or cross-cutting change**
+
+- Run the full Definition of Done.
+
+Do not run expensive verification commands merely because they are listed in the Definition of Done.
+
+### Do not over-investigate
+
+Do not spend excessive time planning a straightforward change.
+
+For a small request:
+
+1. Identify the relevant files.
+2. Read only the necessary code.
+3. Make the smallest implementation.
+4. Perform proportional verification.
+5. Stop.
+
+### Tool and dependency discipline
+
+Do not install or configure tools just to test a small change.
+
+In particular, do not automatically:
+
+- install Playwright;
+- install testing frameworks;
+- install browser automation tools;
+- install additional Expo packages;
+- create development infrastructure;
+- modify build configuration;
+- modify native projects.
+
+Only do these things when the current task requires them.
+
+### Completion behavior
+
+Once the requested change is implemented and appropriately verified:
+
+- Stop working.
+- Do not search for additional improvements.
+- Do not refactor unrelated code.
+- Do not continue testing beyond what is appropriate for the task.
+
+Report:
+
+1. Files changed.
+2. What was changed.
+3. What verification was performed.
 
 ## Definition of done
 

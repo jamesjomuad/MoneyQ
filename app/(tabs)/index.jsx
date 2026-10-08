@@ -1,16 +1,16 @@
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { router, useFocusEffect } from "expo-router";
+import { useCallback } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { BudgetCard } from '../../components/budgets/BudgetCard';
-import { Button } from '../../components/ui/Button';
-import { EmptyState } from '../../components/ui/EmptyState';
-import { Fab } from '../../components/ui/Fab';
-import { Screen, ScreenTitle, SectionHeader } from '../../components/ui/Screen';
-import { Text } from '../../components/ui/Text';
-import { useTheme } from '../../components/ui/ThemeProvider';
-import { useBudgetsStore } from '../../stores/budgetsStore';
-import { useSettingsStore } from '../../stores/settingsStore';
+import { BudgetCard } from "../../components/budgets/BudgetCard";
+import { Button } from "../../components/ui/Button";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Fab } from "../../components/ui/Fab";
+import { Screen, SectionHeader } from "../../components/ui/Screen";
+import { Text } from "../../components/ui/Text";
+import { useTheme } from "../../components/ui/ThemeProvider";
+import { useBudgetsStore } from "../../stores/budgetsStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 export default function HomeScreen() {
   const { colors, spacing } = useTheme();
@@ -28,7 +28,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.fill}>
       <Screen contentContainerStyle={{ paddingBottom: 96 }}>
-        <ScreenTitle title="Home" subtitle="Budgets are folders that hold your transactions" />
+        {/* <ScreenTitle title="Home" subtitle="Budgets are folders that hold your transactions" /> */}
 
         {budgets.length > 0 ? (
           <SectionHeader title={`Your Budgets · ${budgets.length}`} />
@@ -47,7 +47,10 @@ export default function HomeScreen() {
             title="No budgets yet"
             description="A budget is a period you name, such as October 2026. Transactions you add inside it are what make up your spending."
           >
-            <Button label="Create your first budget" onPress={() => router.push('/budget/form')} />
+            <Button
+              label="Create your first budget"
+              onPress={() => router.push("/budget/form")}
+            />
           </EmptyState>
         ) : (
           budgets.map((budget) => (
@@ -55,18 +58,26 @@ export default function HomeScreen() {
               key={budget.id}
               budget={budget}
               currency={currency}
-              onPress={() => router.push({ pathname: '/budget/[id]', params: { id: budget.id } })}
+              onPress={() =>
+                router.push({
+                  pathname: "/budget/[id]",
+                  params: { id: budget.id },
+                })
+              }
             />
           ))
         )}
       </Screen>
 
-      <Fab onPress={() => router.push('/budget/form')} accessibilityLabel="Create budget" />
+      <Fab
+        onPress={() => router.push("/budget/form")}
+        accessibilityLabel="Create budget"
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  loading: { alignItems: 'center', paddingVertical: 48 },
+  loading: { alignItems: "center", paddingVertical: 48 },
 });

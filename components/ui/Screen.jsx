@@ -1,15 +1,21 @@
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Icon } from './Icon';
-import { Text } from './Text';
-import { useTheme } from './ThemeProvider';
+import { Icon } from "./Icon";
+import { Text } from "./Text";
+import { useTheme } from "./ThemeProvider";
 
 /**
  * Standard scrollable screen body. Keeping it in one place means every tab
  * shares identical padding and background handling.
  */
-export function Screen({ children, scroll = true, contentContainerStyle, refreshing, onRefresh }) {
+export function Screen({
+  children,
+  scroll = true,
+  contentContainerStyle,
+  refreshing,
+  onRefresh,
+}) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -25,7 +31,11 @@ export function Screen({ children, scroll = true, contentContainerStyle, refresh
   ];
 
   if (!scroll) {
-    return <View style={[styles.fill, { backgroundColor: colors.background }]}>{children}</View>;
+    return (
+      <View style={[styles.fill, { backgroundColor: colors.background }]}>
+        {children}
+      </View>
+    );
   }
 
   return (
@@ -61,7 +71,13 @@ export function ScreenTitle({ title, subtitle }) {
  * the header stays visible (title and action remain) so a folded list is still
  * navigable.
  */
-export function SectionHeader({ title, action, collapsed, onToggle, fontSize }) {
+export function SectionHeader({
+  title,
+  action,
+  collapsed,
+  onToggle,
+  fontSize,
+}) {
   const { colors, spacing } = useTheme();
 
   const content = (
@@ -75,7 +91,11 @@ export function SectionHeader({ title, action, collapsed, onToggle, fontSize }) 
             style={collapsed ? null : styles.chevronDown}
           />
         ) : null}
-        <Text variant="label" tone="muted" style={fontSize ? { fontSize } : null}>
+        <Text
+          variant="label"
+          tone="muted"
+          style={fontSize ? { fontSize } : null}
+        >
           {title.toUpperCase()}
         </Text>
       </View>
@@ -106,16 +126,16 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   sectionHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   titleGroup: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: 6,
   },
   chevronDown: {
-    transform: [{ rotate: '90deg' }],
+    transform: [{ rotate: "90deg" }],
   },
 });

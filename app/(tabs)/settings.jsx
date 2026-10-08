@@ -1,17 +1,25 @@
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
-import { Alert, Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { router, useFocusEffect } from "expo-router";
+import { useCallback } from "react";
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Switch,
+  View,
+} from "react-native";
 
-import { Card } from '../../components/ui/Card';
-import { Icon } from '../../components/ui/Icon';
-import { Screen, ScreenTitle, SectionHeader } from '../../components/ui/Screen';
-import { Text } from '../../components/ui/Text';
-import { useTheme } from '../../components/ui/ThemeProvider';
-import { APPEARANCE_OPTIONS } from '../../constants/colors';
-import { CURRENCIES } from '../../utils/currency';
-import { useSettingsStore } from '../../stores/settingsStore';
-import { useAppStore } from '../../stores/appStore';
-import { useRemindersStore } from '../../stores/remindersStore';
+import { Card } from "../../components/ui/Card";
+import { Icon } from "../../components/ui/Icon";
+import { Screen, SectionHeader } from "../../components/ui/Screen";
+import { Text } from "../../components/ui/Text";
+import { useTheme } from "../../components/ui/ThemeProvider";
+import { APPEARANCE_OPTIONS } from "../../constants/colors";
+import { useAppStore } from "../../stores/appStore";
+import { useRemindersStore } from "../../stores/remindersStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { CURRENCIES } from "../../utils/currency";
 
 export default function SettingsScreen() {
   const { colors, spacing } = useTheme();
@@ -21,10 +29,14 @@ export default function SettingsScreen() {
   const setTheme = useSettingsStore((state) => state.setTheme);
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const storageSource = useAppStore((state) => state.storageSource);
-  const isPreview = storageSource === 'memory';
+  const isPreview = storageSource === "memory";
   const permission = useRemindersStore((state) => state.permission);
-  const refreshPermission = useRemindersStore((state) => state.refreshPermission);
-  const requestPermission = useRemindersStore((state) => state.requestPermission);
+  const refreshPermission = useRemindersStore(
+    (state) => state.refreshPermission,
+  );
+  const requestPermission = useRemindersStore(
+    (state) => state.requestPermission,
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -38,7 +50,7 @@ export default function SettingsScreen() {
   const canAskAgain = permission?.canAskAgain !== false;
 
   function openDeviceSettings() {
-    if (Platform.OS !== 'web') Linking.openSettings();
+    if (Platform.OS !== "web") Linking.openSettings();
   }
 
   async function handleToggleNotifications(next) {
@@ -47,11 +59,11 @@ export default function SettingsScreen() {
       if (result && !result.granted && result.canAskAgain === false) {
         // The OS will not show the prompt again; only settings can help now.
         Alert.alert(
-          'Notifications are off',
-          'Allow notifications for MoneyQ in your device settings to receive reminders.',
+          "Notifications are off",
+          "Allow notifications for MoneyQ in your device settings to receive reminders.",
           [
-            { text: 'Open Settings', onPress: openDeviceSettings },
-            { text: 'Not now', style: 'cancel' },
+            { text: "Open Settings", onPress: openDeviceSettings },
+            { text: "Not now", style: "cancel" },
           ],
         );
       }
@@ -63,10 +75,10 @@ export default function SettingsScreen() {
 
   return (
     <Screen>
-      <ScreenTitle
+      {/* <ScreenTitle
         title="Settings"
         subtitle={isPreview ? 'Browser preview — sample data, not saved' : 'Preferences are stored on this device'}
-      />
+      /> */}
 
       <SectionHeader title="Appearance" />
       <Card padded={false}>
@@ -83,7 +95,10 @@ export default function SettingsScreen() {
                 styles.option,
                 {
                   borderBottomColor: colors.border,
-                  borderBottomWidth: index === APPEARANCE_OPTIONS.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                  borderBottomWidth:
+                    index === APPEARANCE_OPTIONS.length - 1
+                      ? 0
+                      : StyleSheet.hairlineWidth,
                   opacity: pressed ? 0.7 : 1,
                 },
               ]}
@@ -122,7 +137,10 @@ export default function SettingsScreen() {
                 styles.option,
                 {
                   borderBottomColor: colors.border,
-                  borderBottomWidth: index === Object.values(CURRENCIES).length - 1 ? 0 : StyleSheet.hairlineWidth,
+                  borderBottomWidth:
+                    index === Object.values(CURRENCIES).length - 1
+                      ? 0
+                      : StyleSheet.hairlineWidth,
                   opacity: pressed ? 0.7 : 1,
                 },
               ]}
@@ -150,8 +168,11 @@ export default function SettingsScreen() {
       <Card padded={false}>
         <Pressable
           accessibilityRole="button"
-          onPress={() => router.push('/tags')}
-          style={({ pressed }) => [styles.option, { opacity: pressed ? 0.7 : 1 }]}
+          onPress={() => router.push("/tags")}
+          style={({ pressed }) => [
+            styles.option,
+            { opacity: pressed ? 0.7 : 1 },
+          ]}
         >
           <View style={styles.flex}>
             <Text variant="body">Manage tags</Text>
@@ -191,7 +212,10 @@ export default function SettingsScreen() {
             <Pressable
               accessibilityRole="button"
               onPress={openDeviceSettings}
-              style={({ pressed }) => [styles.settingsLink, { opacity: pressed ? 0.7 : 1 }]}
+              style={({ pressed }) => [
+                styles.settingsLink,
+                { opacity: pressed ? 0.7 : 1 },
+              ]}
             >
               <Text variant="label" tone="primary">
                 Open device settings
@@ -201,8 +225,9 @@ export default function SettingsScreen() {
         ) : null}
 
         <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
-          Reminders you set on a transaction are always saved, even while notifications are off —
-          they simply cannot fire until permission is granted.
+          Reminders you set on a transaction are always saved, even while
+          notifications are off — they simply cannot fire until permission is
+          granted.
         </Text>
       </Card>
 
@@ -212,8 +237,8 @@ export default function SettingsScreen() {
       <Card>
         <Text variant="body" tone="muted">
           {isPreview
-            ? 'This build runs in a browser against in-memory sample data, so nothing you do here is saved. The Android app uses the on-device SQLite database instead.'
-            : 'MoneyQ stores everything locally on this device. It works fully offline and does not send your financial data anywhere.'}
+            ? "This build runs in a browser against in-memory sample data, so nothing you do here is saved. The Android app uses the on-device SQLite database instead."
+            : "MoneyQ stores everything locally on this device. It works fully offline and does not send your financial data anywhere."}
         </Text>
         <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
           Copyright © 2026 James Jomuad
@@ -224,15 +249,16 @@ export default function SettingsScreen() {
 }
 
 function describePermission(permission) {
-  if (!permission) return 'Checking permission…';
+  if (!permission) return "Checking permission…";
   if (permission.supported === false) {
-    return 'Not available in the browser preview — works in the Android app';
+    return "Not available in the browser preview — works in the Android app";
   }
-  if (permission.granted) return 'Allowed — reminders fire at their scheduled time';
+  if (permission.granted)
+    return "Allowed — reminders fire at their scheduled time";
   if (permission.canAskAgain === false) {
-    return 'Blocked — notifications are disabled for MoneyQ';
+    return "Blocked — notifications are disabled for MoneyQ";
   }
-  return 'Off — allow notifications to receive reminders';
+  return "Off — allow notifications to receive reminders";
 }
 
 const styles = StyleSheet.create({
@@ -240,17 +266,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   notificationRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   settingsLink: {
     paddingVertical: 6,
   },
   option: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 14,
   },

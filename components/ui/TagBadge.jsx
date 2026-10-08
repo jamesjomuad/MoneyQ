@@ -5,19 +5,19 @@ import { useTheme } from './ThemeProvider';
 import { withAlpha } from '../../utils/color';
 
 /**
- * Emoji and name for a tag, rendered at the size used inside transaction rows
- * and pickers. The colour appears as a soft tinted disc behind the emoji so a
- * tag stays recognisable without an icon font.
+ * Emoji for a tag, with its name unless showName is false, rendered at the size
+ * used inside transaction rows and pickers. The colour appears as a soft tinted
+ * disc behind the emoji so a tag stays recognisable without an icon font.
  */
-export function TagBadge({ tag, size = 'md' }) {
+export function TagBadge({ tag, size = 'md', showName = true }) {
   const { colors, spacing } = useTheme();
 
   if (!tag) {
-    return (
+    return showName ? (
       <Text variant="caption" tone="faint">
         Untagged
       </Text>
-    );
+    ) : null;
   }
 
   const box = size === 'sm' ? 22 : 32;
@@ -37,9 +37,11 @@ export function TagBadge({ tag, size = 'md' }) {
       >
         <Text style={{ fontSize: box * 0.55 }}>{tag.emoji ?? '🏷️'}</Text>
       </View>
-      <Text variant="body" numberOfLines={1} style={{ flexShrink: 1, marginLeft: spacing.sm }}>
-        {tag.name}
-      </Text>
+      {showName ? (
+        <Text variant="body" numberOfLines={1} style={{ flexShrink: 1, marginLeft: spacing.sm }}>
+          {tag.name}
+        </Text>
+      ) : null}
     </View>
   );
 }
