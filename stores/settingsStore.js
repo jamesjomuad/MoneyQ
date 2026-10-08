@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 
 import { CURRENCIES, DEFAULT_CURRENCY } from '../utils/currency';
-import { SETTING_KEYS, getSetting, setSetting } from '../storage/repositories/settingsRepository';
+import {
+  DEFAULT_THEME,
+  SETTING_KEYS,
+  getSetting,
+  normalizeTheme,
+  setSetting,
+} from '../storage/repositories/settingsRepository';
 
 /**
  * Transient view state only. SQLite remains the source of truth: this store
@@ -10,13 +16,18 @@ import { SETTING_KEYS, getSetting, setSetting } from '../storage/repositories/se
  */
 export const useSettingsStore = create((set) => ({
   currency: DEFAULT_CURRENCY,
+  theme: DEFAULT_THEME,
   isLoaded: false,
 
   loadSettings: async () => {
     try {
-      const currency = await getSetting(SETTING_KEYS.currency, DEFAULT_CURRENCY);
+      const [currency, theme] = await Promise.all([
+        getSetting(SETTING_KEYS.currency, DEFAULT_CURRENCY),
+        getSetting(SETTING_KEYS.theme, DEFAULT_THEME),
+      ]);
       set({
         currency: Object.hasOwn(CURRENCIES, currency) ? currency : DEFAULT_CURRENCY,
+        theme: normalizeTheme(theme),
         isLoaded: true,
       });
     } catch {
@@ -30,7 +41,14 @@ export const useSettingsStore = create((set) => ({
     await setSetting(SETTING_KEYS.currency, currency);
   },
 
-  resetSettings: () => set({ currency: DEFAULT_CURRENCY }),
+  setTheme: async (theme) => {
+    const normalized = normalizeTheme(theme);
+    if (normalized !== theme) return;
+    set({ theme: normalized });
+    await setSetting(SETTING_KEYS.theme, normalized);
+  },
+
+  resetSettings: () => set({ currency: DEFAULT_CURRENCY, theme: DEFAULT_THEME }),
 }));
 
 export const selectCurrency = (state) => state.currency;

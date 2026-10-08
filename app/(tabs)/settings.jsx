@@ -7,6 +7,7 @@ import { Icon } from '../../components/ui/Icon';
 import { Screen, ScreenTitle, SectionHeader } from '../../components/ui/Screen';
 import { Text } from '../../components/ui/Text';
 import { useTheme } from '../../components/ui/ThemeProvider';
+import { APPEARANCE_OPTIONS } from '../../constants/colors';
 import { CURRENCIES } from '../../utils/currency';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useAppStore } from '../../stores/appStore';
@@ -16,6 +17,8 @@ export default function SettingsScreen() {
   const { colors, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
   const setCurrency = useSettingsStore((state) => state.setCurrency);
+  const theme = useSettingsStore((state) => state.theme);
+  const setTheme = useSettingsStore((state) => state.setTheme);
   const loadSettings = useSettingsStore((state) => state.loadSettings);
   const storageSource = useAppStore((state) => state.storageSource);
   const isPreview = storageSource === 'memory';
@@ -64,6 +67,45 @@ export default function SettingsScreen() {
         title="Settings"
         subtitle={isPreview ? 'Browser preview — sample data, not saved' : 'Preferences are stored on this device'}
       />
+
+      <SectionHeader title="Appearance" />
+      <Card padded={false}>
+        {APPEARANCE_OPTIONS.map((option, index) => {
+          const isSelected = option.key === theme;
+
+          return (
+            <Pressable
+              key={option.key}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected }}
+              onPress={() => setTheme(option.key)}
+              style={({ pressed }) => [
+                styles.option,
+                {
+                  borderBottomColor: colors.border,
+                  borderBottomWidth: index === APPEARANCE_OPTIONS.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <View style={styles.flex}>
+                <Text variant="body">{option.label}</Text>
+                <Text variant="caption" tone="faint">
+                  {option.caption}
+                </Text>
+              </View>
+
+              {isSelected ? (
+                <Text variant="heading" tone="primary">
+                  ✓
+                </Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </Card>
+
+      <View style={{ height: spacing.xl }} />
 
       <SectionHeader title="Currency" />
       <Card padded={false}>

@@ -16,6 +16,7 @@ import { NotificationTapHandler } from "../components/notifications/Notification
 import { initStorage } from "../storage/adapters/adapter";
 import { useAppStore } from "../stores/appStore";
 import { useRemindersStore } from "../stores/remindersStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export { ErrorBoundary } from "expo-router";
 
@@ -97,14 +98,25 @@ function DatabaseGate({ children }) {
 }
 
 function NavigationShell() {
-  const { scheme } = useTheme();
-  const navigationTheme = scheme === "dark" ? DarkTheme : DefaultTheme;
+  const { scheme, colors } = useTheme();
+  const baseNavigationTheme = scheme === "dark" ? DarkTheme : DefaultTheme;
+  const navigationTheme = {
+    ...baseNavigationTheme,
+    colors: {
+      ...baseNavigationTheme.colors,
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.surface,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
 
-  // This shell only mounts once storage is ready, which is the only moment
-  // a schedule can be reconciled against the rows: rebuild what the OS holds
-  // in step with SQLite, then read the current permission state. Once per
+  // This shell only mounts once storage is ready: load persisted preferences
+  // (currency, appearance) and reconcile reminders against the rows. Once per
   // launch — an edit, a payment or a delete does its own cancel/schedule.
   useEffect(() => {
+    useSettingsStore.getState().loadSettings();
     useRemindersStore.getState().resyncOnLaunch();
   }, []);
 
