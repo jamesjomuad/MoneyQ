@@ -1,5 +1,7 @@
 import { SymbolView } from 'expo-symbols';
 
+import { useTheme } from './ThemeProvider';
+
 // expo-symbols renders SF Symbols on iOS and Material icons elsewhere, so it
 // covers both platforms without pulling in an icon font package.
 const ICONS = {
@@ -36,13 +38,14 @@ const ICONS = {
 
 export const ICON_NAMES = Object.keys(ICONS);
 
-export function Icon({ name, size = 22, color = '#000000', style }) {
+export function Icon({ name, size = 22, color, style }) {
+  const { colors } = useTheme();
   const mapping = ICONS[name] ?? ICONS.other;
 
   return (
     <SymbolView
       name={mapping}
-      tintColor={color}
+      tintColor={color ?? colors.text}
       size={size}
       style={[{ width: size, height: size }, style]}
     />

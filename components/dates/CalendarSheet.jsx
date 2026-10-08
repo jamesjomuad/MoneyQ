@@ -80,7 +80,7 @@ export function CalendarSheet({
           style={[
             styles.sheet,
             {
-              backgroundColor: colors.surface,
+              backgroundColor: colors.surfaceElevated,
               borderTopLeftRadius: radius.xl,
               borderTopRightRadius: radius.xl,
               paddingBottom: Math.max(insets.bottom, spacing.lg),

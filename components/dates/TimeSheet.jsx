@@ -62,7 +62,7 @@ export function TimeSheet({ title = 'Pick a time', value, onChange, onClose }) {
           style={[
             styles.sheet,
             {
-              backgroundColor: colors.surface,
+              backgroundColor: colors.surfaceElevated,
               borderTopLeftRadius: radius.xl,
               borderTopRightRadius: radius.xl,
               paddingBottom: Math.max(insets.bottom, spacing.lg),

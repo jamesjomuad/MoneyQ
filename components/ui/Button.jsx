@@ -23,17 +23,17 @@ export function Button({ label, onPress, variant = 'primary', disabled = false, 
       style={({ pressed }) => [
         styles.base,
         {
-          backgroundColor: selected.background,
-          borderColor: selected.border,
+          backgroundColor: disabled ? colors.disabled : selected.background,
+          borderColor: disabled ? colors.disabled : selected.border,
           borderRadius: radius.md,
           paddingVertical: spacing.md,
           paddingHorizontal: spacing.lg,
-          opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+          opacity: disabled ? 1 : pressed ? 0.8 : 1,
         },
         style,
       ]}
     >
-      <Text variant="label" tone={selected.text}>
+      <Text variant="label" tone={disabled ? 'muted' : selected.text}>
         {label}
       </Text>
     </Pressable>
