@@ -79,6 +79,15 @@ export default function BudgetFormScreen() {
     setFormError(null);
   }, []);
 
+  // Picking a future start must stay possible, so the start calendar is not
+  // capped by the end date; instead the end follows when the start passes it.
+  const handleStartDateChange = useCallback((nextStart) => {
+    setStartDate(nextStart);
+    setEndDate((currentEnd) => (!currentEnd || nextStart > currentEnd ? nextStart : currentEnd));
+    setErrors((current) => ({ ...current, start: undefined, end: undefined }));
+    setFormError(null);
+  }, []);
+
   // Live period length under the end date — display only, never saved.
   const periodLength = useMemo(() => {
     const start = parseFlexibleDate(startDate);
@@ -200,8 +209,7 @@ export default function BudgetFormScreen() {
       <DatePicker
         label="Starts on"
         value={startDate}
-        onChange={setStartDate}
-        maximumDate={endDate || undefined}
+        onChange={handleStartDateChange}
         error={errors.start}
       />
 
