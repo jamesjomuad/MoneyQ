@@ -1,6 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BarChart } from "../../components/reports/BarChart";
 import { DateRangeSheet } from "../../components/reports/DateRangeSheet";
@@ -35,6 +36,7 @@ const TREND_GRANULARITY = {
  */
 export default function ReportsScreen() {
   const { colors, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
   const [rangeOpen, setRangeOpen] = useState(false);
   const filter = useReportsStore((state) => state.filter);
   const custom = useReportsStore((state) => state.custom);
@@ -59,51 +61,7 @@ export default function ReportsScreen() {
 
   return (
     <View style={styles.fill}>
-      <Screen contentContainerStyle={{ paddingBottom: 32 }}>
-        {/* <ScreenTitle
-          title="Reports"
-          subtitle={`Income, spending and tag mix · ${period.label}`}
-        /> */}
-
-        <SegmentedControl
-          options={REPORT_PERIODS}
-          value={filter}
-          onChange={(value) => {
-            if (value === "custom") setRangeOpen(true);
-            else setFilter(value);
-          }}
-        />
-
-        {filter === "custom" ? (
-          <View style={[styles.rangeRow, { marginTop: spacing.md }]}>
-            <Text variant="body" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
-              {period.label}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Edit date range"
-              onPress={() => setRangeOpen(true)}
-              hitSlop={8}
-              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-            >
-              <Text variant="label" tone="primary">
-                EDIT RANGE
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {rangeOpen ? (
-          <DateRangeSheet
-            initial={custom}
-            onClose={() => setRangeOpen(false)}
-            onApply={(range) => {
-              setRangeOpen(false);
-              setCustomRange(range);
-            }}
-          />
-        ) : null}
-
+      <Screen contentContainerStyle={{ paddingBottom: spacing.xl }}>
         {error ? (
           <Text variant="body" tone="expense" style={{ marginTop: spacing.md }}>
             {error.message ?? String(error)}
@@ -159,8 +117,8 @@ export default function ReportsScreen() {
                     title="No spending in this period"
                     description={
                       filter === "custom"
-                        ? `Nothing was recorded as an expense in ${trend.label}. Widen the date range above.`
-                        : `Nothing was recorded as an expense in ${trend.label.toLowerCase()}. Switch the period filter above or record an expense to see bars.`
+                        ? `Nothing was recorded as an expense in ${trend.label}. Widen the date range in the filter below.`
+                        : `Nothing was recorded as an expense in ${trend.label.toLowerCase()}. Switch the period filter below or record an expense to see bars.`
                     }
                   />
                 ) : (
@@ -204,12 +162,69 @@ export default function ReportsScreen() {
           </View>
         )}
       </Screen>
+
+      {/* Sticky bottom filter bar: pinned outside the ScrollView, so the
+          period selector stays reachable while the charts scroll. */}
+      <View
+        style={[
+          styles.filterBar,
+          {
+            backgroundColor: colors.surface,
+            borderTopColor: colors.border,
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.md,
+            paddingBottom: Math.max(insets.bottom, spacing.md),
+          },
+        ]}
+      >
+        {filter === "custom" ? (
+          <View style={[styles.rangeRow, { marginBottom: spacing.sm }]}>
+            <Text variant="caption" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
+              {period.label}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Edit date range"
+              onPress={() => setRangeOpen(true)}
+              hitSlop={8}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+            >
+              <Text variant="label" tone="primary">
+                EDIT RANGE
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <SegmentedControl
+          options={REPORT_PERIODS}
+          value={filter}
+          onChange={(value) => {
+            if (value === "custom") setRangeOpen(true);
+            else setFilter(value);
+          }}
+        />
+      </View>
+
+      {rangeOpen ? (
+        <DateRangeSheet
+          initial={custom}
+          onClose={() => setRangeOpen(false)}
+          onApply={(range) => {
+            setRangeOpen(false);
+            setCustomRange(range);
+          }}
+        />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  filterBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   loading: { alignItems: "center", paddingVertical: 48 },
   summaryRow: { flexDirection: "row" },
   rangeRow: { alignItems: "center", flexDirection: "row", gap: 12, justifyContent: "space-between" },
