@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ColorPicker, { HueSlider, Panel1, PreviewText, Swatches } from 'reanimated-color-picker';
 
@@ -124,40 +124,45 @@ function FolderColorSheet({ value, onChange, onClose }) {
             </Pressable>
           </View>
 
-          <GestureHandlerRootView>
-            <ColorPicker
-              value={pending ?? colors.folderInk}
-              sliderThickness={22}
-              thumbSize={22}
-              thumbShape="circle"
-              boundedThumb
-              onCompleteJS={({ hex }) => setPending(hex.toUpperCase())}
-              style={{ gap: spacing.md, paddingHorizontal: spacing.lg }}
+          <GestureHandlerRootView style={styles.pickerScroll}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
             >
-              <Panel1 style={{ borderRadius: radius.md }} />
-              <HueSlider style={{ borderRadius: radius.pill }} />
-              <Swatches
-                colors={tagColors}
-                style={styles.swatches}
-                swatchStyle={{ borderRadius: radius.sm, height: 28, width: 28, margin: 0 }}
-              />
-              <View style={styles.previewRow}>
-                <View
-                  style={[
-                    styles.swatch,
-                    styles.previewSwatch,
-                    { backgroundColor: palette.folder, borderColor: palette.folderBorder },
-                  ]}
+              <ColorPicker
+                value={pending ?? colors.primary}
+                sliderThickness={22}
+                thumbSize={22}
+                thumbShape="circle"
+                boundedThumb
+                onCompleteJS={({ hex }) => setPending(hex.toUpperCase())}
+                style={{ gap: spacing.md }}
+              >
+                <Panel1 style={{ borderRadius: radius.md, height: 180 }} />
+                <HueSlider style={{ borderRadius: radius.pill }} />
+                <Swatches
+                  colors={tagColors}
+                  style={styles.swatches}
+                  swatchStyle={{ borderRadius: radius.sm, height: 28, width: 28, margin: 0 }}
                 />
-                {pending ? (
-                  <PreviewText style={{ color: colors.textMuted }} colorFormat="hex" />
-                ) : (
-                  <Text variant="body" tone="muted">
-                    Theme default
-                  </Text>
-                )}
-              </View>
-            </ColorPicker>
+                <View style={styles.previewRow}>
+                  <View
+                    style={[
+                      styles.swatch,
+                      styles.previewSwatch,
+                      { backgroundColor: palette.folder, borderColor: palette.folderBorder },
+                    ]}
+                  />
+                  {pending ? (
+                    <PreviewText style={{ color: colors.textMuted }} colorFormat="hex" />
+                  ) : (
+                    <Text variant="body" tone="muted">
+                      Theme default
+                    </Text>
+                  )}
+                </View>
+              </ColorPicker>
+            </ScrollView>
           </GestureHandlerRootView>
 
           {pending ? (
@@ -237,7 +242,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   sheet: {
+    maxHeight: '88%',
     paddingTop: 4,
+  },
+  pickerScroll: {
+    flexShrink: 1,
   },
   swatch: {
     borderRadius: 8,
