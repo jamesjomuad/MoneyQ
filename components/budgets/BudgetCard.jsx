@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
@@ -46,7 +46,10 @@ export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, curre
           </Text>
           {onTogglePin ? (
             <Pressable
-              accessibilityRole="button"
+              // react-native-web maps accessibilityRole="button" to a real
+              // <button>, and a <button> cannot nest inside the card's own
+              // <button>. The web build drops the role; native keeps it.
+              accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
               accessibilityLabel={pinned ? `Unpin ${budget.name}` : `Pin ${budget.name}`}
               accessibilityState={{ selected: pinned }}
               onPress={onTogglePin}
