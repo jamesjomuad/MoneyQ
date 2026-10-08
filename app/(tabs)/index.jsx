@@ -81,13 +81,14 @@ export default function HomeScreen() {
             />
           ))
         )}
-
-        <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
       </Screen>
+
+      <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
 
       <Fab
         onPress={() => router.push("/budget/form")}
         accessibilityLabel="Create budget"
+        bottomOffset={pinnedBudgets.length > 0 ? 64 : 0}
       />
     </View>
   );

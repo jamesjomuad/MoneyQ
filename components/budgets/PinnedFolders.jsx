@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
@@ -6,19 +7,30 @@ import { useTheme } from '../ui/ThemeProvider';
 import { resolveFolderPalette } from '../../utils/colors';
 
 /**
- * Compact horizontal strip of pinned folders shown at the bottom of Home. It is
- * a navigation shortcut only — the full folder list above stays untouched. Each
- * chip paints with the folder's own palette so custom colors carry over, and the
- * row scrolls sideways when many folders are pinned instead of growing the page.
+ * Compact horizontal strip of pinned folders docked at the bottom of Home,
+ * below the scrolling folder list. It is a navigation shortcut only — the full
+ * folder list above stays untouched. Each chip paints with the folder's own
+ * palette so custom colors carry over, and the row scrolls sideways when many
+ * folders are pinned instead of growing the page.
  */
 export function PinnedFolders({ budgets, onPressFolder }) {
   const { colors, radius, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
   if (budgets.length === 0) return null;
 
   return (
-    <View style={{ marginTop: spacing.xl }}>
-      <View style={[styles.rule, { backgroundColor: colors.border }]} />
-
+    <View
+      style={[
+        styles.bar,
+        {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          paddingTop: spacing.sm,
+          paddingBottom: insets.bottom + spacing.sm,
+          paddingHorizontal: spacing.lg,
+        },
+      ]}
+    >
       <View style={[styles.header, { marginBottom: spacing.sm }]}>
         <Icon name="pinFilled" size={14} color={colors.textMuted} />
         <Text variant="label" tone="muted">
@@ -29,7 +41,7 @@ export function PinnedFolders({ budgets, onPressFolder }) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.lg }}
+        contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.xxl * 2 }}
       >
         {budgets.map((budget) => {
           const folder = resolveFolderPalette(budget.color, colors);
@@ -63,17 +75,13 @@ export function PinnedFolders({ budgets, onPressFolder }) {
           );
         })}
       </ScrollView>
-
-      <View style={[styles.rule, { backgroundColor: colors.border, marginTop: spacing.lg }]} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  rule: {
-    height: StyleSheet.hairlineWidth,
-    marginBottom: 16,
-    opacity: 0.9,
+  bar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   header: {
     alignItems: 'center',
