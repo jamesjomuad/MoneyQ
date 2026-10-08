@@ -7,19 +7,21 @@
  * wrapper over the library: no MoneyQ rules, no transaction knowledge, no
  * stored state.
  *
- * Every environment that resolves to this file supports local notifications:
- * standalone builds, development builds and Expo Go alike. Only remote push
- * was removed from Expo Go in SDK 53, and MoneyQ never calls a push API, so
- * no environment gate is needed here — `notificationService.web.js` owns the
- * one unsupported surface, the browser. The library still imports cleanly in
- * Expo Go (it only warns), and the push-only entry points are guarded by
- * `isExpoGoPushError` should one ever be reached.
+ * Standalone and development builds support local notifications here. Expo Go
+ * on Android is the one native exception: since SDK 53 merely *evaluating*
+ * `expo-notifications` throws there (its push auto-registration side effect
+ * hits the removed push API), so that environment is gated off up front and
+ * reminders degrade to database rows only. `notificationService.web.js` owns
+ * the other unsupported surface, the browser. Push-only entry points stay
+ * guarded by `isExpoGoPushError` should one ever be reached.
  */
 
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-export const isSupported = true;
+const EXPO_GO_ANDROID = Platform.OS === 'android' && Constants.appOwnership === 'expo';
 
+export const isSupported = !EXPO_GO_ANDROID;
 export const REMINDER_CHANNEL_ID = 'reminders';
 
 const EXPONENT_GO_PUSH = 'was removed from Expo Go';
