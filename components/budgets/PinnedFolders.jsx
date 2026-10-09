@@ -1,10 +1,10 @@
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Icon } from '../ui/Icon';
-import { Text } from '../ui/Text';
-import { useTheme } from '../ui/ThemeProvider';
-import { resolveFolderPalette } from '../../utils/colors';
+import { resolveFolderPalette } from "../../utils/colors";
+import { Icon } from "../ui/Icon";
+import { Text } from "../ui/Text";
+import { useTheme } from "../ui/ThemeProvider";
 
 /**
  * Compact horizontal strip of pinned folders docked at the bottom of Home,
@@ -34,14 +34,17 @@ export function PinnedFolders({ budgets, onPressFolder }) {
       <View style={[styles.header, { marginBottom: spacing.sm }]}>
         <Icon name="pinFilled" size={14} color={colors.textMuted} />
         <Text variant="label" tone="muted">
-          PINNED FOLDERS
+          PINNED
         </Text>
       </View>
 
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.xxl * 2 }}
+        contentContainerStyle={{
+          gap: spacing.sm,
+          paddingRight: spacing.xxl * 2,
+        }}
       >
         {budgets.map((budget) => {
           const folder = resolveFolderPalette(budget.color, colors);
@@ -84,14 +87,14 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   header: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: 6,
   },
   chip: {
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 6,
     maxWidth: 180,
   },
