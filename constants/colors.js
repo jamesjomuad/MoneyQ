@@ -26,6 +26,7 @@ export const lightColors = {
   folderBorder: '#F0DEB6',
   folderInk: '#8A6B2E',
   overlay: 'rgba(19, 32, 26, 0.45)',
+  shadow: 'rgba(19, 32, 26, 0.35)',
 };
 
 export const darkColors = {
@@ -56,6 +57,7 @@ export const darkColors = {
   folderBorder: '#403925',
   folderInk: '#D9B96A',
   overlay: 'rgba(0, 0, 0, 0.6)',
+  shadow: 'rgba(0, 0, 0, 0.55)',
 };
 
 /**
@@ -91,6 +93,7 @@ export const moneyqColors = {
   folderBorder: '#39455F',
   folderInk: '#D9B96A',
   overlay: 'rgba(5, 11, 21, 0.65)',
+  shadow: 'rgba(0, 0, 0, 0.6)',
 };
 
 /**

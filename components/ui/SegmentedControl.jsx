@@ -52,6 +52,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    minHeight: 44,
     paddingVertical: 8,
   },
 });

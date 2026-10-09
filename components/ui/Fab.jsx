@@ -19,6 +19,7 @@ export function Fab({ onPress, icon = 'add', accessibilityLabel = 'Add', bottomO
         styles.fab,
         {
           backgroundColor: colors.primary,
+          shadowColor: colors.shadow,
           right: spacing.lg,
           // Clear Android's system navigation bar: content extends behind it
           // edge-to-edge, so a fixed offset leaves the button under the toolbar.
@@ -42,7 +43,6 @@ const styles = StyleSheet.create({
     height: 56,
     justifyContent: 'center',
     position: 'absolute',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.22,
     shadowRadius: 8,
