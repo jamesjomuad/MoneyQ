@@ -1,4 +1,9 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import {
+  router,
+  Stack,
+  useLocalSearchParams,
+  useNavigation,
+} from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, View } from 'react-native';
 
@@ -21,6 +26,7 @@ import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/cur
 import { parseFlexibleDate, toIsoDate } from '../../utils/dates';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { reminderValidationError, suggestReminderValues } from '../../utils/reminders';
+import { showToast } from '../../stores/toastStore';
 
 const TYPE_OPTIONS = [
   { value: 'expense', label: 'Expense' },
@@ -37,6 +43,98 @@ function offsetIso(offset) {
   const target = new Date();
   target.setDate(target.getDate() - offset);
   return toIsoDate(target);
+}
+
+/**
+ * Normalized, deterministic snapshot for the dirty check: amounts are minor
+ * units, dates ISO, description trimmed, payment status only meaningful for
+ * expenses, and disabled reminders store no date/time. Serialized with one
+ * literal key order, so equal values always compare equal — restoring a
+ * field to its original value makes the form clean again.
+ */
+function formSnapshot(values) {
+  return JSON.stringify({
+    type: values.type,
+    paymentStatus: values.type === 'expense' ? values.paymentStatus : null,
+    amountMinor: values.amountMinor,
+    tagId: values.tagId || null,
+    date: values.date,
+    description: values.description?.trim() ? values.description.trim() : null,
+    reminderEnabled: Boolean(values.reminderEnabled),
+    reminderDate: values.reminderEnabled ? values.reminderDate || '' : '',
+    reminderTime: values.reminderEnabled ? values.reminderTime || '' : '',
+  });
+}
+
+/** The saved baseline a loaded row starts from. */
+function snapshotOfRow(row) {
+  return formSnapshot({
+    type: row.type,
+    paymentStatus: effectivePaymentStatus(row) ?? 'unpaid',
+    amountMinor: row.amount,
+    tagId: row.tag_id,
+    date: row.transaction_date,
+    description: row.description,
+    reminderEnabled: row.reminder?.enabled === 1,
+    reminderDate: row.reminder?.remind_date ?? '',
+    reminderTime: row.reminder?.remind_time ?? '',
+  });
+}
+
+function validateFields(f, currency) {
+  const nextErrors = {};
+  const resolvedDate = parseFlexibleDate(f.date);
+  const minorAmount = toMinor(f.amount, currency);
+
+  if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
+  if (f.type !== 'transfer' && !f.tagId) nextErrors.tag = 'Choose a tag.';
+  if (!resolvedDate) nextErrors.date = 'Pick a date.';
+  if (f.reminderOn) {
+    const reminderError = reminderValidationError(f.reminderDate, f.reminderTime);
+    if (reminderError) nextErrors.reminder = reminderError;
+  }
+  return nextErrors;
+}
+
+/** Assumes validateFields passed. */
+function buildPayload(f, currency) {
+  return {
+    type: f.type,
+    amount: toMinor(f.amount, currency),
+    tagId: f.tagId,
+    description: f.description.trim() || null,
+    date: parseFlexibleDate(f.date),
+    paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
+    reminder: {
+      enabled: f.reminderOn,
+      date: f.reminderDate,
+      time: f.reminderTime,
+    },
+  };
+}
+
+function openDeviceSettings() {
+  if (Platform.OS !== 'web') Linking.openSettings();
+}
+
+/** The device cannot deliver a reminder — never a reason to lose the save. */
+function announceReminderOutcome(outcome) {
+  if (!outcome) return;
+  if (outcome.status === 'blocked') {
+    Alert.alert(
+      'Notifications are off',
+      'Your reminder is saved, but MoneyQ cannot show it until notifications are allowed for this app.',
+      [
+        { text: 'Open Settings', onPress: openDeviceSettings },
+        { text: 'Not now', style: 'cancel' },
+      ],
+    );
+  } else if (outcome.status === 'failed') {
+    Alert.alert(
+      'Reminder saved',
+      'The notification could not be scheduled. MoneyQ will try again the next time it opens.',
+    );
+  }
 }
 
 export default function TransactionFormScreen() {
@@ -74,6 +172,15 @@ export default function TransactionFormScreen() {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [hydratedFrom, setHydratedFrom] = useState(null);
+
+  // Auto-save state (edit mode only): one save at a time, at most one
+  // scheduled departure, and the freshest saved-row snapshot so a listener
+  // from an older render can never write the same values twice. Touched
+  // only inside effects and navigation listeners.
+  const savePromiseRef = useRef(null);
+  const leavePlannedRef = useRef(false);
+  const rowSnapshotRef = useRef(null);
+  const navigation = useNavigation();
 
   useEffect(() => {
     loadTags();
@@ -143,43 +250,148 @@ export default function TransactionFormScreen() {
     setReminderTime((current) => current || suggestion.time);
   }
 
-  function openDeviceSettings() {
-    if (Platform.OS !== 'web') Linking.openSettings();
-  }
+  // Mirror of the saved row, refreshed whenever the store reloads it. Read
+  // inside autoSave so a listener from an older render cannot write twice.
+  useEffect(() => {
+    rowSnapshotRef.current = editing && hydratedFrom === editing.id ? snapshotOfRow(editing) : null;
+  }, [editing, hydratedFrom]);
 
-  /** The device cannot deliver a reminder — never a reason to lose the save. */
-  function announceReminderOutcome(outcome) {
-    if (!outcome) return;
-    if (outcome.status === 'blocked') {
-      Alert.alert(
-        'Notifications are off',
-        'Your reminder is saved, but MoneyQ cannot show it until notifications are allowed for this app.',
-        [
-          { text: 'Open Settings', onPress: openDeviceSettings },
-          { text: 'Not now', style: 'cancel' },
-        ],
-      );
-    } else if (outcome.status === 'failed') {
-      Alert.alert(
-        'Reminder saved',
-        'The notification could not be scheduled. MoneyQ will try again the next time it opens.',
-      );
+  // Auto-save for edits: leaving the page (back button, header back, Android
+  // hardware back, modal dismiss, or pushing another screen over the form)
+  // saves real changes exactly once. The effect only subscribes while the
+  // form is meaningfully dirty — comparing normalized snapshots, so
+  // restoring a field to its saved value counts as no change. An untouched
+  // visit therefore performs zero update calls, zero writes, zero toasts.
+  // After a save the store reloads the row, the snapshot re-derives equal to
+  // it, listeners unsubscribe, and the scheduled router.back() leaves cleanly.
+  useEffect(() => {
+    if (!transactionId || !editing || hydratedFrom !== editing.id) return undefined;
+
+    const fields = {
+      type,
+      paymentStatus,
+      amount,
+      tagId,
+      date,
+      description,
+      reminderOn,
+      reminderDate,
+      reminderTime,
+    };
+    const snapshot = formSnapshot({
+      type,
+      paymentStatus,
+      amountMinor: toMinor(amount, currency),
+      tagId,
+      date,
+      description,
+      reminderEnabled: reminderOn,
+      reminderDate,
+      reminderTime,
+    });
+    if (snapshot === snapshotOfRow(editing)) return undefined;
+
+    async function autoSave() {
+      // Re-check against the freshest saved row: an in-flight reload may
+      // already hold these values, making this save a duplicate.
+      const fresh = rowSnapshotRef.current;
+      if (fresh !== null && snapshot === fresh) return 'saved';
+
+      const nextErrors = validateFields(fields, currency);
+      if (Object.keys(nextErrors).length > 0) {
+        // Invalid edits are never silently dropped: hold the departure and
+        // show what needs fixing.
+        setErrors(nextErrors);
+        showToast('Some fields need attention before this can be saved.', 'warning');
+        return 'invalid';
+      }
+
+      setErrors({});
+      try {
+        const result = await updateTransaction({
+          id: transactionId,
+          ...buildPayload(fields, currency),
+        });
+        rowSnapshotRef.current = snapshot;
+        showToast('Changes saved successfully', 'success');
+        announceReminderOutcome(result?.reminder);
+        return 'saved';
+      } catch {
+        showToast("Couldn't save changes. Please try again.", 'error');
+        return 'failed';
+      }
     }
-  }
 
+    // One save at a time, whichever lifecycle path asked for it.
+    function ensureSave() {
+      if (!savePromiseRef.current) {
+        savePromiseRef.current = autoSave().finally(() => {
+          savePromiseRef.current = null;
+        });
+      }
+      return savePromiseRef.current;
+    }
+
+    const beforeRemove = (event) => {
+      // The save may already have landed (store reloaded or our own write):
+      // treat that as clean and let this departure through untouched.
+      if (rowSnapshotRef.current !== null && snapshot === rowSnapshotRef.current) return;
+      event.preventDefault();
+      if (leavePlannedRef.current) return; // a departure is already scheduled.
+      leavePlannedRef.current = true;
+      ensureSave().then((outcome) => {
+        leavePlannedRef.current = false;
+        if (outcome === 'saved') router.back();
+      });
+    };
+
+    // Blur also saves: pushing "Add or rename tags" over the form must not
+    // strand edits, and a swipe-dismiss that already removed the screen
+    // still lands here before unmount.
+    const onBlur = () => {
+      if (rowSnapshotRef.current !== null && snapshot === rowSnapshotRef.current) return;
+      ensureSave();
+    };
+
+    const unsubscribeRemove = navigation.addListener('beforeRemove', beforeRemove);
+    const unsubscribeBlur = navigation.addListener('blur', onBlur);
+    return () => {
+      unsubscribeRemove();
+      unsubscribeBlur();
+    };
+  }, [
+    transactionId,
+    editing,
+    hydratedFrom,
+    type,
+    paymentStatus,
+    amount,
+    tagId,
+    date,
+    description,
+    reminderOn,
+    reminderDate,
+    reminderTime,
+    currency,
+    updateTransaction,
+    navigation,
+  ]);
+
+  // Create mode keeps its explicit button: a half-typed new transaction left
+  // by mistake should not land in the budget.
   async function handleSave() {
-    const nextErrors = {};
-    const resolvedDate = parseFlexibleDate(date);
-    const minorAmount = toMinor(amount, currency);
-
-    if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
-    if (type !== 'transfer' && !tagId) nextErrors.tag = 'Choose a tag.';
-    if (!resolvedDate) nextErrors.date = 'Pick a date.';
-    if (reminderOn) {
-      const reminderError = reminderValidationError(reminderDate, reminderTime);
-      if (reminderError) nextErrors.reminder = reminderError;
-    }
-
+    const fields = {
+      type,
+      paymentStatus,
+      amount,
+      tagId,
+      date,
+      description,
+      reminderOn,
+      reminderDate,
+      reminderTime,
+    };
+    const nextErrors = validateFields(fields, currency);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
@@ -188,24 +400,11 @@ export default function TransactionFormScreen() {
     setErrors({});
     setSaving(true);
 
-    const payload = {
-      type,
-      amount: minorAmount,
-      tagId,
-      description: description.trim() || null,
-      date: resolvedDate,
-      paymentStatus: type === 'expense' ? paymentStatus : null,
-      reminder: {
-        enabled: reminderOn,
-        date: reminderDate,
-        time: reminderTime,
-      },
-    };
-
     try {
-      const result = transactionId
-        ? await updateTransaction({ id: transactionId, ...payload })
-        : await addTransaction({ budgetId, ...payload });
+      const result = await addTransaction({
+        budgetId,
+        ...buildPayload(fields, currency),
+      });
       router.back();
       announceReminderOutcome(result?.reminder);
     } catch (error) {
@@ -392,12 +591,24 @@ export default function TransactionFormScreen() {
           onOpenSettings={openDeviceSettings}
         />
 
-        <View style={{ height: spacing.sm }} />
-        <Button
-          label={saving ? 'Saving…' : transactionId ? 'Save changes' : 'Add transaction'}
-          onPress={handleSave}
-          disabled={saving}
-        />
+        {transactionId ? (
+          <Text
+            variant="caption"
+            tone="faint"
+            style={{ marginTop: spacing.md, textAlign: 'center' }}
+          >
+            Changes save automatically when you leave this screen.
+          </Text>
+        ) : (
+          <>
+            <View style={{ height: spacing.sm }} />
+            <Button
+              label={saving ? 'Saving…' : 'Add transaction'}
+              onPress={handleSave}
+              disabled={saving}
+            />
+          </>
+        )}
       </Screen>
     </View>
   );

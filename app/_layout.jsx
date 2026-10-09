@@ -12,6 +12,7 @@ import { Button } from "../components/ui/Button";
 import { Screen } from "../components/ui/Screen";
 import { Text } from "../components/ui/Text";
 import { ThemeProvider, useTheme } from "../components/ui/ThemeProvider";
+import { ToastView } from "../components/ui/ToastView";
 import { NotificationTapHandler } from "../components/notifications/NotificationTapHandler";
 import { initStorage } from "../storage/adapters/adapter";
 import { useAppStore } from "../stores/appStore";
@@ -142,6 +143,9 @@ function NavigationShell() {
           options={{ presentation: "modal", title: "Tags" }}
         />
       </Stack>
+      {/* Mounted above the navigator so a save toast survives the screen
+          closing: auto-save fires from beforeRemove, then the screen unmounts. */}
+      <ToastView />
     </NavigationThemeProvider>
   );
 }
