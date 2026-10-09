@@ -23,7 +23,7 @@ import { useRemindersStore } from '../../stores/remindersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
-import { parseFlexibleDate, toIsoDate } from '../../utils/dates';
+import { formatShortDate, parseFlexibleDate, toIsoDate } from '../../utils/dates';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { reminderValidationError, suggestReminderValues } from '../../utils/reminders';
 import { showToast } from '../../stores/toastStore';
@@ -81,6 +81,40 @@ function snapshotOfRow(row) {
     reminderTime: row.reminder?.remind_time ?? '',
     reminderNotes: row.reminder?.notes ?? '',
   });
+}
+
+/**
+ * Budgets are period containers, so a transaction dated outside its folder's
+ * range inflates date-driven views like Reports. Returns { iso } when the
+ * value falls outside the budget's start–end dates — unless it equals the
+ * row's already-saved date, which keeps editing an existing out-of-period
+ * row (a data fix, a tag change) from re-triggering the confirmation.
+ */
+function periodStatus(dateValue, budget, savedDate) {
+  if (!budget?.start_date || !budget?.end_date) return null;
+  // parseFlexibleDate returns a 'YYYY-MM-DD' string (see utils/dates.js),
+  // not a Date — pass it straight through; toIsoDate would call
+  // getFullYear() on a string and throw.
+  const iso = parseFlexibleDate(dateValue);
+  if (!iso) return null;
+  if (iso >= budget.start_date && iso <= budget.end_date) return null;
+  if (savedDate && iso === savedDate) return null;
+  return { iso };
+}
+
+function askPeriodConfirmation(outside, budget, onProceed) {
+  Alert.alert(
+    'Outside this folder’s period',
+    `This transaction is dated ${formatShortDate(outside.iso)}, but ${
+      budget?.name ?? 'this folder'
+    } covers ${formatShortDate(budget?.start_date)} – ${formatShortDate(
+      budget?.end_date,
+    )}. Save it anyway?`,
+    [
+      { text: 'Save anyway', onPress: onProceed },
+      { text: 'Adjust the date', style: 'cancel' },
+    ],
+  );
 }
 
 function validateFields(f, currency) {
@@ -150,6 +184,7 @@ export default function TransactionFormScreen() {
   const updateTransaction = useBudgetDetailStore((state) => state.updateTransaction);
   const entries = useBudgetDetailStore((state) => state.entries);
   const storeBudgetId = useBudgetDetailStore((state) => state.budgetId);
+  const budget = useBudgetDetailStore((state) => state.budget);
   const isLoadingBudget = useBudgetDetailStore((state) => state.isLoading);
   const loadBudget = useBudgetDetailStore((state) => state.load);
   const refreshPermission = useRemindersStore((state) => state.refreshPermission);
@@ -246,6 +281,8 @@ export default function TransactionFormScreen() {
 
   const stillLoading = Boolean(transactionId) && (isLoadingBudget || storeBudgetId !== budgetId);
 
+  const outsidePeriod = periodStatus(date, budget, editing?.transaction_date);
+
   function handleReminderToggle(next) {
     setReminderOn(next);
     if (!next) return;
@@ -298,11 +335,15 @@ export default function TransactionFormScreen() {
     });
     if (snapshot === snapshotOfRow(editing)) return undefined;
 
-    async function autoSave() {
+    async function autoSave(skipPeriodCheck = false) {
       // Re-check against the freshest saved row: an in-flight reload may
       // already hold these values, making this save a duplicate.
       const fresh = rowSnapshotRef.current;
       if (fresh !== null && snapshot === fresh) return 'saved';
+
+      if (!skipPeriodCheck && periodStatus(date, budget, editing?.transaction_date)) {
+        return 'confirm';
+      }
 
       const nextErrors = validateFields(fields, currency);
       if (Object.keys(nextErrors).length > 0) {
@@ -330,13 +371,25 @@ export default function TransactionFormScreen() {
     }
 
     // One save at a time, whichever lifecycle path asked for it.
-    function ensureSave() {
+    function ensureSave(skipPeriodCheck = false) {
       if (!savePromiseRef.current) {
-        savePromiseRef.current = autoSave().finally(() => {
+        savePromiseRef.current = autoSave(skipPeriodCheck).finally(() => {
           savePromiseRef.current = null;
         });
       }
       return savePromiseRef.current;
+    }
+
+    function askPeriod() {
+      const outside = periodStatus(date, budget, editing?.transaction_date);
+      if (!outside) return;
+      askPeriodConfirmation(outside, budget, () => {
+        ensureSave(true).then((outcome) => {
+          const wasLeaving = leavePlannedRef.current;
+          leavePlannedRef.current = false;
+          if (outcome === 'saved' && wasLeaving) router.back();
+        });
+      });
     }
 
     const beforeRemove = (event) => {
@@ -347,6 +400,11 @@ export default function TransactionFormScreen() {
       if (leavePlannedRef.current) return; // a departure is already scheduled.
       leavePlannedRef.current = true;
       ensureSave().then((outcome) => {
+        if (outcome === 'confirm') {
+          leavePlannedRef.current = false;
+          askPeriod();
+          return;
+        }
         leavePlannedRef.current = false;
         if (outcome === 'saved') router.back();
       });
@@ -357,7 +415,9 @@ export default function TransactionFormScreen() {
     // still lands here before unmount.
     const onBlur = () => {
       if (rowSnapshotRef.current !== null && snapshot === rowSnapshotRef.current) return;
-      ensureSave();
+      ensureSave().then((outcome) => {
+        if (outcome === 'confirm') askPeriod();
+      });
     };
 
     const unsubscribeRemove = navigation.addListener('beforeRemove', beforeRemove);
@@ -381,13 +441,21 @@ export default function TransactionFormScreen() {
     reminderTime,
     reminderNotes,
     currency,
+    budget,
+    editing?.transaction_date,
     updateTransaction,
     navigation,
   ]);
 
   // Create mode keeps its explicit button: a half-typed new transaction left
   // by mistake should not land in the budget.
-  async function handleSave() {
+  async function handleSave(opts) {
+    if (opts?.skipPeriodCheck !== true && outsidePeriod) {
+      askPeriodConfirmation(outsidePeriod, budget, () =>
+        handleSave({ skipPeriodCheck: true }),
+      );
+      return;
+    }
     const fields = {
       type,
       paymentStatus,
@@ -575,6 +643,13 @@ export default function TransactionFormScreen() {
             />
           ))}
         </View>
+        {outsidePeriod ? (
+          <Text variant="caption" tone="warning" style={{ marginTop: spacing.xs }}>
+            Dated outside this folder’s period (
+            {formatShortDate(budget?.start_date)} – {formatShortDate(budget?.end_date)});
+            saving it will ask you to confirm.
+          </Text>
+        ) : null}
 
         <View style={{ height: spacing.md }} />
 
