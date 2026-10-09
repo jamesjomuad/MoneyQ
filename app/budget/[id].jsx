@@ -137,7 +137,19 @@ export default function BudgetDetailScreen() {
         }}
       />
 
-      <Screen contentContainerStyle={{ paddingBottom: 96 }}>
+      {/* Pinned summary: the remaining balance stays visible while the
+          tag and transaction lists scroll underneath it. */}
+      <View
+        style={[
+          styles.pinned,
+          {
+            backgroundColor: colors.background,
+            paddingHorizontal: spacing.lg,
+            paddingBottom: spacing.md,
+            paddingTop: spacing.md,
+          },
+        ]}
+      >
         <View style={styles.periodRow}>
           <View
             style={[
@@ -183,9 +195,9 @@ export default function BudgetDetailScreen() {
             />
           </View>
         </Card>
+      </View>
 
-        <View style={{ height: spacing.xl }} />
-
+      <Screen contentContainerStyle={{ paddingBottom: 96 }}>
         <SectionHeader
           title={`Tags · ${tagSummaries.length}`}
           fontSize={14}
@@ -297,6 +309,7 @@ export default function BudgetDetailScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  pinned: { flexShrink: 0 },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   stats: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
   periodRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
