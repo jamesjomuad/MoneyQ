@@ -6,6 +6,7 @@ import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { SectionHeader } from '../ui/Screen';
 import { Text } from '../ui/Text';
+import { TextField } from '../ui/TextField';
 import { useTheme } from '../ui/ThemeProvider';
 import { toIsoDate } from '../../utils/dates';
 import { formatReminderWhen } from '../../utils/reminders';
@@ -26,6 +27,8 @@ export function ReminderFields({
   onDateChange,
   time,
   onTimeChange,
+  notes,
+  onNotesChange,
   error,
   permission,
   onOpenSettings,
@@ -76,6 +79,17 @@ export function ReminderFields({
               title="Reminder Time"
               value={time}
               onChange={onTimeChange}
+            />
+
+            <TextField
+              label="Notes"
+              value={notes}
+              onChangeText={onNotesChange}
+              placeholder="What do you need to remember?"
+              multiline
+              numberOfLines={3}
+              maxLength={200}
+              inputStyle={{ textAlignVertical: 'top' }}
             />
 
             <View style={[styles.summary, { backgroundColor: colors.surfaceMuted, borderRadius: 12 }]}>

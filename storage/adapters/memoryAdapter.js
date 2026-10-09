@@ -252,7 +252,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       if (store.reminders.some((reminder) => reminder.transaction_id === row.transaction_id)) {
         throw new Error('UNIQUE constraint failed: reminders.transaction_id');
       }
-      store.reminders.push({ ...row });
+      store.reminders.push({ ...row, notes: row.notes ?? '' });
     },
 
     async updateReminder(row) {
@@ -355,6 +355,7 @@ function seedDemoData(store, timestamp) {
   store.reminders.push({
     id: 'demo_reminder_bill',
     transaction_id: 'demo_tx_reminder',
+    notes: 'Reload the prepaid wifi before it cuts out.',
     enabled: 1,
     remind_date: reminderDate,
     remind_time: '09:00',

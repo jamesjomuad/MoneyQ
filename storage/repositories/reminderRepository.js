@@ -25,10 +25,16 @@ export async function getReminderForTransaction(transactionId) {
  * (with its date and time) so switching it back on restores the previous
  * choice instead of starting from scratch.
  */
-export async function saveReminder({ transactionId, enabled, date, time, notificationId = null }) {
+export async function saveReminder({ transactionId, enabled, date, time, notes, notificationId = null }) {
   if (!transactionId) throw new Error('A reminder needs a transaction.');
   const existing = await storage.getReminderByTransaction(transactionId);
   const timestamp = nowIso();
+  // Notes are optional free text: '' means none, and leaving `notes` out of
+  // the call entirely keeps what the row already holds (a reminder can be
+  // re-scheduled or disabled without losing its note). Leading/trailing
+  // whitespace is trimmed away when a value is supplied.
+  const nextNotes =
+    notes === undefined ? existing?.notes ?? '' : String(notes ?? '').trim();
 
   if (!enabled) {
     if (!existing) return null;
@@ -36,6 +42,7 @@ export async function saveReminder({ transactionId, enabled, date, time, notific
       ...existing,
       enabled: 0,
       notification_id: null,
+      notes: nextNotes,
       updated_at: timestamp,
     });
     return storage.getReminderByTransaction(transactionId);
@@ -53,6 +60,7 @@ export async function saveReminder({ transactionId, enabled, date, time, notific
       remind_time: time,
       remind_at: remindAt,
       notification_id: notificationId,
+      notes: nextNotes,
       updated_at: timestamp,
     });
     return storage.getReminderByTransaction(transactionId);
@@ -67,6 +75,7 @@ export async function saveReminder({ transactionId, enabled, date, time, notific
     remind_time: time,
     remind_at: remindAt,
     notification_id: notificationId,
+    notes: nextNotes,
     created_at: timestamp,
     updated_at: timestamp,
   });
@@ -80,6 +89,8 @@ export async function saveReminder({ transactionId, enabled, date, time, notific
  * transaction, and those extra fields must not leak into storage.
  */
 export async function saveReminderNotification(reminder, notificationId) {
+  // No `notes` key: both adapters treat an omitted value as "keep what the
+  // row holds", so writing the OS id can never blank a user's note.
   await storage.updateReminder({
     id: reminder.id,
     enabled: reminder.enabled,

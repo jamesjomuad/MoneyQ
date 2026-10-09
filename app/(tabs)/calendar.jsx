@@ -164,6 +164,11 @@ export default function CalendarScreen() {
                         {formatTime(reminder.remind_time)} ·{" "}
                         {formatCurrency(reminder.amount, { currency })}
                       </Text>
+                      {reminder.notes ? (
+                        <Text variant="caption" tone="muted" numberOfLines={1}>
+                          {reminder.notes}
+                        </Text>
+                      ) : null}
                     </View>
                     <Text variant="caption" tone="muted">
                       🔔

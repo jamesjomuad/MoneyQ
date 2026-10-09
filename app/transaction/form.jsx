@@ -63,6 +63,7 @@ function formSnapshot(values) {
     reminderEnabled: Boolean(values.reminderEnabled),
     reminderDate: values.reminderEnabled ? values.reminderDate || '' : '',
     reminderTime: values.reminderEnabled ? values.reminderTime || '' : '',
+    reminderNotes: values.reminderEnabled ? (values.reminderNotes ?? '').trim() : '',
   });
 }
 
@@ -78,6 +79,7 @@ function snapshotOfRow(row) {
     reminderEnabled: row.reminder?.enabled === 1,
     reminderDate: row.reminder?.remind_date ?? '',
     reminderTime: row.reminder?.remind_time ?? '',
+    reminderNotes: row.reminder?.notes ?? '',
   });
 }
 
@@ -109,6 +111,7 @@ function buildPayload(f, currency) {
       enabled: f.reminderOn,
       date: f.reminderDate,
       time: f.reminderTime,
+      notes: f.reminderNotes.trim(),
     },
   };
 }
@@ -169,6 +172,7 @@ export default function TransactionFormScreen() {
   const [reminderOn, setReminderOn] = useState(false);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('');
+  const [reminderNotes, setReminderNotes] = useState('');
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [hydratedFrom, setHydratedFrom] = useState(null);
@@ -220,6 +224,7 @@ export default function TransactionFormScreen() {
     setReminderOn(editing.reminder?.enabled === 1);
     setReminderDate(editing.reminder?.remind_date ?? '');
     setReminderTime(editing.reminder?.remind_time ?? '');
+    setReminderNotes(editing.reminder?.notes ?? '');
   }
 
   // Transfers have no creation UI yet, but an existing one must stay editable.
@@ -277,6 +282,7 @@ export default function TransactionFormScreen() {
       reminderOn,
       reminderDate,
       reminderTime,
+      reminderNotes,
     };
     const snapshot = formSnapshot({
       type,
@@ -288,6 +294,7 @@ export default function TransactionFormScreen() {
       reminderEnabled: reminderOn,
       reminderDate,
       reminderTime,
+      reminderNotes,
     });
     if (snapshot === snapshotOfRow(editing)) return undefined;
 
@@ -372,6 +379,7 @@ export default function TransactionFormScreen() {
     reminderOn,
     reminderDate,
     reminderTime,
+    reminderNotes,
     currency,
     updateTransaction,
     navigation,
@@ -390,6 +398,7 @@ export default function TransactionFormScreen() {
       reminderOn,
       reminderDate,
       reminderTime,
+      reminderNotes,
     };
     const nextErrors = validateFields(fields, currency);
     if (Object.keys(nextErrors).length > 0) {
@@ -586,6 +595,8 @@ export default function TransactionFormScreen() {
           onDateChange={setReminderDate}
           time={reminderTime}
           onTimeChange={setReminderTime}
+          notes={reminderNotes}
+          onNotesChange={setReminderNotes}
           error={errors.reminder}
           permission={permission}
           onOpenSettings={openDeviceSettings}

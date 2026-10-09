@@ -254,8 +254,8 @@ export function createSqliteAdapter(getDb) {
       await run(
         `INSERT INTO reminders
            (id, transaction_id, enabled, remind_date, remind_time, remind_at,
-            notification_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            notification_id, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.transaction_id,
         row.enabled,
@@ -263,22 +263,26 @@ export function createSqliteAdapter(getDb) {
         row.remind_time,
         row.remind_at,
         row.notification_id ?? null,
+        row.notes ?? '',
         row.created_at,
         row.updated_at,
       );
     },
 
     async updateReminder(row) {
+      // notes is COALESCEd so notification bookkeeping — which updates only
+      // the OS id — can never blank a reminder's notes; pass '' to clear.
       const result = await run(
         `UPDATE reminders
             SET enabled = ?, remind_date = ?, remind_time = ?, remind_at = ?,
-                notification_id = ?, updated_at = ?
+                notification_id = ?, notes = COALESCE(?, notes), updated_at = ?
           WHERE id = ?`,
         row.enabled,
         row.remind_date,
         row.remind_time,
         row.remind_at,
         row.notification_id ?? null,
+        row.notes ?? null,
         row.updated_at,
         row.id,
       );

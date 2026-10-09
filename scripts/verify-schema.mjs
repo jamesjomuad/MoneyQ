@@ -92,9 +92,10 @@ console.log('\n--- schema ---');
 // Apply everything except the newest migration, insert rows the way a v4
 // install would hold them, then run migration 5 — so the payment-status
 // backfill is tested against real pre-existing data, not just declared.
-const paymentMigration = migrations.find((entry) => entry.version === LATEST_VERSION);
+const paymentMigration = migrations.find((entry) => entry.version === 5);
+const notesMigration = migrations.find((entry) => entry.version === LATEST_VERSION);
 for (const entry of migrations) {
-  if (entry === paymentMigration) continue;
+  if (entry === paymentMigration || entry === notesMigration) continue;
   await entry.up(adapter);
 }
 await adapter.runAsync(
@@ -115,7 +116,11 @@ insertTransaction(db, {
   amount: 900,
   transaction_date: '2026-10-05',
 });
+db.prepare(`INSERT INTO reminders
+   (id, transaction_id, enabled, remind_date, remind_time, remind_at, created_at, updated_at)
+   VALUES ('v4_reminder', 'v4_expense', 1, '2026-10-20', '09:00', '2026-10-20T09:00:00+08:00', '2026-10-05', '2026-10-05')`).run();
 await paymentMigration.up(adapter);
+await notesMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -169,6 +174,15 @@ check(
   'the upgrade leaves income without a payment status',
   v4Rows.find((row) => row.id === 'v4_income')?.payment_status === null,
 );
+const v4ReminderNotes = await adapter.getFirstAsync(
+  `SELECT notes FROM reminders WHERE id = 'v4_reminder'`,
+);
+check(
+  'existing reminders gain empty notes on upgrade, never losing the row',
+  v4ReminderNotes?.notes === '',
+  JSON.stringify(v4ReminderNotes),
+);
+await adapter.runAsync(`DELETE FROM reminders WHERE id = 'v4_reminder'`);
 await adapter.runAsync(`DELETE FROM transactions WHERE id IN ('v4_expense', 'v4_income')`);
 await adapter.runAsync(`DELETE FROM budgets WHERE id = 'v4_budget'`);
 
@@ -190,7 +204,12 @@ check(
   reminderIndexes.join(','),
 );
 
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 5, String(LATEST_VERSION));
+check(
+  'reminders gained a notes column',
+  reminderColumns.includes('notes'),
+  reminderColumns.join(','),
+);
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 6, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -532,6 +551,7 @@ async function runScenario(store) {
     remind_time: '09:00',
     remind_at: '2026-10-19T09:00:00+08:00',
     notification_id: 'os-123',
+    notes: 'Pay the landlord on the day.',
     created_at: STAMP,
     updated_at: STAMP,
   });
@@ -567,6 +587,22 @@ async function runScenario(store) {
   });
   snapshot.disabledReminder = await store.getReminderByTransaction('p_reminder_tx');
   snapshot.remindersWhileDisabled = await store.listReminders();
+
+  // Clearing notes writes the empty string on both engines; an omitted
+  // `notes` key never blanks the row (SQLite COALESCE / memory merge).
+  await store.updateReminder({
+    id: 'p_reminder',
+    transaction_id: 'p_reminder_tx',
+    enabled: 0,
+    remind_date: '2026-10-19',
+    remind_time: '10:00',
+    remind_at: '2026-10-19T10:00:00+08:00',
+    notification_id: null,
+    notes: '',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.notesClearedReminder = await store.getReminderByTransaction('p_reminder_tx');
 
   let duplicateReminderRejected = false;
   try {
@@ -623,12 +659,25 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 5);
+check('both adapters report the same schema version', LATEST_VERSION === 6);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
   parityBudget?.income === 400_000 && memoryResult.budgets.find((budget) => budget.id === 'p_budget')?.income === 400_000,
   String(parityBudget?.income),
+);
+
+check(
+  'reminder notes round-trip and survive notification-only updates on both engines',
+  sqliteResult.reminder.notes === 'Pay the landlord on the day.' &&
+    sqliteResult.rescheduledReminder.notes === 'Pay the landlord on the day.' &&
+    sqliteResult.disabledReminder.notes === 'Pay the landlord on the day.' &&
+    sqliteResult.notesClearedReminder.notes === '' &&
+    memoryResult.reminder.notes === 'Pay the landlord on the day.' &&
+    memoryResult.rescheduledReminder.notes === 'Pay the landlord on the day.' &&
+    memoryResult.disabledReminder.notes === 'Pay the landlord on the day.' &&
+    memoryResult.notesClearedReminder.notes === '',
+  JSON.stringify([sqliteResult.disabledReminder?.notes, memoryResult.notesClearedReminder?.notes]),
 );
 
 const searchByDescription = sqliteResult.searchByDescription.map((row) => row.id);
@@ -704,7 +753,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has four pending migrations', pending.length === 4, String(pending.length));
+check('legacy database has five pending migrations', pending.length === 5, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }

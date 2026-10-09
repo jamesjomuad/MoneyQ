@@ -86,6 +86,7 @@ export async function applyReminder({ transaction, reminder, requestPermission =
       enabled: false,
       date: existing?.remind_date ?? reminder?.date ?? null,
       time: existing?.remind_time ?? reminder?.time ?? null,
+      notes: reminder?.notes,
     });
     return { status: 'disabled', reminder: row };
   }
@@ -97,6 +98,7 @@ export async function applyReminder({ transaction, reminder, requestPermission =
     enabled: true,
     date: reminder.date,
     time: reminder.time,
+    notes: reminder?.notes,
     notificationId: null,
   });
 
