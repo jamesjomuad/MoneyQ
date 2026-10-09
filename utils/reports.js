@@ -21,6 +21,7 @@ import {
 export const REPORT_PERIODS = [
   { value: 'thisMonth', label: 'This Month' },
   { value: 'lastMonth', label: 'Last Month' },
+  { value: 'nextMonth', label: 'Next Month' },
   { value: 'thisYear', label: 'This Year' },
   { value: 'custom', label: 'Custom' },
 ];
@@ -39,6 +40,12 @@ export function periodRange(filter, custom = null) {
 
   if (filter === 'lastMonth') {
     const monthKey = addMonths(currentMonthKey(), -1);
+    const { start, end } = monthRange(monthKey);
+    return { start, end, label: formatMonth(monthKey) };
+  }
+
+  if (filter === 'nextMonth') {
+    const monthKey = addMonths(currentMonthKey(), 1);
     const { start, end } = monthRange(monthKey);
     return { start, end, label: formatMonth(monthKey) };
   }
@@ -130,6 +137,7 @@ export function formatPercent(percent) {
  */
 export function trendForFilter(filter, period = null) {
   if (filter === 'lastMonth') return { view: 'monthly', offset: -1 };
+  if (filter === 'nextMonth') return { view: 'monthly', offset: 1 };
   if (filter === 'thisYear') return { view: 'yearly', offset: 0 };
   if (filter === 'custom') {
     const range = period ?? periodRange('custom');
@@ -142,12 +150,11 @@ export function trendForFilter(filter, period = null) {
 
 /**
  * Inclusive range for the expenses-over-time chart. `offset` is whole view
- * units back from the current one (0 = current); positive offsets would be
- * future periods and are clamped away — the chart never browses forward of
- * today. Custom ranges skip this entirely and use the filter's own bounds.
+ * units from the current one; negative looks back (Last Month) and positive
+ * looks forward (Next Month), so the chart always matches the period filter.
+ * Custom ranges skip this entirely and use the filter's own bounds.
  */
 export function trendRange(view, offset = 0) {
-  const clamped = Math.min(offset, 0);
   const now = new Date();
 
   if (view === 'allTime') {
@@ -155,7 +162,7 @@ export function trendRange(view, offset = 0) {
   }
 
   if (view === 'yearly') {
-    const year = now.getFullYear() + clamped;
+    const year = now.getFullYear() + offset;
     return {
       view,
       start: `${year}-01-01`,
@@ -164,7 +171,7 @@ export function trendRange(view, offset = 0) {
     };
   }
 
-  const monthKey = addMonths(currentMonthKey(), clamped);
+  const monthKey = addMonths(currentMonthKey(), offset);
   const { start, end } = monthRange(monthKey);
   return { view, start, end, label: formatMonth(monthKey) };
 }

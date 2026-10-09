@@ -27,7 +27,8 @@ const TREND_GRANULARITY = {
 };
 
 /**
- * Reports tab: one filter (This Month / Last Month / This Year / Custom
+ * Reports tab: one filter (This Month / Last Month / Next Month / This Year /
+ * Custom
  * range) drives the summary, the income-vs-expenses bars, the
  * expenses-by-tag pie and the expenses-over-time chart, whose granularity
  * follows the filter. Custom opens the DateRangeSheet and applies only on
