@@ -164,6 +164,34 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         .map(copy);
     },
 
+    /** SQLite's case-insensitive description-or-tag-name search, wildcards literal. */
+    async searchTransactions(term, limit) {
+      const needle = String(term).toLowerCase();
+      const tagById = new Map(store.tags.map((tag) => [tag.id, tag]));
+      const budgetById = new Map(store.budgets.map((budget) => [budget.id, budget]));
+      return store.transactions
+        .filter((transaction) => {
+          const inDescription = (transaction.description ?? '')
+            .toLowerCase()
+            .includes(needle);
+          const tag = tagById.get(transaction.tag_id);
+          const inTag = tag ? tag.name.toLowerCase().includes(needle) : false;
+          return inDescription || inTag;
+        })
+        .sort(byTransactionDate)
+        .slice(0, limit)
+        .map((transaction) => {
+          const tag = tagById.get(transaction.tag_id) ?? null;
+          return copy({
+            ...transaction,
+            tag_name: tag?.name ?? null,
+            tag_emoji: tag?.emoji ?? null,
+            tag_color: tag?.color ?? null,
+            budget_name: budgetById.get(transaction.budget_id)?.name ?? null,
+          });
+        });
+    },
+
     async getTransaction(id) {
       return copy(store.transactions.find((transaction) => transaction.id === id) ?? null);
     },

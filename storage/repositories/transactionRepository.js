@@ -14,6 +14,26 @@ export async function getTransaction(id) {
   return storage.getTransaction(id);
 }
 
+const SEARCH_RESULT_LIMIT = 30;
+
+/**
+ * Case-insensitive substring search across every budget, on transaction
+ * descriptions and tag names. Rows come back newest first and carry an
+ * embedded `tag` object (or null) so result lists can render without a
+ * second query.
+ */
+export async function searchTransactions(query) {
+  const term = (query ?? '').trim();
+  if (term.length === 0) return [];
+  const rows = await storage.searchTransactions(term, SEARCH_RESULT_LIMIT);
+  return rows.map((row) => ({
+    ...row,
+    tag: row.tag_name
+      ? { id: row.tag_id, name: row.tag_name, emoji: row.tag_emoji, color: row.tag_color }
+      : null,
+  }));
+}
+
 export async function createTransaction(input) {
   const id = createId('tx');
   const timestamp = nowIso();

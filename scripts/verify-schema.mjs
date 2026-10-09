@@ -534,9 +534,18 @@ async function runScenario(store) {
   }
   snapshot.duplicateReminderRejected = duplicateReminderRejected;
 
+  // Home text search: identical rows, order, and tag columns from both
+  // engines, including case-insensitive partial matches and the rule that
+  // LIKE wildcards in the term are treated as literal text.
+  snapshot.searchByDescription = await store.searchTransactions('SALARY', 10);
+  snapshot.searchByTagName = await store.searchTransactions('renamed ta', 10);
+  snapshot.searchWildcardLiteral = await store.searchTransactions('100%', 10);
+  snapshot.searchMiss = await store.searchTransactions('zzz-nothing', 10);
+
   await store.deleteTag('p_tag');
   snapshot.tagAfterDelete = await store.getTag('p_tag');
   snapshot.transactionKeepsAmount = await store.getTransaction('p_expense');
+  snapshot.searchAfterTagDelete = await store.searchTransactions('renamed', 10);
 
   snapshot.deletedBudgets = await store.deleteBudget('p_budget');
   snapshot.budgetAfterDelete = await store.getBudget('p_budget');
@@ -568,6 +577,35 @@ check(
   'both adapters report period income on the folder row',
   parityBudget?.income === 400_000 && memoryResult.budgets.find((budget) => budget.id === 'p_budget')?.income === 400_000,
   String(parityBudget?.income),
+);
+
+const searchByDescription = sqliteResult.searchByDescription.map((row) => row.id);
+const searchByTagName = sqliteResult.searchByTagName.map((row) => row.id);
+check(
+  'search matches descriptions case-insensitively and carries the folder name',
+  searchByDescription.length === 1 &&
+    searchByDescription[0] === 'p_income' &&
+    memoryResult.searchByDescription.map((row) => row.id)[0] === 'p_income' &&
+    sqliteResult.searchByDescription.every((row) => row.budget_name === 'Parity') &&
+    memoryResult.searchByDescription.every((row) => row.budget_name === 'Parity'),
+  JSON.stringify(searchByDescription),
+);
+check(
+  'search matches tag names and carries the tag columns',
+  searchByTagName.length === 3 &&
+    memoryResult.searchByTagName.length === 3 &&
+    sqliteResult.searchByTagName.every((row) => row.tag_name === 'Renamed Tag'),
+  JSON.stringify(searchByTagName),
+);
+check(
+  'search treats LIKE wildcards as literal text',
+  sqliteResult.searchWildcardLiteral.length === 0 &&
+    memoryResult.searchWildcardLiteral.length === 0,
+);
+check(
+  'search after tag deletion no longer matches the removed tag',
+  sqliteResult.searchAfterTagDelete.length === 0 &&
+    memoryResult.searchAfterTagDelete.length === 0,
 );
 
 console.log('\n--- legacy milestone-1 upgrade ---');

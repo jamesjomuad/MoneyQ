@@ -153,6 +153,32 @@ export function createSqliteAdapter(getDb) {
       );
     },
 
+    /**
+     * Cross-budget text search used by Home. Case-insensitive substring match
+     * on the description or the joined tag name; LIKE wildcards in the term
+     * are escaped so a query of '100%' searches for the literal text. Rows
+     * carry the owning folder's name so results can be grouped by it.
+     */
+    async searchTransactions(term, limit) {
+      const pattern = `%${String(term)
+        .toLowerCase()
+        .replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+      return query(
+        `SELECT t.*, tg.name AS tag_name, tg.emoji AS tag_emoji, tg.color AS tag_color,
+                b.name AS budget_name
+          FROM transactions t
+          LEFT JOIN tags tg ON tg.id = t.tag_id
+          JOIN budgets b ON b.id = t.budget_id
+          WHERE lower(t.description) LIKE ? ESCAPE '\\'
+             OR lower(tg.name) LIKE ? ESCAPE '\\'
+          ORDER BY t.transaction_date DESC, t.created_at DESC
+          LIMIT ?`,
+        pattern,
+        pattern,
+        limit,
+      );
+    },
+
     async getTransaction(id) {
       return first('SELECT * FROM transactions WHERE id = ?', id);
     },
