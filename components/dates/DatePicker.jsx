@@ -55,9 +55,9 @@ export function DatePicker({
           styles.field,
           {
             backgroundColor: colors.surfaceMuted,
-            borderColor: error ? colors.expense : colors.border,
+            borderColor: error ? colors.expense : pressed ? colors.primary : colors.border,
             borderRadius: radius.md,
-            opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+            opacity: disabled ? 0.5 : 1,
           },
         ]}
       >

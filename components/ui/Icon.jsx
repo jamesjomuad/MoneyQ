@@ -15,6 +15,7 @@ const ICONS = {
   tag: { ios: 'tag', android: 'label', web: 'label' },
   chevronLeft: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' },
   chevronRight: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
+  chevronDown: { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' },
   calendar: { ios: 'calendar', android: 'calendar_month', web: 'calendar_month' },
   clock: { ios: 'clock', android: 'schedule', web: 'schedule' },
   close: { ios: 'xmark', android: 'close', web: 'close' },

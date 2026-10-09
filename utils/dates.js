@@ -5,6 +5,10 @@ const MONTH_NAMES = [
 
 const SHORT_MONTH_NAMES = MONTH_NAMES.map((month) => month.slice(0, 3));
 
+/** Month names for pickers that list all twelve by name. */
+export const MONTH_LABELS = MONTH_NAMES;
+export const SHORT_MONTH_LABELS = SHORT_MONTH_NAMES;
+
 /**
  * All dates are stored as local 'YYYY-MM-DD' strings. Using toISOString() here
  * would shift the day for anyone west of UTC, which is a real bug for a
@@ -49,6 +53,12 @@ export function monthRange(monthKey) {
 export function addMonths(monthKey, delta) {
   const [year, month] = String(monthKey).split('-').map(Number);
   const shifted = new Date(year, month - 1 + delta, 1);
+  return monthKeyOf(shifted);
+}
+
+export function addYears(monthKey, delta) {
+  const [year, month] = String(monthKey).split('-').map(Number);
+  const shifted = new Date(year + delta, month - 1, 1);
   return monthKeyOf(shifted);
 }
 
