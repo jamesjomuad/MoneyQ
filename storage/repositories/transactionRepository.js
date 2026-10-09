@@ -1,5 +1,10 @@
 import { storage } from '../adapters/adapter';
 import { createId, nowIso } from '../../utils/id';
+import {
+  defaultPaymentStatus,
+  effectivePaymentStatus,
+  isValidPaymentStatus,
+} from '../../utils/paymentStatus';
 
 export async function getTransactionsForBudget(budgetId) {
   return storage.listTransactionsByBudget(budgetId);
@@ -15,6 +20,29 @@ export async function getTransaction(id) {
 }
 
 const SEARCH_RESULT_LIMIT = 30;
+
+/**
+ * Payment status rules. Only expenses have one; income and transfers always
+ * store NULL. A new expense defaults to 'unpaid' unless the caller says
+ * otherwise, and an update that does not mention the status keeps whatever
+ * the stored expense already had.
+ */
+function resolveNewPaymentStatus(type, requested) {
+  if (type !== 'expense') return null;
+  return defaultPaymentStatus(requested);
+}
+
+function resolveUpdatedPaymentStatus(type, existing, input) {
+  if (type !== 'expense') return null;
+  const requested = input.paymentStatus;
+  if (requested === undefined || requested === null) {
+    // Not mentioned: a stored expense keeps its status (missing or invalid
+    // historical values read as 'paid'); an income/transfer becoming an
+    // expense starts 'unpaid'.
+    return existing.type === 'expense' ? effectivePaymentStatus(existing) : 'unpaid';
+  }
+  return isValidPaymentStatus(requested) ? requested : 'unpaid';
+}
 
 /**
  * Case-insensitive substring search across every budget, on transaction
@@ -57,6 +85,7 @@ export async function createTransaction(input) {
     to_account_id: input.toAccountId ?? null,
     description: input.description ?? null,
     transaction_date: input.date ?? '',
+    payment_status: resolveNewPaymentStatus(type, input.paymentStatus),
     created_at: timestamp,
     updated_at: timestamp,
   });
@@ -89,6 +118,7 @@ export async function updateTransaction(id, input) {
     tag_id: tagId || null,
     description: description || null,
     transaction_date: date,
+    payment_status: resolveUpdatedPaymentStatus(type, existing, input),
     updated_at: nowIso(),
   });
 

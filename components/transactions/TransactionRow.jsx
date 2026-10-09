@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 
 import { formatCurrency } from "../../utils/currency";
 import { dayLabel } from "../../utils/dates";
+import { effectivePaymentStatus } from "../../utils/paymentStatus";
 import { Icon } from "../ui/Icon";
 import { TagBadge } from "../ui/TagBadge";
 import { Text } from "../ui/Text";
@@ -35,6 +36,9 @@ export function TransactionRow({
 
   const showBadge = transaction.type !== "transfer" && Boolean(tag);
 
+  // Expenses carry a payment status; income and transfers never show one.
+  const payment = effectivePaymentStatus(transaction);
+
   // A reminder rides on the second line: it is the only extra marker a
   // transaction can carry.
   const hasReminder = transaction.reminder?.enabled === 1;
@@ -44,9 +48,11 @@ export function TransactionRow({
       : [dayLabel(transaction.transaction_date), hasReminder ? "🔔" : null];
   const subtitle = subtitleParts.filter(Boolean).join(" · ");
   const a11yTag = showBadge ? tag.name : null;
-  const a11ySuffixes = [a11yTag, hasReminder ? "reminder set" : null].filter(
-    Boolean,
-  );
+  const a11ySuffixes = [
+    a11yTag,
+    payment ? `${payment} expense` : null,
+    hasReminder ? "reminder set" : null,
+  ].filter(Boolean);
 
   return (
     <View
@@ -103,6 +109,15 @@ export function TransactionRow({
             {sign}
             {formatCurrency(transaction.amount, { currency })}
           </Text>
+          {payment ? (
+            <Text
+              variant="caption"
+              tone={payment === "unpaid" ? "warning" : "muted"}
+              style={{ marginTop: 1 }}
+            >
+              {payment === "unpaid" ? "Unpaid" : "Paid"}
+            </Text>
+          ) : null}
         </View>
       </Pressable>
 

@@ -197,7 +197,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async insertTransaction(row) {
-      store.transactions.push({ ...row });
+      store.transactions.push({ ...row, payment_status: row.payment_status ?? null });
     },
 
     async updateTransaction(row) {
@@ -208,6 +208,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       existing.tag_id = row.tag_id ?? null;
       existing.description = row.description ?? null;
       existing.transaction_date = row.transaction_date;
+      existing.payment_status = row.payment_status ?? null;
       existing.updated_at = row.updated_at;
       return 1;
     },
@@ -326,7 +327,7 @@ function seedDemoData(store, timestamp) {
     tx(budgets[0], 'expense', 145_000, 'default_daily-expenses', 'Groceries', today),
     tx(budgets[0], 'expense', 320_000, 'default_education', 'Online course', today),
     tx(budgets[0], 'expense', 250_000, 'default_car', 'Fuel', yesterday()),
-    tx(budgets[0], 'expense', 480_000, 'default_travel', 'Flight to Cebu', budgets[0].start_date),
+    tx(budgets[0], 'expense', 480_000, 'default_travel', 'Flight to Cebu', budgets[0].start_date, 'unpaid'),
     tx(budgets[1], 'income', 4_000_000, 'default_work', 'Salary', budgets[1].start_date),
     tx(budgets[1], 'expense', 1_200_000, 'default_household', 'Apartment rent', budgets[1].start_date),
     tx(budgets[1], 'expense', 98_000, 'default_daily-expenses', 'Groceries', budgets[1].end_date),
@@ -347,6 +348,7 @@ function seedDemoData(store, timestamp) {
     to_account_id: null,
     description: 'Internet bill',
     transaction_date: today,
+    payment_status: 'unpaid',
     created_at: timestamp,
     updated_at: timestamp,
   });
@@ -362,7 +364,7 @@ function seedDemoData(store, timestamp) {
     updated_at: timestamp,
   });
 
-  function tx(budget, type, amount, tagId, description, date) {
+  function tx(budget, type, amount, tagId, description, date, paymentStatus) {
     return {
       id: createId('tx'),
       budget_id: budget.id,
@@ -373,6 +375,9 @@ function seedDemoData(store, timestamp) {
       to_account_id: null,
       description,
       transaction_date: date,
+      // Mirrors the migration backfill: historical expenses read as paid.
+      payment_status:
+        paymentStatus ?? (type === 'expense' ? 'paid' : null),
       created_at: timestamp,
       updated_at: timestamp,
     };

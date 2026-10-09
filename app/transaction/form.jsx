@@ -19,6 +19,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
 import { parseFlexibleDate, toIsoDate } from '../../utils/dates';
+import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { reminderValidationError, suggestReminderValues } from '../../utils/reminders';
 
 const TYPE_OPTIONS = [
@@ -61,6 +62,7 @@ export default function TransactionFormScreen() {
     : null;
 
   const [type, setType] = useState('expense');
+  const [paymentStatus, setPaymentStatus] = useState('unpaid');
   const [amount, setAmount] = useState('');
   const [tagId, setTagId] = useState(preselectedTagId);
   const [date, setDate] = useState(() => toIsoDate(new Date()));
@@ -103,6 +105,7 @@ export default function TransactionFormScreen() {
   if (editing && hydratedFrom !== editing.id) {
     setHydratedFrom(editing.id);
     setType(editing.type);
+    setPaymentStatus(effectivePaymentStatus(editing) ?? 'unpaid');
     setAmount(String(fromMinor(editing.amount, currency)));
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
@@ -191,6 +194,7 @@ export default function TransactionFormScreen() {
       tagId,
       description: description.trim() || null,
       date: resolvedDate,
+      paymentStatus: type === 'expense' ? paymentStatus : null,
       reminder: {
         enabled: reminderOn,
         date: reminderDate,
@@ -261,6 +265,21 @@ export default function TransactionFormScreen() {
           onChange={setType}
           style={{ marginBottom: spacing.lg }}
         />
+
+        {type === 'expense' ? (
+          <>
+            <SectionHeader title="Payment" />
+            <SegmentedControl
+              options={PAYMENT_OPTIONS}
+              value={paymentStatus}
+              onChange={setPaymentStatus}
+            />
+            <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+              Unpaid expenses still count toward every budget total.
+            </Text>
+            <View style={{ height: spacing.lg }} />
+          </>
+        ) : null}
 
         <SectionHeader title="Amount" />
         <AmountInput

@@ -25,6 +25,11 @@ import {
 } from '../utils/dates.js';
 import { sanitizeAmount, formatCurrency, toMinor } from '../utils/currency.js';
 import {
+  PAYMENT_STATUSES,
+  defaultPaymentStatus,
+  effectivePaymentStatus,
+} from '../utils/paymentStatus.js';
+import {
   buildRemindAt,
   buildReminderNotification,
   isRemindAtPast,
@@ -84,9 +89,34 @@ const db = new DatabaseSync(':memory:');
 const adapter = createAdapter(db);
 
 console.log('\n--- schema ---');
+// Apply everything except the newest migration, insert rows the way a v4
+// install would hold them, then run migration 5 — so the payment-status
+// backfill is tested against real pre-existing data, not just declared.
+const paymentMigration = migrations.find((entry) => entry.version === LATEST_VERSION);
 for (const entry of migrations) {
+  if (entry === paymentMigration) continue;
   await entry.up(adapter);
 }
+await adapter.runAsync(
+  `INSERT INTO budgets (id, name, start_date, end_date, created_at, updated_at)
+   VALUES ('v4_budget', 'October 2026', '2026-10-01', '2026-10-31', '2026-10-05', '2026-10-05')`,
+);
+insertTransaction(db, {
+  id: 'v4_expense',
+  budget_id: 'v4_budget',
+  type: 'expense',
+  amount: 500,
+  transaction_date: '2026-10-05',
+});
+insertTransaction(db, {
+  id: 'v4_income',
+  budget_id: 'v4_budget',
+  type: 'income',
+  amount: 900,
+  transaction_date: '2026-10-05',
+});
+await paymentMigration.up(adapter);
+
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
 
@@ -121,6 +151,26 @@ check(
   transactionColumns.join(','),
 );
 check('transactions no longer use categories', !transactionColumns.includes('category_id'));
+check(
+  'transactions gained a payment_status column',
+  transactionColumns.includes('payment_status'),
+  transactionColumns.join(','),
+);
+
+const v4Rows = await adapter.getAllAsync(
+  `SELECT id, payment_status FROM transactions WHERE id IN ('v4_expense', 'v4_income') ORDER BY id`,
+);
+check(
+  'expenses that predate payment status upgrade to paid',
+  v4Rows.find((row) => row.id === 'v4_expense')?.payment_status === 'paid',
+  JSON.stringify(v4Rows),
+);
+check(
+  'the upgrade leaves income without a payment status',
+  v4Rows.find((row) => row.id === 'v4_income')?.payment_status === null,
+);
+await adapter.runAsync(`DELETE FROM transactions WHERE id IN ('v4_expense', 'v4_income')`);
+await adapter.runAsync(`DELETE FROM budgets WHERE id = 'v4_budget'`);
 
 const reminderColumns = columnsOf('reminders');
 check(
@@ -140,7 +190,7 @@ check(
   reminderIndexes.join(','),
 );
 
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 4, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 5, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -409,6 +459,7 @@ async function runScenario(store) {
     tag_id: 'p_tag',
     description: 'Lunch and a drink',
     transaction_date: '2026-10-05',
+    payment_status: 'unpaid',
     updated_at: STAMP,
   });
   snapshot.updatedTransaction = await store.getTransaction('p_expense');
@@ -468,6 +519,7 @@ async function runScenario(store) {
     to_account_id: null,
     description: 'Internet bill',
     transaction_date: '2026-10-06',
+    payment_status: 'paid',
     created_at: STAMP,
     updated_at: STAMP,
   });
@@ -571,7 +623,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 4);
+check('both adapters report the same schema version', LATEST_VERSION === 5);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -596,6 +648,12 @@ check(
     memoryResult.searchByTagName.length === 3 &&
     sqliteResult.searchByTagName.every((row) => row.tag_name === 'Renamed Tag'),
   JSON.stringify(searchByTagName),
+);
+check(
+  'payment status round-trips through update on both engines',
+  sqliteResult.updatedTransaction.payment_status === 'unpaid' &&
+    memoryResult.updatedTransaction.payment_status === 'unpaid',
+  String(sqliteResult.updatedTransaction.payment_status),
 );
 check(
   'search treats LIKE wildcards as literal text',
@@ -646,7 +704,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has three pending migrations', pending.length === 3, String(pending.length));
+check('legacy database has four pending migrations', pending.length === 4, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -689,6 +747,44 @@ try {
   legacyInsertWorked = false;
 }
 check('create budget works on a rebuilt legacy database', legacyInsertWorked);
+
+console.log('\n--- payment status rules ---');
+check('only two statuses exist', JSON.stringify(PAYMENT_STATUSES) === '["unpaid","paid"]');
+check(
+  'a new expense defaults to unpaid',
+  defaultPaymentStatus(undefined) === 'unpaid' && defaultPaymentStatus(null) === 'unpaid',
+);
+check(
+  'a requested status survives validation when valid',
+  defaultPaymentStatus('paid') === 'paid' && defaultPaymentStatus('unpaid') === 'unpaid',
+);
+check(
+  'a missing or invalid status on an expense reads as paid, preserving history',
+  effectivePaymentStatus({ type: 'expense', payment_status: null }) === 'paid' &&
+    effectivePaymentStatus({ type: 'expense', payment_status: 'banana' }) === 'paid',
+);
+check(
+  'valid expense statuses read back unchanged',
+  effectivePaymentStatus({ type: 'expense', payment_status: 'unpaid' }) === 'unpaid' &&
+    effectivePaymentStatus({ type: 'expense', payment_status: 'paid' }) === 'paid',
+);
+check(
+  'income and transfers have no payment status',
+  effectivePaymentStatus({ type: 'income', payment_status: 'paid' }) === null &&
+    effectivePaymentStatus({ type: 'transfer', payment_status: 'unpaid' }) === null,
+);
+// The status is descriptive only: both kinds of expense count the same way.
+const mixedStatuses = [
+  { id: 'm1', type: 'expense', amount: 1_000, payment_status: 'unpaid' },
+  { id: 'm2', type: 'expense', amount: 2_000, payment_status: 'paid' },
+  { id: 'm3', type: 'income', amount: 5_000, payment_status: null },
+];
+const statusTotals = computeTotals(mixedStatuses);
+check(
+  'paid and unpaid expenses contribute identically to totals',
+  statusTotals.expense === 3_000 && statusTotals.income === 5_000 && statusTotals.remaining === 2_000,
+  JSON.stringify(statusTotals),
+);
 
 console.log('\n--- amount entry ---');
 check('strips letters from an amount', sanitizeAmount('12a3b') === '123', sanitizeAmount('12a3b'));

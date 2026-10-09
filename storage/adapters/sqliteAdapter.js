@@ -187,8 +187,8 @@ export function createSqliteAdapter(getDb) {
       await run(
         `INSERT INTO transactions
            (id, budget_id, type, amount, tag_id, account_id, to_account_id, description,
-            transaction_date, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            transaction_date, payment_status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.budget_id,
         row.type,
@@ -198,6 +198,7 @@ export function createSqliteAdapter(getDb) {
         row.to_account_id ?? null,
         row.description ?? null,
         row.transaction_date,
+        row.payment_status ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -207,13 +208,14 @@ export function createSqliteAdapter(getDb) {
       const result = await run(
         `UPDATE transactions
             SET type = ?, amount = ?, tag_id = ?, description = ?,
-                transaction_date = ?, updated_at = ?
+                transaction_date = ?, payment_status = ?, updated_at = ?
           WHERE id = ?`,
         row.type,
         row.amount,
         row.tag_id ?? null,
         row.description ?? null,
         row.transaction_date,
+        row.payment_status ?? null,
         row.updated_at,
         row.id,
       );
