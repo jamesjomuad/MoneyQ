@@ -74,7 +74,7 @@ export default function SettingsScreen() {
   }
 
   return (
-    <Screen>
+    <Screen topInset>
       {/* <ScreenTitle
         title="Settings"
         subtitle={isPreview ? 'Browser preview — sample data, not saved' : 'Preferences are stored on this device'}

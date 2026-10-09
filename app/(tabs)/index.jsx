@@ -6,7 +6,6 @@ import { BudgetCard } from "../../components/budgets/BudgetCard";
 import { PinnedFolders } from "../../components/budgets/PinnedFolders";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { Fab } from "../../components/ui/Fab";
 import { Screen, SectionHeader } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useTheme } from "../../components/ui/ThemeProvider";
@@ -44,7 +43,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.fill}>
-      <Screen contentContainerStyle={{ paddingBottom: 96 }}>
+      <Screen topInset contentContainerStyle={{ paddingBottom: 96 }}>
         {/* <ScreenTitle title="Home" subtitle="Budgets are folders that hold your transactions" /> */}
 
         {budgets.length > 0 ? (
@@ -84,12 +83,6 @@ export default function HomeScreen() {
       </Screen>
 
       <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
-
-      <Fab
-        onPress={() => router.push("/budget/form")}
-        accessibilityLabel="Create budget"
-        bottomOffset={pinnedBudgets.length > 0 ? 64 : 0}
-      />
     </View>
   );
 }

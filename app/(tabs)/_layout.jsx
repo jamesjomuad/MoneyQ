@@ -11,9 +11,10 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShadowVisible: false,
-        headerStyle: { backgroundColor: colors.background },
-        headerTitleStyle: { color: colors.text },
+        // The tab titles are decorative; the tab bar carries the labels, so
+        // the header is dropped to hand the vertical space back to content.
+        // The per-screen `title` options stay: the custom tab bar reads them.
+        headerShown: false,
         sceneStyle: { backgroundColor: colors.background },
       }}
       tabBar={(props) => <BottomTabBar {...props} />}
@@ -22,28 +23,28 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <Icon name="home" color={color} size={22} />,
+          tabBarIcon: ({ color, size }) => <Icon name="home" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="calendar"
         options={{
           title: 'Calendar',
-          tabBarIcon: ({ color }) => <Icon name="calendar" color={color} size={22} />,
+          tabBarIcon: ({ color, size }) => <Icon name="calendar" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="reports"
         options={{
           title: 'Reports',
-          tabBarIcon: ({ color }) => <Icon name="pie" color={color} size={22} />,
+          tabBarIcon: ({ color, size }) => <Icon name="pie" color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => <Icon name="settings" color={color} size={22} />,
+          tabBarIcon: ({ color, size }) => <Icon name="settings" color={color} size={size} />,
         }}
       />
     </Tabs>

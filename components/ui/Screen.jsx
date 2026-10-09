@@ -15,6 +15,7 @@ export function Screen({
   contentContainerStyle,
   refreshing,
   onRefresh,
+  topInset = false,
 }) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
@@ -23,6 +24,9 @@ export function Screen({
     styles.content,
     {
       padding: spacing.lg,
+      // Tab pages render without a header, so the status bar would overlap
+      // the first row; opt-in padding hands the inset back.
+      paddingTop: spacing.lg + (topInset ? insets.top : 0),
       // Content runs edge-to-edge behind Android's navigation bar, so the last
       // row needs the inset added to keep it tappable.
       paddingBottom: spacing.lg + insets.bottom,

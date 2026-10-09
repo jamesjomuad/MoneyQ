@@ -4,10 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
-import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
-import { useBudgetsStore } from '../../stores/budgetsStore';
 import { Icon } from '../ui/Icon';
-import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
 /**
@@ -39,15 +36,6 @@ export function BottomTabBar({ state, descriptors, navigation }) {
   const insets = useSafeAreaInsets();
   const [width, setWidth] = useState(0);
 
-  const budgets = useBudgetsStore((s) => s.budgets);
-  const lastBudgetId = useBudgetDetailStore((s) => s.budgetId);
-  // The center action adds a transaction to the folder the user is in, or to
-  // the newest one; with no budgets yet it starts the folder instead.
-  const openBudgetId =
-    budgets.some((budget) => budget.id === lastBudgetId)
-      ? lastBudgetId
-      : budgets[0]?.id ?? null;
-
   const cx = width / 2;
   const notch =
     width > 0
@@ -61,7 +49,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     const icon = options.tabBarIcon?.({
       focused,
       color: focused ? colors.primary : colors.textMuted,
-      size: 22,
+      size: 26,
     });
 
     return (
@@ -85,13 +73,6 @@ export function BottomTabBar({ state, descriptors, navigation }) {
         >
           {icon}
         </View>
-        <Text
-          variant="caption"
-          tone={focused ? 'primary' : 'muted'}
-          style={[styles.tabLabel, focused && { fontWeight: '600' }]}
-        >
-          {label}
-        </Text>
       </Pressable>
     );
   }
@@ -142,12 +123,8 @@ export function BottomTabBar({ state, descriptors, navigation }) {
       {width > 0 ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={openBudgetId ? 'Add transaction' : 'Create budget'}
-          onPress={() =>
-            openBudgetId
-              ? router.push({ pathname: '/transaction/form', params: { budgetId: openBudgetId } })
-              : router.push('/budget/form')
-          }
+          accessibilityLabel="Create budget"
+          onPress={() => router.push('/budget/form')}
           style={({ pressed }) => [
             styles.action,
             {
@@ -185,28 +162,23 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   row: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
     height: BAR_H,
     justifyContent: 'center',
     paddingHorizontal: 4,
-    paddingTop: 6,
   },
   tab: {
     alignItems: 'center',
     flex: 1,
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     minWidth: 44,
   },
   indicator: {
     alignItems: 'center',
-    height: 30,
+    height: 40,
     justifyContent: 'center',
-    width: 58,
-  },
-  tabLabel: {
-    marginTop: 3,
-    textAlign: 'center',
+    width: 64,
   },
   edge: {
     position: 'absolute',

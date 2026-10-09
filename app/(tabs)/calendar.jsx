@@ -64,7 +64,7 @@ export default function CalendarScreen() {
   const hasActivity = dayTransactions.length > 0 || dayReminders.length > 0;
 
   return (
-    <Screen contentContainerStyle={{ paddingBottom: 48 }}>
+    <Screen topInset contentContainerStyle={{ paddingBottom: 48 }}>
       <Card>
         <MonthCalendar
           monthKey={monthKey}
