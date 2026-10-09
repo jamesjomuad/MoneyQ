@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 
+import { BottomTabBar } from '../../components/navigation/BottomTabBar';
 import { Icon } from '../../components/ui/Icon';
 import { useTheme } from '../../components/ui/ThemeProvider';
 
@@ -14,40 +15,35 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: colors.background },
         headerTitleStyle: { color: colors.text },
         sceneStyle: { backgroundColor: colors.background },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textFaint,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-        },
       }}
+      tabBar={(props) => <BottomTabBar {...props} />}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <Icon name="home" color={color} size={24} />,
+          tabBarIcon: ({ color }) => <Icon name="home" color={color} size={22} />,
         }}
       />
       <Tabs.Screen
         name="calendar"
         options={{
           title: 'Calendar',
-          tabBarIcon: ({ color }) => <Icon name="calendar" color={color} size={24} />,
+          tabBarIcon: ({ color }) => <Icon name="calendar" color={color} size={22} />,
         }}
       />
       <Tabs.Screen
         name="reports"
         options={{
           title: 'Reports',
-          tabBarIcon: ({ color }) => <Icon name="pie" color={color} size={24} />,
+          tabBarIcon: ({ color }) => <Icon name="pie" color={color} size={22} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => <Icon name="settings" color={color} size={24} />,
+          tabBarIcon: ({ color }) => <Icon name="settings" color={color} size={22} />,
         }}
       />
     </Tabs>
