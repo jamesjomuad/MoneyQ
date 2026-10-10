@@ -1,5 +1,4 @@
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveFolderPalette } from "../../utils/colors";
 import { Icon } from "../ui/Icon";
@@ -12,10 +11,13 @@ import { useTheme } from "../ui/ThemeProvider";
  * folder list above stays untouched. Each chip paints with the folder's own
  * palette so custom colors carry over, and the row scrolls sideways when many
  * folders are pinned instead of growing the page.
+ *
+ * The strip sits above the floating tab bar, which already reserves the
+ * Android bottom inset, so it must not add insets.bottom itself or the nav
+ * area is double-counted and the page gains a tall blank band.
  */
 export function PinnedFolders({ budgets, onPressFolder }) {
   const { colors, radius, spacing } = useTheme();
-  const insets = useSafeAreaInsets();
   if (budgets.length === 0) return null;
 
   return (
@@ -26,7 +28,7 @@ export function PinnedFolders({ budgets, onPressFolder }) {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           paddingTop: spacing.sm,
-          paddingBottom: insets.bottom + spacing.sm,
+          paddingBottom: spacing.md,
           paddingHorizontal: spacing.lg,
         },
       ]}

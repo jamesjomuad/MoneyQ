@@ -1,9 +1,23 @@
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useEffect } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { useTheme } from "./ThemeProvider";
+
+/** Enter animation for fresh screen content; skipped when the OS asks for reduced motion. */
+function useEnter(enabled) {
+  const reduced = useReducedMotion();
+  return enabled && !reduced ? FadeInDown.duration(220) : undefined;
+}
 
 /**
  * Standard scrollable screen body. Keeping it in one place means every tab
@@ -16,9 +30,11 @@ export function Screen({
   refreshing,
   onRefresh,
   topInset = false,
+  enter = true,
 }) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
+  const entering = useEnter(enter);
 
   const contentStyle = [
     styles.content,
@@ -43,7 +59,8 @@ export function Screen({
   }
 
   return (
-    <ScrollView
+    <Animated.ScrollView
+      entering={entering}
       style={[styles.fill, { backgroundColor: colors.background }]}
       contentContainerStyle={contentStyle}
       keyboardShouldPersistTaps="handled"
@@ -51,7 +68,7 @@ export function Screen({
       onRefresh={onRefresh}
     >
       {children}
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 
@@ -67,6 +84,28 @@ export function ScreenTitle({ title, subtitle }) {
         </Text>
       ) : null}
     </View>
+  );
+}
+
+/** Fold indicator that rotates open/closed instead of snapping. */
+function Chevron({ collapsed, color }) {
+  const reduced = useReducedMotion();
+  const progress = useSharedValue(collapsed ? 0 : 1);
+
+  useEffect(() => {
+    progress.value = withTiming(collapsed ? 0 : 1, {
+      duration: reduced ? 0 : 200,
+    });
+  }, [collapsed, reduced, progress]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${progress.value * 90}deg` }],
+  }));
+
+  return (
+    <Animated.View style={style}>
+      <Icon name="chevronRight" size={14} color={color} />
+    </Animated.View>
   );
 }
 
@@ -88,12 +127,7 @@ export function SectionHeader({
     <View style={[styles.sectionHeader, { marginBottom: spacing.sm }]}>
       <View style={styles.titleGroup}>
         {onToggle ? (
-          <Icon
-            name="chevronRight"
-            size={14}
-            color={colors.text}
-            style={collapsed ? null : styles.chevronDown}
-          />
+          <Chevron collapsed={collapsed} color={colors.text} />
         ) : null}
         <Text
           variant="label"
@@ -138,8 +172,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: 6,
-  },
-  chevronDown: {
-    transform: [{ rotate: "90deg" }],
   },
 });

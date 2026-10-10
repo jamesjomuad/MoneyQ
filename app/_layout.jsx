@@ -124,23 +124,49 @@ function NavigationShell() {
   return (
     <NavigationThemeProvider value={navigationTheme}>
       <NotificationTapHandler />
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack
+        screenOptions={{
+          // Native push/pop slide. iOS animates this by default; Android
+          // native-stack only fades, so the slide is set explicitly for
+          // both platforms. Back plays the same motion in reverse.
+          animation: 'slide_from_right',
+          // Paint the screen container with the theme background so an
+          // animating screen never exposes the default white behind it.
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
+        {/* The tab bar is the launch surface: no entry animation here. */}
+        <Stack.Screen
+          name="(tabs)"
+          options={{ headerShown: false, animation: 'none' }}
+        />
         <Stack.Screen
           name="budget/[id]"
           options={{ headerBackTitle: "Back" }}
         />
         <Stack.Screen
           name="budget/form"
-          options={{ presentation: "modal", title: "Budget" }}
+          options={{
+            presentation: "modal",
+            animation: "slide_from_bottom",
+            title: "Budget",
+          }}
         />
         <Stack.Screen
           name="transaction/form"
-          options={{ presentation: "modal", title: "Add Transaction" }}
+          options={{
+            presentation: "modal",
+            animation: "slide_from_bottom",
+            title: "Add Transaction",
+          }}
         />
         <Stack.Screen
           name="tags"
-          options={{ presentation: "modal", title: "Tags" }}
+          options={{
+            presentation: "modal",
+            animation: "slide_from_bottom",
+            title: "Tags",
+          }}
         />
       </Stack>
       {/* Mounted above the navigator so a save toast survives the screen

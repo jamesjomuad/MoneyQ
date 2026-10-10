@@ -224,16 +224,19 @@ export default function BudgetDetailScreen() {
               <Button label="Manage tags" onPress={() => router.push('/tags')} />
             </EmptyState>
           ) : (
-            tagSummaries.map(({ tag, spent }) => (
-              <TagSpendRow
-                key={tag.id}
-                tag={tag}
-                spent={spent}
-                currency={currency}
-                active={tag.id === activeTagId}
-                onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
-              />
-            ))
+            <View style={styles.tagGrid}>
+              {tagSummaries.map(({ tag, spent }) => (
+                <View key={tag.id} style={styles.tagGridItem}>
+                  <TagSpendRow
+                    tag={tag}
+                    spent={spent}
+                    currency={currency}
+                    active={tag.id === activeTagId}
+                    onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
+                  />
+                </View>
+              ))}
+            </View>
           ))}
 
         <View style={{ height: spacing.lg }} />
@@ -312,6 +315,8 @@ const styles = StyleSheet.create({
   pinned: { flexShrink: 0 },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   stats: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
+  tagGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  tagGridItem: { width: '48%' },
   periodRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   periodDot: {
     borderRadius: 6,

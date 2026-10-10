@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, { FadeInDown, useReducedMotion } from "react-native-reanimated";
 
 import { BudgetCard } from "../../components/budgets/BudgetCard";
 import { PinnedFolders } from "../../components/budgets/PinnedFolders";
@@ -22,14 +23,40 @@ import { useBudgetsStore } from "../../stores/budgetsStore";
 import { useSearchStore } from "../../stores/searchStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 
+// The entrance plays once per app session. The flag clears only on a JS
+// reload (cold start); returning from a detail page, a tab or the background
+// keeps Home mounted, so nothing re-animates.
+let homeIntroPlayed = false;
+const INTRO_STAGGER = 55; // ms between steps; a step is one major item or card
+
 export default function HomeScreen() {
   const { colors, radius, spacing } = useTheme();
+  const reduced = useReducedMotion();
   const budgets = useBudgetsStore((state) => state.budgets);
   const pinnedIds = useBudgetsStore((state) => state.pinnedIds);
   const isLoading = useBudgetsStore((state) => state.isLoading);
   const load = useBudgetsStore((state) => state.load);
   const togglePinned = useBudgetsStore((state) => state.togglePinned);
   const currency = useSettingsStore((state) => state.currency);
+
+  // Intro state: `playIntro` freezes at mount so re-renders never restart it;
+  // the module flag flips once the first settled content (not the loading
+  // placeholder) has rendered, so anything mounting later — a new folder,
+  // search results — appears without animation.
+  const [playIntro] = useState(() => !homeIntroPlayed && !reduced);
+  useEffect(() => {
+    if (playIntro && !isLoading) homeIntroPlayed = true;
+  }, [playIntro, isLoading]);
+
+  const introEnter = useCallback(
+    (step) => {
+      if (!playIntro || homeIntroPlayed) return undefined;
+      return FadeInDown.duration(300)
+        .delay(step * INTRO_STAGGER)
+        .withInitialValues({ transform: [{ translateY: 16 }] });
+    },
+    [playIntro]
+  );
 
   // Local search over the data the app already owns: folders are filtered
   // from the loaded budgets here, transactions through the search store.
@@ -90,12 +117,18 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.fill}>
-      <Screen topInset contentContainerStyle={{ paddingBottom: 96 }}>
+      {/* Home animates its own items, so the scroll body stays put. */}
+      {/* The tab bar is in normal flow, so no large reserved clearance is
+          needed; a modest gap keeps the last card off the pinned strip. */}
+      <Screen topInset enter={false} contentContainerStyle={{ paddingBottom: spacing.lg }}>
         {budgets.length > 0 && !searching ? (
-          <SectionHeader title={`Your Budgets · ${budgets.length}`} />
+          <Animated.View entering={introEnter(1)}>
+            <SectionHeader title={`Your Budgets · ${budgets.length}`} />
+          </Animated.View>
         ) : null}
 
-        <View
+        <Animated.View
+          entering={introEnter(0)}
           style={[
             styles.searchBar,
             {
@@ -144,7 +177,7 @@ export default function HomeScreen() {
               <Icon name="close" size={15} color={colors.textMuted} />
             </Pressable>
           ) : null}
-        </View>
+        </Animated.View>
 
         {isLoading && budgets.length === 0 ? (
           <View style={styles.loading}>
@@ -259,21 +292,27 @@ export default function HomeScreen() {
             ) : null}
           </>
         ) : (
-          budgets.map((budget) => (
-            <BudgetCard
+          budgets.map((budget, index) => (
+            <Animated.View
               key={budget.id}
-              budget={budget}
-              currency={currency}
-              pinned={pinnedIds.includes(budget.id)}
-              onTogglePin={() => togglePinned(budget.id)}
-              onPress={() => openFolder(budget)}
-            />
+              entering={introEnter(2 + Math.min(index, 4))}
+            >
+              <BudgetCard
+                budget={budget}
+                currency={currency}
+                pinned={pinnedIds.includes(budget.id)}
+                onTogglePin={() => togglePinned(budget.id)}
+                onPress={() => openFolder(budget)}
+              />
+            </Animated.View>
           ))
         )}
       </Screen>
 
       {searching ? null : (
-        <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
+        <Animated.View entering={introEnter(7)}>
+          <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
+        </Animated.View>
       )}
     </View>
   );

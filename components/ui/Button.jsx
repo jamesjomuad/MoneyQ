@@ -29,6 +29,9 @@ export function Button({ label, onPress, variant = 'primary', disabled = false, 
           paddingVertical: spacing.lg,
           paddingHorizontal: spacing.lg,
           opacity: disabled ? 1 : pressed ? 0.8 : 1,
+          // Slight press squash so taps feel physical; same instant as the
+          // opacity change, so it never delays the action.
+          transform: [{ scale: pressed && !disabled ? 0.98 : 1 }],
         },
         style,
       ]}

@@ -1,203 +1,303 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
 
 import { Icon } from '../ui/Icon';
+import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
 /**
- * Premium bottom bar for the four tabs plus a raised center action.
+ * Floating rounded card navigation.
  *
- * The green top edge is one SVG path: straight along the bar, then a smooth
- * symmetric dip around the center button, so the line never hides behind the
- * circle or meets it with a hard corner. The path is stroked in `primary`, so
- * it follows whatever theme the user picked (deep green, light green, blue).
+ * A pill-shaped capsule sits inside a padded band, so it floats clear of the
+ * screen edges and never covers scrollable content. The card uses surface +
+ * a subtle 1 px border + a soft shadow, all from theme tokens, so it reads
+ * premium in light, dark and the MoneyQ navy palette.
  *
- * The bar renders in normal flow (not absolutely positioned), so the tab
- * navigator keeps scene content above it automatically, and the extra
- * `insets.bottom` pad keeps it clear of Android's system navigation bar.
+ * The shadow and the border live on two separate stacked layers. Android
+ * derives an elevated view's shadow from its outline; when that same view also
+ * has a 1 px border, the outline falls back to the unrounded border box and
+ * the shadow renders as a straight line under the card. Keeping `elevation` on
+ * a borderless surface pill behind the bordered card removes that artifact.
+ *
+ * The center action keeps its original purpose (create budget) and stays
+ * centered and elevated, docked over the capsule's top edge with a thin surface
+ * ring, so it reads deliberately integrated rather than floating loose.
  */
 
-const BAR_H = 64; // tappable row height, excluding the bottom safe-area pad
-const EDGE_H = 44; // strip the notch lives in
-const LINE = 1.25; // vertical center of the top line
-const STROKE = 2.5;
-const DIP_W = 56; // half-width of the notch around the center button
-const DIP_D = 38; // how far the line dips below the bar's top edge
-const CENTER_GAP = DIP_W * 2;
-const RING = 54; // surface halo separating the button from the notch line
-const BUTTON = 46; // primary fill of the action circle
-const RING_CENTER_Y = 3; // button center relative to the bar's top edge
+const CARD_H = 74; // capsule height (excludes the safe-area spacing below it)
+const CARD_PAD = 8; // horizontal padding inside the capsule
+const ICON_SIZE = 24;
+const LABEL_SIZE = 11;
+const INDICATOR_W = 56; // active pill width behind the icon
+const INDICATOR_H = 30; // active pill height (and true pill radius = H / 2)
 
-export function BottomTabBar({ state, descriptors, navigation }) {
-  const { colors, radius } = useTheme();
-  const insets = useSafeAreaInsets();
-  const [width, setWidth] = useState(0);
+const FAB_GREEN = 54; // green action diameter
+const FAB_RING = 3; // surface ring that separates it from the card
+const FAB_OUTER = FAB_GREEN + FAB_RING * 2; // total touch diameter
+const FAB_OVERHANG = 26; // how far the action rises above the card's top edge
+const FAB_SLOT = FAB_OUTER + 16; // center slot: action + clearance from tabs
 
-  const cx = width / 2;
-  const notch =
-    width > 0
-      ? `M 0 ${LINE} H ${cx - DIP_W} C ${cx - 36} ${LINE}, ${cx - 22} ${LINE + DIP_D}, ${cx} ${LINE + DIP_D} C ${cx + 22} ${LINE + DIP_D}, ${cx + 36} ${LINE}, ${cx + DIP_W} ${LINE} H ${width}`
-      : '';
+/**
+ * One tab: icon inside a soft pill, short label below. Only the indicator pill
+ * animates (opacity + slight scale, 180 ms); the color swap is a plain
+ * re-render, so nothing animates per-frame for every tab. Every slot shares the
+ * same fixed heights, so all icons center and all labels sit on one baseline.
+ */
+function TabButton({ descriptor, route, focused, navigate }) {
+  const { colors } = useTheme();
+  const reduced = useReducedMotion();
+  const options = descriptor?.options ?? route.options ?? {};
+  const label = options.tabBarLabel ?? options.title ?? route.name;
 
-  function TabButton({ route, index }) {
-    const options = descriptors[route.key]?.options ?? route.options ?? {};
-    const focused = state.index === index;
-    const label = options.tabBarLabel ?? options.title ?? route.name;
-    const icon = options.tabBarIcon?.({
-      focused,
-      color: focused ? colors.primary : colors.textMuted,
-      size: 26,
-    });
+  const focus = useSharedValue(focused ? 1 : 0);
+  useEffect(() => {
+    focus.value = withTiming(focused ? 1 : 0, { duration: reduced ? 0 : 180 });
+  }, [focused, reduced, focus]);
 
-    return (
-      <Pressable
-        accessibilityRole="tab"
-        accessibilityLabel={label}
-        accessibilityState={{ selected: focused }}
-        onPress={() => {
-          if (!focused) navigation.navigate(route.name);
-        }}
-        style={({ pressed }) => [styles.tab, { opacity: pressed ? 0.65 : 1 }]}
-      >
-        <View
+  const indicatorStyle = useAnimatedStyle(() => ({
+    opacity: 0.5 + 0.5 * focus.value,
+    transform: [{ scale: 0.9 + 0.1 * focus.value }],
+  }));
+
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: focused }}
+      onPress={() => {
+        if (!focused) navigate(route.name);
+      }}
+      style={({ pressed }) => [styles.tab, { opacity: pressed ? 0.7 : 1 }]}
+    >
+      <View style={styles.iconWrap}>
+        <Animated.View
+          pointerEvents="none"
           style={[
             styles.indicator,
             {
-              backgroundColor: focused ? colors.primarySoft : 'transparent',
-              borderRadius: radius.pill,
+              backgroundColor: colors.primarySoft,
+              borderRadius: INDICATOR_H / 2,
             },
+            indicatorStyle,
           ]}
-        >
-          {icon}
-        </View>
-      </Pressable>
-    );
-  }
+        />
+        {options.tabBarIcon?.({
+          focused,
+          color: focused ? colors.primary : colors.textMuted,
+          size: ICON_SIZE,
+        })}
+      </View>
+      <Text
+        variant="caption"
+        tone={focused ? 'primary' : 'muted'}
+        numberOfLines={1}
+        style={{
+          fontSize: LABEL_SIZE,
+          fontWeight: focused ? '600' : '500',
+          marginTop: 3,
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+export function BottomTabBar({ state, descriptors, navigation }) {
+  const { colors, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const routes = state.routes;
   const middle = Math.ceil(routes.length / 2);
+  const navigate = navigation.navigate;
 
   return (
     <View
-      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      pointerEvents="box-none"
       style={[
-        styles.bar,
+        styles.band,
         {
-          backgroundColor: colors.surface,
-          height: BAR_H + insets.bottom,
+          backgroundColor: colors.background,
+          // Reserve the action's overhang plus a little air above the capsule.
+          paddingTop: FAB_OVERHANG + spacing.xs,
+          // Keep the capsule clear of the screen edges, and clear of the
+          // Android system navigation area via the bottom inset.
+          paddingBottom: Math.max(insets.bottom, spacing.md),
+          paddingHorizontal: spacing.lg,
         },
       ]}
     >
-      <View style={styles.row}>
-        {routes.slice(0, middle).map((route, i) => (
-          <TabButton key={route.key} route={route} index={i} />
-        ))}
-        {/* The center slot is exactly the notch, so tabs can't sit under it. */}
-        <View style={{ width: CENTER_GAP }} accessibilityElementsHidden importantForAccessibility="no" />
-        {routes.slice(middle).map((route, i) => (
-          <TabButton key={route.key} route={route} index={i + middle} />
-        ))}
-      </View>
-
-      <Svg
-        width={Math.max(width, 1)}
-        height={EDGE_H}
-        style={styles.edge}
-        pointerEvents="none"
-        accessibilityElementsHidden
-      >
-        {width > 0 ? (
-          <Path
-            d={notch}
-            stroke={colors.primary}
-            strokeWidth={STROKE}
-            fill="none"
-            strokeLinecap="round"
-          />
-        ) : null}
-      </Svg>
-
-      {width > 0 ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Create budget"
-          onPress={() => router.push('/budget/form')}
-          style={({ pressed }) => [
-            styles.action,
+      <View style={styles.cardWrap}>
+        {/* Borderless surface pill that casts the shadow; the bordered card
+            sits on top of it so Android never sees border + elevation at once. */}
+        <View
+          pointerEvents="none"
+          style={[
+            styles.cardShadow,
             {
               backgroundColor: colors.surface,
-              borderRadius: RING / 2,
-              height: RING,
-              left: cx - RING / 2,
+              borderRadius: CARD_H / 2,
               shadowColor: colors.shadow,
-              top: RING_CENTER_Y - RING / 2,
-              transform: [{ scale: pressed ? 0.94 : 1 }],
-              width: RING,
+            },
+          ]}
+        />
+
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: CARD_H / 2,
             },
           ]}
         >
+          {routes.slice(0, middle).map((route, i) => (
+            <TabButton
+              key={route.key}
+              descriptor={descriptors[route.key]}
+              focused={state.index === i}
+              navigate={navigate}
+              route={route}
+            />
+          ))}
+
+          {/* Center slot reserves the action's width plus clearance, so no tab
+              can sit under or crowd the raised button. */}
           <View
-            style={[
-              styles.actionCore,
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+            pointerEvents="none"
+            style={{ width: FAB_SLOT }}
+          />
+
+          {routes.slice(middle).map((route, i) => {
+            const index = i + middle;
+            return (
+              <TabButton
+                key={route.key}
+                descriptor={descriptors[route.key]}
+                focused={state.index === index}
+                navigate={navigate}
+                route={route}
+              />
+            );
+          })}
+
+          {/* Docked over the card's top edge. The surface ring keeps the green
+              circle visually separate without notching or distorting the pill. */}
+          <Pressable
+            accessibilityLabel="Create budget"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => router.push('/budget/form')}
+            style={({ pressed }) => [
+              styles.fab,
               {
-                backgroundColor: colors.primary,
-                borderRadius: BUTTON / 2,
+                height: FAB_OUTER,
+                transform: [
+                  { translateX: -FAB_OUTER / 2 },
+                  { scale: pressed ? 0.94 : 1 },
+                ],
+                width: FAB_OUTER,
               },
             ]}
           >
-            <Icon name="add" size={24} color={colors.onPrimary} />
-          </View>
-        </Pressable>
-      ) : null}
+            <View
+              pointerEvents="none"
+              style={[
+                styles.fabRing,
+                {
+                  backgroundColor: colors.surface,
+                  borderRadius: FAB_OUTER / 2,
+                },
+              ]}
+            />
+            <View
+              style={[
+                styles.fabCore,
+                {
+                  backgroundColor: colors.primary,
+                  borderRadius: FAB_GREEN / 2,
+                  shadowColor: colors.shadow,
+                },
+              ]}
+            >
+              <Icon name="add" size={26} color={colors.onPrimary} />
+            </View>
+          </Pressable>
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  bar: {
-    overflow: 'visible',
+  band: {
     width: '100%',
   },
-  row: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    height: BAR_H,
+  cardWrap: {
+    height: CARD_H,
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    width: '100%',
+  },
+  cardShadow: {
+    ...StyleSheet.absoluteFillObject,
+    elevation: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+  },
+  card: {
+    alignItems: 'center',
+    borderWidth: 1,
+    flexDirection: 'row',
+    height: CARD_H,
+    overflow: 'visible',
+    paddingHorizontal: CARD_PAD,
+    width: '100%',
   },
   tab: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    minWidth: 44,
+    paddingVertical: 4,
+  },
+  iconWrap: {
+    alignItems: 'center',
+    height: INDICATOR_H,
+    justifyContent: 'center',
+    width: INDICATOR_W,
   },
   indicator: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  fab: {
     alignItems: 'center',
-    height: 40,
     justifyContent: 'center',
-    width: 64,
-  },
-  edge: {
+    left: '50%',
     position: 'absolute',
-    top: 0,
-    left: 0,
+    top: -FAB_OVERHANG,
   },
-  action: {
+  fabRing: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  fabCore: {
     alignItems: 'center',
     elevation: 6,
+    height: FAB_GREEN,
     justifyContent: 'center',
-    position: 'absolute',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-  },
-  actionCore: {
-    alignItems: 'center',
-    height: BUTTON,
-    justifyContent: 'center',
-    width: BUTTON,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    width: FAB_GREEN,
   },
 });
