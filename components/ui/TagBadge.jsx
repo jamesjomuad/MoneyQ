@@ -9,7 +9,7 @@ import { withAlpha } from '../../utils/color';
  * used inside transaction rows and pickers. The colour appears as a soft tinted
  * disc behind the emoji so a tag stays recognisable without an icon font.
  */
-export function TagBadge({ tag, size = 'md', showName = true }) {
+export function TagBadge({ tag, size = 'md', showName = true, background = true }) {
   const { colors, spacing } = useTheme();
 
   if (!tag) {
@@ -26,9 +26,12 @@ export function TagBadge({ tag, size = 'md', showName = true }) {
     <View style={styles.row}>
       <View
         style={[
-          styles.disc,
+          styles.icon,
+          background && styles.disc,
           {
-            backgroundColor: withAlpha(tag.color ?? colors.primary, 0.16),
+            ...(background
+              ? { backgroundColor: withAlpha(tag.color ?? colors.primary, 0.16) }
+              : null),
             borderRadius: box / 2,
             height: box,
             width: box,
@@ -53,8 +56,9 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
   },
-  disc: {
+  icon: {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  disc: {},
 });

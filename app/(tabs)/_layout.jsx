@@ -1,8 +1,14 @@
 import { Tabs } from 'expo-router';
 
 import { BottomTabBar } from '../../components/navigation/BottomTabBar';
+import { TabSwipeArea } from '../../components/navigation/TabSwipeArea';
 import { Icon } from '../../components/ui/Icon';
 import { useTheme } from '../../components/ui/ThemeProvider';
+
+/** The tab scene, not the modal stack or tab bar, is the swipe boundary. */
+function tabSceneLayout({ children, navigation }) {
+  return <TabSwipeArea navigation={navigation}>{children}</TabSwipeArea>;
+}
 
 /** Home holds budgets; Settings holds preferences. Budgets are not duplicated. */
 export default function TabsLayout() {
@@ -10,6 +16,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      screenLayout={tabSceneLayout}
       screenOptions={{
         // The tab titles are decorative; the tab bar carries the labels, so
         // the header is dropped to hand the vertical space back to content.

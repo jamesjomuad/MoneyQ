@@ -31,7 +31,7 @@ export function TagSpendRow({ tag, spent, expensePercent = 0, currency, active =
     >
       <View style={[styles.header, { gap: spacing.sm }]}>
         <View style={styles.tag}>
-          <TagBadge tag={tag} />
+          <TagBadge tag={tag} background={false} />
         </View>
         <Text
           numberOfLines={1}
