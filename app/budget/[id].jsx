@@ -1,6 +1,6 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { TagSpendRow } from '../../components/tags/TagSpendRow';
 import { TransactionRow } from '../../components/transactions/TransactionRow';
@@ -280,19 +280,25 @@ export default function BudgetDetailScreen() {
               <Button label="Manage tags" onPress={() => router.push('/tags')} />
             </EmptyState>
           ) : (
-            <View style={styles.tagGrid}>
-              {tagSummaries.map(({ tag, spent }) => (
-                <View key={tag.id} style={styles.tagGridItem}>
-                  <TagSpendRow
-                    tag={tag}
-                    spent={spent}
-                    currency={currency}
-                    active={tag.id === activeTagId}
-                    onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
-                  />
-                </View>
-              ))}
-            </View>
+            <ScrollView
+              style={styles.tagScroll}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
+              <View style={styles.tagGrid}>
+                {tagSummaries.map(({ tag, spent }) => (
+                  <View key={tag.id} style={styles.tagGridItem}>
+                    <TagSpendRow
+                      tag={tag}
+                      spent={spent}
+                      currency={currency}
+                      active={tag.id === activeTagId}
+                      onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
+                    />
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
           ))}
 
         <View style={{ height: spacing.lg }} />
@@ -375,6 +381,9 @@ const styles = StyleSheet.create({
   progressFill: { borderRadius: 4, height: '100%' },
   tagGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   tagGridItem: { width: '48%' },
+  // Capped height keeps the section compact and scrolls independently inside
+  // the page ScrollView. ~5 rows of chips before the tags start scrolling.
+  tagScroll: { flexGrow: 0, maxHeight: 260 },
   periodRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
   periodDot: {
     borderRadius: 6,
