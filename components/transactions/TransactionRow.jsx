@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { formatCurrency } from "../../utils/currency";
 import { dayLabel } from "../../utils/dates";
 import { effectivePaymentStatus } from "../../utils/paymentStatus";
+import { formatPercent } from "../../utils/reports";
 import { Icon } from "../ui/Icon";
 import { TagBadge } from "../ui/TagBadge";
 import { Text } from "../ui/Text";
@@ -17,11 +18,12 @@ export function TransactionRow({
   transaction,
   tag,
   currency,
+  sharePercent = null,
   onEdit,
   onDelete,
   isLast,
 }) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
 
   const isExpense = transaction.type === "expense";
   const isIncome = transaction.type === "income";
@@ -39,6 +41,16 @@ export function TransactionRow({
   // Expenses carry a payment status; income and transfers never show one.
   const payment = effectivePaymentStatus(transaction);
 
+  const showShareBar =
+    transaction.type !== "transfer" &&
+    typeof sharePercent === "number" &&
+    Number.isFinite(sharePercent);
+  const shareFill = Math.min(100, Math.max(0, showShareBar ? sharePercent : 0));
+  const shareColor = isIncome ? colors.income : colors.expense;
+  const shareLabel = showShareBar ? formatPercent(sharePercent) : null;
+  const paymentLabel = payment ? (payment === "unpaid" ? "Unpaid" : "Paid") : null;
+  const metaText = [paymentLabel, shareLabel].filter(Boolean).join(" · ");
+
   // A reminder rides on the second line: it is the only extra marker a
   // transaction can carry.
   const hasReminder = transaction.reminder?.enabled === 1;
@@ -52,6 +64,9 @@ export function TransactionRow({
     a11yTag,
     payment ? `${payment} expense` : null,
     hasReminder ? "reminder set" : null,
+    showShareBar
+      ? `${shareLabel} of budget ${isIncome ? "income" : "expenses"}`
+      : null,
   ].filter(Boolean);
 
   return (
@@ -62,7 +77,8 @@ export function TransactionRow({
           borderBottomColor: colors.border,
           borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
           paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
+          paddingBottom: showShareBar ? spacing.sm : spacing.md,
+          paddingTop: spacing.md,
         },
       ]}
     >
@@ -83,42 +99,74 @@ export function TransactionRow({
           },
         ]}
       >
-        <View style={styles.left}>
-          {showBadge ? <TagBadge tag={tag} size="md" showName={false} /> : null}
-          <View
-            style={[styles.copy, { marginLeft: showBadge ? spacing.sm : 0 }]}
-          >
-            <Text variant="body" numberOfLines={1}>
-              {title}
+        <View style={styles.contentRow}>
+          <View style={styles.left}>
+            {showBadge ? <TagBadge tag={tag} size="md" showName={false} /> : null}
+            <View
+              style={[styles.copy, { marginLeft: showBadge ? spacing.sm : 0 }]}
+            >
+              <Text variant="body" numberOfLines={1}>
+                {title}
+              </Text>
+              {subtitle && subtitle !== title ? (
+                <Text
+                  variant="caption"
+                  tone="faint"
+                  numberOfLines={1}
+                  style={{ marginTop: 1 }}
+                >
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.right}>
+            <Text variant="body" tone={tone} style={styles.amount}>
+              {sign}
+              {formatCurrency(transaction.amount, { currency })}
             </Text>
-            {subtitle && subtitle !== title ? (
+            {metaText ? (
               <Text
                 variant="caption"
-                tone="faint"
+                tone={payment === "unpaid" ? "warning" : payment ? "muted" : "faint"}
                 numberOfLines={1}
-                style={{ marginTop: 1 }}
+                style={{ fontVariant: ["tabular-nums"], marginTop: 1 }}
               >
-                {subtitle}
+                {metaText}
               </Text>
             ) : null}
           </View>
         </View>
 
-        <View style={styles.right}>
-          <Text variant="body" tone={tone} style={styles.amount}>
-            {sign}
-            {formatCurrency(transaction.amount, { currency })}
-          </Text>
-          {payment ? (
-            <Text
-              variant="caption"
-              tone={payment === "unpaid" ? "warning" : "muted"}
-              style={{ marginTop: 1 }}
-            >
-              {payment === "unpaid" ? "Unpaid" : "Paid"}
-            </Text>
-          ) : null}
-        </View>
+        {showShareBar ? (
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel={`${title} share of budget ${isIncome ? "income" : "expenses"}`}
+            accessibilityValue={{ min: 0, max: 100, now: shareFill }}
+            style={[
+              styles.shareTrack,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderRadius: radius.pill,
+                height: spacing.xs,
+                marginTop: spacing.sm,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.shareFill,
+                {
+                  backgroundColor: shareColor,
+                  borderRadius: radius.pill,
+                  height: spacing.xs,
+                  width: `${shareFill}%`,
+                },
+              ]}
+            />
+          </View>
+        ) : null}
       </Pressable>
 
       {onDelete ? (
@@ -145,10 +193,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   pressable: {
-    alignItems: "center",
+    alignItems: "stretch",
     flex: 1,
+    flexDirection: "column",
+    minWidth: 0,
+  },
+  contentRow: {
+    alignItems: "center",
     flexDirection: "row",
     minWidth: 0,
+    width: "100%",
   },
   delete: {
     alignItems: "center",
@@ -173,4 +227,9 @@ const styles = StyleSheet.create({
   amount: {
     fontVariant: ["tabular-nums"],
   },
+  shareTrack: {
+    overflow: "hidden",
+    width: "100%",
+  },
+  shareFill: {},
 });

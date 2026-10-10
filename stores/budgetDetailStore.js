@@ -10,7 +10,12 @@ import {
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
 import { applyReminder, cancelScheduledReminder } from '../services/reminderService';
-import { collectUsedTagIds, computeTagExpenseBreakdown, computeTotals } from '../utils/calculations';
+import {
+  collectUsedTagIds,
+  computeTagExpenseBreakdown,
+  computeTotals,
+  computeTransactionSharePercent,
+} from '../utils/calculations';
 
 /**
  * State for a single opened Budget. The repository returns raw rows and this
@@ -72,15 +77,23 @@ export const useBudgetDetailStore = create((set, get) => ({
         (row) => usedTagIds.has(row.tag.id),
       );
 
+      // Share is always against the full budget summary, even while a tag
+      // filter is active. Transfers receive null because they are neither
+      // income nor spending.
+      const withShares = hydrated.map((entry) => ({
+        ...entry,
+        sharePercent: computeTransactionSharePercent(entry, summary),
+      }));
+
       set({
         budgetId,
         budget,
         summary,
         tagSummaries,
-        entries: hydrated,
+        entries: withShares,
         transactions: activeTagId
-          ? hydrated.filter((entry) => entry.tag_id === activeTagId)
-          : hydrated,
+          ? withShares.filter((entry) => entry.tag_id === activeTagId)
+          : withShares,
         isLoading: false,
       });
     } catch (error) {

@@ -116,6 +116,31 @@ export function computeTagExpenseBreakdown(transactions, tags = [], totalExpense
 }
 
 /**
+ * One transaction's share of the matching budget total. Expenses are measured
+ * against total expenses and income against total income; transfers have no
+ * applicable share and return null so the UI can hide them. Both totals come
+ * from computeTotals, keeping this formula aligned with the budget summary.
+ */
+export function computeTransactionSharePercent(
+  transaction,
+  totals = { income: 0, expense: 0 },
+) {
+  if (!transaction || transaction.type === 'transfer') return null;
+
+  const total =
+    transaction.type === 'income'
+      ? totals.income
+      : transaction.type === 'expense'
+        ? totals.expense
+        : 0;
+
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  if (!Number.isFinite(transaction.amount) || transaction.amount <= 0) return 0;
+
+  return (transaction.amount / total) * 100;
+}
+
+/**
  * Ids of every tag actually referenced by a transaction in the given set,
  * across income and expense alike. Used to hide tags a budget never touches:
  * membership here is decided by real transaction references, never by whether
