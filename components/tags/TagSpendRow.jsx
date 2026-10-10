@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { TagBadge } from '../ui/TagBadge';
 import { Text } from '../ui/Text';
@@ -26,8 +26,10 @@ export function TagSpendRow({ tag, spent, currency, active = false, onPress }) {
         },
       ]}
     >
-      <TagBadge tag={tag} />
-      <Text variant="heading" tone={active ? 'primary' : 'default'} style={styles.amount}>
+      <View style={styles.tag}>
+        <TagBadge tag={tag} />
+      </View>
+      <Text numberOfLines={1} variant="heading" tone={active ? 'primary' : 'default'} style={styles.amount}>
         {formatCurrency(spent, { currency, showSign: true })}
       </Text>
     </Pressable>
@@ -40,11 +42,16 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     marginBottom: 8,
+    minWidth: 0,
+    overflow: 'hidden',
+  },
+  tag: {
+    flex: 1,
+    minWidth: 0,
   },
   amount: {
-    flex: 1,
+    flexShrink: 0,
     fontVariant: ['tabular-nums'],
     marginLeft: 8,
-    textAlign: 'right',
   },
 });
