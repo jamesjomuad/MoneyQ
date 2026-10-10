@@ -21,6 +21,35 @@ import { formatCurrency } from '../../utils/currency';
 import { resolveFolderPalette } from '../../utils/colors';
 import { dayLabel, formatDateRange } from '../../utils/dates';
 
+/** Parse a `#rgb`/`#rrggbb` theme color to [r, g, b]. */
+function hexToRgb(hex) {
+  const h = String(hex).replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Linear blend between two hex colors, t in [0, 1]. */
+function mixHex(a, b, t) {
+  const ca = hexToRgb(a);
+  const cb = hexToRgb(b);
+  const r = Math.round(ca[0] + (cb[0] - ca[0]) * t);
+  const g = Math.round(ca[1] + (cb[1] - ca[1]) * t);
+  const bl = Math.round(ca[2] + (cb[2] - ca[2]) * t);
+  return `rgb(${r}, ${g}, ${bl})`;
+}
+
+/**
+ * Spend gauge color: green when nothing is spent, orange at half of income,
+ * red at or above income. Anchored on theme tokens so every palette (light,
+ * dark, MoneyQ) stays consistent.
+ */
+function spendColor(colors, percent) {
+  const p = Math.min(1, Math.max(0, percent / 100));
+  if (p <= 0.5) return mixHex(colors.income, colors.warning, p / 0.5);
+  return mixHex(colors.warning, colors.expense, (p - 0.5) / 0.5);
+}
+
 export default function BudgetDetailScreen() {
   const { id: budgetId } = useLocalSearchParams();
   const { colors, spacing } = useTheme();
@@ -52,6 +81,13 @@ export default function BudgetDetailScreen() {
   const activeTag = tagSummaries.find((entry) => entry.tag.id === activeTagId)?.tag ?? null;
   const groups = groupByDate(transactions);
   const tagById = new Map(tagSummaries.map((entry) => [entry.tag.id, entry.tag]));
+
+  // Share of income already spent, from the same summary the stats row uses.
+  // Income of zero means nothing to measure against → 0%, never a divide-by-zero.
+  // The label may exceed 100% when expenses outrun income; the fill is clamped.
+  const spentPercent = summary.income > 0 ? (summary.expense / summary.income) * 100 : 0;
+  const spentFill = Math.min(100, Math.max(0, spentPercent));
+  const fillColor = spendColor(colors, spentPercent);
 
   function confirmDeleteTransaction(transaction) {
     Alert.alert(
@@ -177,7 +213,27 @@ export default function BudgetDetailScreen() {
             {formatCurrency(summary.remaining, { currency })}
           </Text>
 
-          <View style={[styles.stats, { borderTopColor: colors.border, marginTop: spacing.md, paddingTop: spacing.md }]}>
+          {/* Progress bar replaces the old stats separator: the fill shows how
+              much of the budget's income has been spent (expense / income). */}
+          <View
+            style={[
+              styles.progressTrack,
+              { backgroundColor: colors.surfaceMuted, marginTop: spacing.md },
+            ]}
+          >
+            <View
+              style={[
+                styles.progressFill,
+                { backgroundColor: fillColor, width: `${spentFill}%` },
+              ]}
+            />
+          </View>
+
+          <Text variant="caption" tone="muted" style={{ marginTop: 6 }}>
+            {Math.round(spentPercent)}% of income spent
+          </Text>
+
+          <View style={[styles.stats, { marginTop: spacing.sm }]}>
             <Stat
               label="Income"
               value={formatCurrency(summary.income, { currency })}
@@ -314,7 +370,9 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   pinned: { flexShrink: 0 },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
-  stats: { borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row' },
+  stats: { flexDirection: 'row' },
+  progressTrack: { borderRadius: 4, height: 8, overflow: 'hidden', width: '100%' },
+  progressFill: { borderRadius: 4, height: '100%' },
   tagGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   tagGridItem: { width: '48%' },
   periodRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
