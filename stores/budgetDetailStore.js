@@ -26,124 +26,144 @@ import {
  * the transaction list read one consistent snapshot; scheduling itself stays
  * in the reminder service, never in a screen.
  */
-export const useBudgetDetailStore = create((set, get) => ({
-  budgetId: null,
-  budget: null,
-  summary: { transactionCount: 0, income: 0, expense: 0, remaining: 0 },
-  tagSummaries: [],
-  entries: [],
-  transactions: [],
-  activeTagId: null,
-  isLoading: true,
-  error: null,
+export const useBudgetDetailStore = create((set, get) => {
+  let requestId = 0;
 
-  load: async (budgetId) => {
-    if (!budgetId) return;
+  return {
+    budgetId: null,
+    budget: null,
+    summary: { transactionCount: 0, income: 0, expense: 0, remaining: 0 },
+    tagSummaries: [],
+    entries: [],
+    transactions: [],
+    activeTagId: null,
+    isLoading: true,
+    error: null,
 
-    const previousBudgetId = get().budgetId;
-    const activeTagId = previousBudgetId === budgetId ? get().activeTagId : null;
+    load: async (budgetId) => {
+      if (!budgetId) return;
 
-    set({ isLoading: true, error: null, activeTagId });
+      const id = ++requestId;
+      const state = get();
+      const activeTagId = state.budgetId === budgetId ? state.activeTagId : null;
 
-    try {
-      const [budget, tags, entries, reminders] = await Promise.all([
-        getBudget(budgetId),
-        getTags(),
-        getTransactionsForBudget(budgetId),
-        getReminders(),
-      ]);
+      // Claim the route identity immediately. A superseded request can never
+      // write itself back after a newer budget has taken over.
+      set({ budgetId, isLoading: true, error: null, activeTagId });
 
-      if (!budget) {
-        set({ error: new Error('That budget no longer exists.'), isLoading: false });
-        return;
+      try {
+        const [budget, tags, entries, reminders] = await Promise.all([
+          getBudget(budgetId),
+          getTags(),
+          getTransactionsForBudget(budgetId),
+          getReminders(),
+        ]);
+
+        if (id !== requestId) return;
+
+        if (!budget) {
+          set({
+            budget: null,
+            summary: { transactionCount: 0, income: 0, expense: 0, remaining: 0 },
+            tagSummaries: [],
+            entries: [],
+            transactions: [],
+            activeTagId: null,
+            error: new Error('That budget no longer exists.'),
+            isLoading: false,
+          });
+          return;
+        }
+
+        const reminderByTransaction = new Map(
+          reminders.map((reminder) => [reminder.transaction_id, reminder]),
+        );
+        const hydrated = entries.map((entry) => ({
+          ...entry,
+          reminder: reminderByTransaction.get(entry.id) ?? null,
+        }));
+
+        const summary = computeTotals(hydrated);
+
+        // Show only tags this budget's transactions actually reference, keeping
+        // the library's order. Each tag's bar is its expense total divided by
+        // the same `summary.expense` shown by the budget, never signed amount or
+        // income, so mixed income/expense tags still measure their real spend.
+        const usedTagIds = collectUsedTagIds(hydrated);
+        const tagSummaries = computeTagExpenseBreakdown(hydrated, tags, summary.expense).filter(
+          (row) => usedTagIds.has(row.tag.id),
+        );
+
+        // Share is always against the full budget summary, even while a tag
+        // filter is active. Transfers receive null because they are neither
+        // income nor spending.
+        const withShares = hydrated.map((entry) => ({
+          ...entry,
+          sharePercent: computeTransactionSharePercent(entry, summary),
+        }));
+
+        const selectedTagId = get().activeTagId;
+        set({
+          budgetId,
+          budget,
+          summary,
+          tagSummaries,
+          entries: withShares,
+          transactions: selectedTagId
+            ? withShares.filter((entry) => entry.tag_id === selectedTagId)
+            : withShares,
+          isLoading: false,
+        });
+      } catch (error) {
+        if (id !== requestId) return;
+        set({ error, isLoading: false });
       }
+    },
 
-      const reminderByTransaction = new Map(
-        reminders.map((reminder) => [reminder.transaction_id, reminder]),
-      );
-      const hydrated = entries.map((entry) => ({
-        ...entry,
-        reminder: reminderByTransaction.get(entry.id) ?? null,
-      }));
-
-      const summary = computeTotals(hydrated);
-
-      // Show only tags this budget's transactions actually reference, keeping
-      // the library's order. Each tag's bar is its expense total divided by
-      // the same `summary.expense` shown by the budget, never signed amount or
-      // income, so mixed income/expense tags still measure their real spend.
-      const usedTagIds = collectUsedTagIds(hydrated);
-      const tagSummaries = computeTagExpenseBreakdown(hydrated, tags, summary.expense).filter(
-        (row) => usedTagIds.has(row.tag.id),
-      );
-
-      // Share is always against the full budget summary, even while a tag
-      // filter is active. Transfers receive null because they are neither
-      // income nor spending.
-      const withShares = hydrated.map((entry) => ({
-        ...entry,
-        sharePercent: computeTransactionSharePercent(entry, summary),
-      }));
-
+    setActiveTag: (tagId) => {
+      const { entries } = get();
       set({
-        budgetId,
-        budget,
-        summary,
-        tagSummaries,
-        entries: withShares,
-        transactions: activeTagId
-          ? withShares.filter((entry) => entry.tag_id === activeTagId)
-          : withShares,
-        isLoading: false,
+        activeTagId: tagId,
+        transactions: tagId ? entries.filter((entry) => entry.tag_id === tagId) : entries,
       });
-    } catch (error) {
-      set({ error, isLoading: false });
-    }
-  },
+    },
 
-  setActiveTag: (tagId) => {
-    const { entries } = get();
-    set({
-      activeTagId: tagId,
-      transactions: tagId ? entries.filter((entry) => entry.tag_id === tagId) : entries,
-    });
-  },
+    /**
+     * Saves the transaction first and its reminder second, so a notification
+     * problem can never lose the financial record. Returns the reminder outcome
+     * for the form to explain (permission denied, browser preview, …).
+     */
+    addTransaction: async (input) => {
+      const transaction = await createTransaction(input);
+      const reminder =
+        input.reminder === undefined
+          ? null
+          : await applyReminder({ transaction, reminder: input.reminder });
+      await get().load(get().budgetId ?? transaction.budget_id);
+      return { transaction, reminder };
+    },
 
-  /**
-   * Saves the transaction first and its reminder second, so a notification
-   * problem can never lose the financial record. Returns the reminder outcome
-   * for the form to explain (permission denied, browser preview, …).
-   */
-  addTransaction: async (input) => {
-    const transaction = await createTransaction(input);
-    const reminder =
-      input.reminder === undefined
-        ? null
-        : await applyReminder({ transaction, reminder: input.reminder });
-    await get().load(get().budgetId ?? transaction.budget_id);
-    return { transaction, reminder };
-  },
+    updateTransaction: async (input) => {
+      const transaction = await updateTransaction(input.id, input);
+      const reminder =
+        input.reminder === undefined
+          ? null
+          : await applyReminder({ transaction, reminder: input.reminder });
+      await get().load(get().budgetId);
+      return { transaction, reminder };
+    },
 
-  updateTransaction: async (input) => {
-    const transaction = await updateTransaction(input.id, input);
-    const reminder =
-      input.reminder === undefined
-        ? null
-        : await applyReminder({ transaction, reminder: input.reminder });
-    await get().load(get().budgetId);
-    return { transaction, reminder };
-  },
+    removeTransaction: async (transactionId) => {
+      // The row cascades away with its reminder; the OS notification must be
+      // cancelled explicitly, or a deleted entry would still speak up.
+      await cancelScheduledReminder(transactionId);
+      await deleteTransaction(transactionId);
+      await get().load(get().budgetId);
+    },
 
-  removeTransaction: async (transactionId) => {
-    // The row cascades away with its reminder; the OS notification must be
-    // cancelled explicitly, or a deleted entry would still speak up.
-    await cancelScheduledReminder(transactionId);
-    await deleteTransaction(transactionId);
-    await get().load(get().budgetId);
-  },
-
-  refresh: async () => {
-    const { budgetId } = get();
-    if (budgetId) await get().load(budgetId);
-  },
-}));
+    refresh: async () => {
+      const { budgetId } = get();
+      if (budgetId) await get().load(budgetId);
+    },
+  };
+});

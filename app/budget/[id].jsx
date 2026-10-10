@@ -51,7 +51,13 @@ function spendColor(colors, percent) {
 }
 
 export default function BudgetDetailScreen() {
-  const { id: budgetId } = useLocalSearchParams();
+  const { id: routeBudgetId } = useLocalSearchParams();
+  const budgetId =
+    typeof routeBudgetId === 'string'
+      ? routeBudgetId
+      : Array.isArray(routeBudgetId)
+        ? routeBudgetId[0] ?? ''
+        : '';
   const { colors, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
 
@@ -60,7 +66,7 @@ export default function BudgetDetailScreen() {
   const tagSummaries = useBudgetDetailStore((state) => state.tagSummaries);
   const transactions = useBudgetDetailStore((state) => state.transactions);
   const activeTagId = useBudgetDetailStore((state) => state.activeTagId);
-  const isLoading = useBudgetDetailStore((state) => state.isLoading);
+  const storeBudgetId = useBudgetDetailStore((state) => state.budgetId);
   const error = useBudgetDetailStore((state) => state.error);
   const load = useBudgetDetailStore((state) => state.load);
   const setActiveTag = useBudgetDetailStore((state) => state.setActiveTag);
@@ -77,6 +83,37 @@ export default function BudgetDetailScreen() {
       if (budgetId) load(budgetId);
     }, [budgetId, load]),
   );
+
+  // The route ID is the identity of this screen. Until the store has data for
+  // exactly that ID, the previous budget's values must never render.
+  const isCurrentBudget = Boolean(budget) && storeBudgetId === budgetId && budget.id === budgetId;
+
+  if (error && storeBudgetId === budgetId) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Stack.Screen options={{ title: 'Budget not found' }} />
+        <EmptyState
+          icon="folder"
+          title="Budget not found"
+          description={error?.message ?? 'This budget may have been deleted.'}
+        >
+          <Button label="Back to Home" onPress={() => router.replace('/')} />
+        </EmptyState>
+      </View>
+    );
+  }
+
+  if (!isCurrentBudget) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Stack.Screen options={{ title: 'Budget…' }} />
+        <ActivityIndicator color={colors.primary} size="large" />
+        <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
+          Opening budget…
+        </Text>
+      </View>
+    );
+  }
 
   const activeTag = tagSummaries.find((entry) => entry.tag.id === activeTagId)?.tag ?? null;
   const groups = groupByDate(transactions);
@@ -117,31 +154,6 @@ export default function BudgetDetailScreen() {
           },
         },
       ],
-    );
-  }
-
-  if (isLoading && !budget) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-        <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
-          Opening budget…
-        </Text>
-      </View>
-    );
-  }
-
-  if (error || !budget) {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <EmptyState
-          icon="folder"
-          title="Budget not found"
-          description={error?.message ?? 'This budget may have been deleted.'}
-        >
-          <Button label="Back to Home" onPress={() => router.replace('/')} />
-        </EmptyState>
-      </View>
     );
   }
 
