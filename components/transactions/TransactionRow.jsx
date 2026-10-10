@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { formatCurrency } from "../../utils/currency";
@@ -21,9 +22,11 @@ export function TransactionRow({
   sharePercent = null,
   onEdit,
   onDelete,
-  isLast,
+  isFirst = false,
+  isLast = false,
 }) {
   const { colors, radius, spacing } = useTheme();
+  const [pressed, setPressed] = useState(false);
 
   const isExpense = transaction.type === "expense";
   const isIncome = transaction.type === "income";
@@ -80,6 +83,24 @@ export function TransactionRow({
           paddingBottom: showShareBar ? spacing.sm : spacing.md,
           paddingTop: spacing.md,
         },
+        pressed && onEdit
+          ? {
+              backgroundColor: colors.surfaceMuted,
+              ...(isFirst
+                ? {
+                    borderTopLeftRadius: radius.lg,
+                    borderTopRightRadius: radius.lg,
+                  }
+                : null),
+              ...(isLast
+                ? {
+                    borderBottomLeftRadius: radius.lg,
+                    borderBottomRightRadius: radius.lg,
+                  }
+                : null),
+              overflow: "hidden",
+            }
+          : null,
       ]}
     >
       {/* The row surface and the delete action are siblings, not nested —
@@ -90,14 +111,10 @@ export function TransactionRow({
           a11ySuffixes.length ? `, ${a11ySuffixes.join(", ")}` : ""
         }`}
         onPress={onEdit ? () => onEdit(transaction) : undefined}
+        onPressIn={onEdit ? () => setPressed(true) : undefined}
+        onPressOut={onEdit ? () => setPressed(false) : undefined}
         disabled={!onEdit}
-        style={({ pressed }) => [
-          styles.pressable,
-          {
-            backgroundColor:
-              pressed && onEdit ? colors.surfaceMuted : "transparent",
-          },
-        ]}
+        style={styles.pressable}
       >
         <View style={styles.contentRow}>
           <View style={styles.left}>

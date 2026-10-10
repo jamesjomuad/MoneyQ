@@ -345,6 +345,7 @@ export default function BudgetDetailScreen() {
                       tag={tagById.get(transaction.tag_id) ?? null}
                       currency={currency}
                       sharePercent={transaction.sharePercent}
+                      isFirst={index === 0}
                       isLast={index === group.items.length - 1}
                       onEdit={(entry) =>
                         router.push({

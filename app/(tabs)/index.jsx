@@ -257,6 +257,7 @@ export default function HomeScreen() {
                           transaction={transaction}
                           tag={transaction.tag}
                           currency={currency}
+                          isFirst={index === 0}
                           isLast={index === group.items.length - 1}
                           onEdit={(entry) =>
                             router.push({

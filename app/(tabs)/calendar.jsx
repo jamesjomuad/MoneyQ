@@ -125,6 +125,7 @@ export default function CalendarScreen() {
                     transaction={transaction}
                     tag={tagById.get(transaction.tag_id) ?? null}
                     currency={currency}
+                    isFirst={index === 0}
                     isLast={index === dayTransactions.length - 1}
                     onEdit={(entry) =>
                       router.push({
