@@ -10,7 +10,7 @@ import {
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
 import { applyReminder, cancelScheduledReminder } from '../services/reminderService';
-import { computeSpendByTag, computeTotals } from '../utils/calculations';
+import { collectUsedTagIds, computeSignedSpendByTag, computeTotals } from '../utils/calculations';
 
 /**
  * State for a single opened Budget. The repository returns raw rows and this
@@ -61,11 +61,19 @@ export const useBudgetDetailStore = create((set, get) => ({
         reminder: reminderByTransaction.get(entry.id) ?? null,
       }));
 
+      // Show only tags this budget's transactions actually reference, keeping
+      // the library's order. A tag used solely in another budget is dropped
+      // because `hydrated` is already scoped to this budget.
+      const usedTagIds = collectUsedTagIds(hydrated);
+      const tagSummaries = computeSignedSpendByTag(hydrated, tags).filter((row) =>
+        usedTagIds.has(row.tag.id),
+      );
+
       set({
         budgetId,
         budget,
         summary: computeTotals(hydrated),
-        tagSummaries: computeSpendByTag(hydrated, tags),
+        tagSummaries,
         entries: hydrated,
         transactions: activeTagId
           ? hydrated.filter((entry) => entry.tag_id === activeTagId)

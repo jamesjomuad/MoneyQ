@@ -274,8 +274,8 @@ export default function BudgetDetailScreen() {
           (tagSummaries.length === 0 ? (
             <EmptyState
               icon="tag"
-              title="No tags yet"
-              description="Tags are a shared library you reuse across budgets. Add one so transactions can be grouped."
+              title="No tags used yet"
+              description="Tags appear here once an income or expense in this budget references one."
             >
               <Button label="Manage tags" onPress={() => router.push('/tags')} />
             </EmptyState>

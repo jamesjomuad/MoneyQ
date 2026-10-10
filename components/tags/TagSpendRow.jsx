@@ -5,7 +5,7 @@ import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 import { formatCurrency } from '../../utils/currency';
 
-/** A tag's share of a budget's spending. Tapping filters the transaction list. */
+/** A tag's signed share of a budget: + for income, − for expense, plain for 0. */
 export function TagSpendRow({ tag, spent, currency, active = false, onPress }) {
   const { colors, radius, spacing } = useTheme();
 
@@ -28,7 +28,7 @@ export function TagSpendRow({ tag, spent, currency, active = false, onPress }) {
     >
       <TagBadge tag={tag} />
       <Text variant="heading" tone={active ? 'primary' : 'default'} style={styles.amount}>
-        {formatCurrency(spent, { currency })}
+        {formatCurrency(spent, { currency, showSign: true })}
       </Text>
     </Pressable>
   );
@@ -42,7 +42,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   amount: {
+    flex: 1,
     fontVariant: ['tabular-nums'],
     marginLeft: 8,
+    textAlign: 'right',
   },
 });

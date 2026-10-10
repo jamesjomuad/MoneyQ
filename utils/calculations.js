@@ -79,6 +79,49 @@ export function computeSpendByTag(transactions, tags = []) {
   }));
 }
 
+/**
+ * Signed amount per tag, keyed by tag id. Income counts positive, expense
+ * counts negative, and transfers never count — the same transfer rule as
+ * computeTotals. This is the display twin of computeSpendByTag (which stays
+ * expense-only for the reports pie) so a budget tag reads +₱… or −₱… with a
+ * sign that matches its transactions. Amounts stay integer minor units and the
+ * sum of a tag's income and expenses is exact.
+ */
+export function computeSignedSpendByTag(transactions, tags = []) {
+  const totals = new Map();
+
+  for (const transaction of transactions) {
+    if (!transaction.tag_id) continue;
+    if (transaction.type === 'income') {
+      totals.set(transaction.tag_id, (totals.get(transaction.tag_id) ?? 0) + transaction.amount);
+    } else if (transaction.type === 'expense') {
+      totals.set(transaction.tag_id, (totals.get(transaction.tag_id) ?? 0) - transaction.amount);
+    }
+  }
+
+  return tags.map((tag) => ({
+    tag,
+    spent: totals.get(tag.id) ?? 0,
+  }));
+}
+
+/**
+ * Ids of every tag actually referenced by a transaction in the given set,
+ * across income and expense alike. Used to hide tags a budget never touches:
+ * membership here is decided by real transaction references, never by whether
+ * a tag merely exists in the global library. Transactions with no tag, or with
+ * a tag that no longer resolves, contribute nothing and can't crash a lookup.
+ */
+export function collectUsedTagIds(transactions) {
+  const ids = new Set();
+
+  for (const transaction of transactions) {
+    if (transaction.tag_id) ids.add(transaction.tag_id);
+  }
+
+  return ids;
+}
+
 /** Groups transactions by date, preserving the order they were passed in. */
 export function groupByDate(transactions) {
   const groups = new Map();
