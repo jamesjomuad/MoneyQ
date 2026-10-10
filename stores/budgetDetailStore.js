@@ -10,7 +10,7 @@ import {
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
 import { applyReminder, cancelScheduledReminder } from '../services/reminderService';
-import { collectUsedTagIds, computeSignedSpendByTag, computeTotals } from '../utils/calculations';
+import { collectUsedTagIds, computeTagExpenseBreakdown, computeTotals } from '../utils/calculations';
 
 /**
  * State for a single opened Budget. The repository returns raw rows and this
@@ -61,18 +61,21 @@ export const useBudgetDetailStore = create((set, get) => ({
         reminder: reminderByTransaction.get(entry.id) ?? null,
       }));
 
+      const summary = computeTotals(hydrated);
+
       // Show only tags this budget's transactions actually reference, keeping
-      // the library's order. A tag used solely in another budget is dropped
-      // because `hydrated` is already scoped to this budget.
+      // the library's order. Each tag's bar is its expense total divided by
+      // the same `summary.expense` shown by the budget, never signed amount or
+      // income, so mixed income/expense tags still measure their real spend.
       const usedTagIds = collectUsedTagIds(hydrated);
-      const tagSummaries = computeSignedSpendByTag(hydrated, tags).filter((row) =>
-        usedTagIds.has(row.tag.id),
+      const tagSummaries = computeTagExpenseBreakdown(hydrated, tags, summary.expense).filter(
+        (row) => usedTagIds.has(row.tag.id),
       );
 
       set({
         budgetId,
         budget,
-        summary: computeTotals(hydrated),
+        summary,
         tagSummaries,
         entries: hydrated,
         transactions: activeTagId

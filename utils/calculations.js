@@ -80,29 +80,39 @@ export function computeSpendByTag(transactions, tags = []) {
 }
 
 /**
- * Signed amount per tag, keyed by tag id. Income counts positive, expense
- * counts negative, and transfers never count — the same transfer rule as
- * computeTotals. This is the display twin of computeSpendByTag (which stays
- * expense-only for the reports pie) so a budget tag reads +₱… or −₱… with a
- * sign that matches its transactions. Amounts stay integer minor units and the
- * sum of a tag's income and expenses is exact.
+ * Per-tag budget breakdown in one pass: signed amount, expense amount, and
+ * each tag's expense share of the budget's total expenses. Income counts as a
+ * positive signed amount, expense counts as a negative signed amount and also
+ * contributes to its expense share, and transfers never count — the same
+ * transfer rule as computeTotals. `computeSpendByTag` stays expense-only for
+ * reports. A zero total expense, missing tag reference, or tag with no
+ * transactions safely produces 0%.
  */
-export function computeSignedSpendByTag(transactions, tags = []) {
-  const totals = new Map();
+export function computeTagExpenseBreakdown(transactions, tags = [], totalExpense = 0) {
+  const signedTotals = new Map();
+  const expenseTotals = new Map();
 
   for (const transaction of transactions) {
     if (!transaction.tag_id) continue;
+
     if (transaction.type === 'income') {
-      totals.set(transaction.tag_id, (totals.get(transaction.tag_id) ?? 0) + transaction.amount);
+      signedTotals.set(transaction.tag_id, (signedTotals.get(transaction.tag_id) ?? 0) + transaction.amount);
     } else if (transaction.type === 'expense') {
-      totals.set(transaction.tag_id, (totals.get(transaction.tag_id) ?? 0) - transaction.amount);
+      const current = expenseTotals.get(transaction.tag_id) ?? 0;
+      expenseTotals.set(transaction.tag_id, current + transaction.amount);
+      signedTotals.set(transaction.tag_id, (signedTotals.get(transaction.tag_id) ?? 0) - transaction.amount);
     }
   }
 
-  return tags.map((tag) => ({
-    tag,
-    spent: totals.get(tag.id) ?? 0,
-  }));
+  return tags.map((tag) => {
+    const expense = expenseTotals.get(tag.id) ?? 0;
+    return {
+      tag,
+      spent: signedTotals.get(tag.id) ?? 0,
+      expense,
+      expensePercent: totalExpense > 0 ? (expense / totalExpense) * 100 : 0,
+    };
+  });
 }
 
 /**

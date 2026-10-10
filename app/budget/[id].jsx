@@ -285,12 +285,13 @@ export default function BudgetDetailScreen() {
               nestedScrollEnabled
               showsVerticalScrollIndicator
             >
-              <View style={styles.tagGrid}>
-                {tagSummaries.map(({ tag, spent }) => (
+              <View style={[styles.tagGrid, { gap: spacing.sm }]}>
+                {tagSummaries.map(({ tag, spent, expensePercent }) => (
                   <View key={tag.id} style={styles.tagGridItem}>
                     <TagSpendRow
                       tag={tag}
                       spent={spent}
+                      expensePercent={expensePercent}
                       currency={currency}
                       active={tag.id === activeTagId}
                       onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
@@ -379,8 +380,17 @@ const styles = StyleSheet.create({
   stats: { flexDirection: 'row' },
   progressTrack: { borderRadius: 4, height: 8, overflow: 'hidden', width: '100%' },
   progressFill: { borderRadius: 4, height: '100%' },
-  tagGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  tagGridItem: { width: '48%' },
+  // Keep both axes evenly spaced and stop wrapped rows from stretching cards
+  // to fill leftover vertical space. Dynamic `gap` above supplies the theme's
+  // small spacing value.
+  tagGrid: {
+    alignContent: 'flex-start',
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  tagGridItem: { flexGrow: 0, flexShrink: 0, width: '48%' },
   // Capped height keeps the section compact and scrolls independently inside
   // the page ScrollView. ~5 rows of chips before the tags start scrolling.
   tagScroll: { flexGrow: 0, maxHeight: 260 },
