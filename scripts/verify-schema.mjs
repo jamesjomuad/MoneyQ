@@ -800,8 +800,8 @@ check('create budget works on a rebuilt legacy database', legacyInsertWorked);
 console.log('\n--- payment status rules ---');
 check('only two statuses exist', JSON.stringify(PAYMENT_STATUSES) === '["unpaid","paid"]');
 check(
-  'a new expense defaults to unpaid',
-  defaultPaymentStatus(undefined) === 'unpaid' && defaultPaymentStatus(null) === 'unpaid',
+  'a new expense defaults to paid',
+  defaultPaymentStatus(undefined) === 'paid' && defaultPaymentStatus(null) === 'paid',
 );
 check(
   'a requested status survives validation when valid',

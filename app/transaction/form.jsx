@@ -46,6 +46,17 @@ function offsetIso(offset) {
 }
 
 /**
+ * New transactions normally start today. If this form is opened from a budget
+ * that has not started yet, seed the Date field from the budget's first day so
+ * the entry lands in the intended month instead of today.
+ */
+function defaultNewTransactionDate(budget) {
+  const today = toIsoDate(new Date());
+  if (!budget?.start_date || budget.start_date <= today) return today;
+  return budget.start_date;
+}
+
+/**
  * Normalized, deterministic snapshot for the dirty check: amounts are minor
  * units, dates ISO, description trimmed, payment status only meaningful for
  * expenses, and disabled reminders store no date/time. Serialized with one
@@ -71,7 +82,7 @@ function formSnapshot(values) {
 function snapshotOfRow(row) {
   return formSnapshot({
     type: row.type,
-    paymentStatus: effectivePaymentStatus(row) ?? 'unpaid',
+    paymentStatus: effectivePaymentStatus(row) ?? 'paid',
     amountMinor: row.amount,
     tagId: row.tag_id,
     date: row.transaction_date,
@@ -198,10 +209,14 @@ export default function TransactionFormScreen() {
     : null;
 
   const [type, setType] = useState('expense');
-  const [paymentStatus, setPaymentStatus] = useState('unpaid');
+  const [paymentStatus, setPaymentStatus] = useState('paid');
   const [amount, setAmount] = useState('');
   const [tagId, setTagId] = useState(preselectedTagId);
-  const [date, setDate] = useState(() => toIsoDate(new Date()));
+  const [date, setDate] = useState(() =>
+    storeBudgetId === budgetId && budget?.id === budgetId
+      ? defaultNewTransactionDate(budget)
+      : toIsoDate(new Date()),
+  );
   const [description, setDescription] = useState('');
   const [query, setQuery] = useState('');
   const [reminderOn, setReminderOn] = useState(false);
@@ -219,6 +234,7 @@ export default function TransactionFormScreen() {
   const savePromiseRef = useRef(null);
   const leavePlannedRef = useRef(false);
   const rowSnapshotRef = useRef(null);
+  const dateEditedRef = useRef(false);
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -244,6 +260,21 @@ export default function TransactionFormScreen() {
     loadBudget(budgetId);
   }, [transactionId, budgetId, storeBudgetId, entries, loadBudget]);
 
+  // New transactions from a not-yet-started budget should default to that
+  // budget's first day. Only seed a date the user has not already chosen.
+  useEffect(() => {
+    if (transactionId || !budgetId) return;
+    if (storeBudgetId !== budgetId || budget?.id !== budgetId) return;
+    if (dateEditedRef.current) return;
+    const suggested = defaultNewTransactionDate(budget);
+    setDate((current) => (current === suggested ? current : suggested));
+  }, [transactionId, budgetId, storeBudgetId, budget]);
+
+  function applyDate(nextDate) {
+    dateEditedRef.current = true;
+    setDate(nextDate);
+  }
+
   // Seed the form from the stored row while rendering: the modal opens over
   // the budget detail screen, whose store already holds the entry. React
   // re-runs the render right after these updates, so there is no effect and
@@ -251,7 +282,7 @@ export default function TransactionFormScreen() {
   if (editing && hydratedFrom !== editing.id) {
     setHydratedFrom(editing.id);
     setType(editing.type);
-    setPaymentStatus(effectivePaymentStatus(editing) ?? 'unpaid');
+    setPaymentStatus(effectivePaymentStatus(editing) ?? 'paid');
     setAmount(String(fromMinor(editing.amount, currency)));
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
@@ -282,6 +313,12 @@ export default function TransactionFormScreen() {
   const stillLoading = Boolean(transactionId) && (isLoadingBudget || storeBudgetId !== budgetId);
 
   const outsidePeriod = periodStatus(date, budget, editing?.transaction_date);
+  const futureBudget =
+    !transactionId &&
+    Boolean(budget) &&
+    budget.id === budgetId &&
+    storeBudgetId === budgetId &&
+    budget.start_date > toIsoDate(new Date());
 
   function handleReminderToggle(next) {
     setReminderOn(next);
@@ -628,10 +665,16 @@ export default function TransactionFormScreen() {
           label="Transaction Date"
           title="Transaction Date"
           value={date}
-          onChange={setDate}
+          onChange={applyDate}
           shortcuts
           error={errors.date}
-          hint={transactionId ? undefined : 'New transactions start on today.'}
+          hint={
+            transactionId
+              ? undefined
+              : futureBudget
+                ? `New transactions start on ${formatShortDate(budget.start_date)}.`
+                : 'New transactions start on today.'
+          }
         />
         <View style={styles.wrap}>
           {DATE_CHIPS.map((chip) => (
@@ -639,7 +682,7 @@ export default function TransactionFormScreen() {
               key={chip.offset}
               label={chip.label}
               active={date === offsetIso(chip.offset)}
-              onPress={() => setDate(offsetIso(chip.offset))}
+              onPress={() => applyDate(offsetIso(chip.offset))}
             />
           ))}
         </View>

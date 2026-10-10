@@ -12,10 +12,12 @@ export function isValidPaymentStatus(value) {
 
 /**
  * The status a NEW expense starts with when the caller does not choose one.
- * Planned-first: recording an expected expense should not imply it was paid.
+ * Paid-first: most recorded expenses are completed payments, so the default
+ * should match the usual case while still allowing an expense to be marked
+ * Unpaid.
  */
 export function defaultPaymentStatus(value) {
-  return isValidPaymentStatus(value) ? value : 'unpaid';
+  return isValidPaymentStatus(value) ? value : 'paid';
 }
 
 /**

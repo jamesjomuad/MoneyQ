@@ -1,10 +1,6 @@
 import { storage } from '../adapters/adapter';
 import { createId, nowIso } from '../../utils/id';
-import {
-  defaultPaymentStatus,
-  effectivePaymentStatus,
-  isValidPaymentStatus,
-} from '../../utils/paymentStatus';
+import { defaultPaymentStatus, effectivePaymentStatus } from '../../utils/paymentStatus';
 
 export async function getTransactionsForBudget(budgetId) {
   return storage.listTransactionsByBudget(budgetId);
@@ -23,7 +19,7 @@ const SEARCH_RESULT_LIMIT = 30;
 
 /**
  * Payment status rules. Only expenses have one; income and transfers always
- * store NULL. A new expense defaults to 'unpaid' unless the caller says
+ * store NULL. A new expense defaults to 'paid' unless the caller says
  * otherwise, and an update that does not mention the status keeps whatever
  * the stored expense already had.
  */
@@ -38,10 +34,10 @@ function resolveUpdatedPaymentStatus(type, existing, input) {
   if (requested === undefined || requested === null) {
     // Not mentioned: a stored expense keeps its status (missing or invalid
     // historical values read as 'paid'); an income/transfer becoming an
-    // expense starts 'unpaid'.
-    return existing.type === 'expense' ? effectivePaymentStatus(existing) : 'unpaid';
+    // expense starts 'paid'.
+    return existing.type === 'expense' ? effectivePaymentStatus(existing) : 'paid';
   }
-  return isValidPaymentStatus(requested) ? requested : 'unpaid';
+  return defaultPaymentStatus(requested);
 }
 
 /**
