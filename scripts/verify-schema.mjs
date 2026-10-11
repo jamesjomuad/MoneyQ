@@ -32,6 +32,7 @@ import {
 import {
   buildRemindAt,
   buildReminderNotification,
+  deriveReminderStatus,
   isRemindAtPast,
   isValidLocalDate,
   isValidReminderTime,
@@ -89,13 +90,15 @@ const db = new DatabaseSync(':memory:');
 const adapter = createAdapter(db);
 
 console.log('\n--- schema ---');
-// Apply everything except the newest migration, insert rows the way a v4
-// install would hold them, then run migration 5 — so the payment-status
-// backfill is tested against real pre-existing data, not just declared.
+// Apply everything except the newest migrations, insert rows the way older
+// installs would hold them, then run the pending ones — so the payment-status
+// backfill, the notes default and the standalone-reminder rebuild are all
+// tested against real pre-existing data, not just declared.
 const paymentMigration = migrations.find((entry) => entry.version === 5);
-const notesMigration = migrations.find((entry) => entry.version === LATEST_VERSION);
+const notesMigration = migrations.find((entry) => entry.version === 6);
+const standaloneMigration = migrations.find((entry) => entry.version === LATEST_VERSION);
 for (const entry of migrations) {
-  if (entry === paymentMigration || entry === notesMigration) continue;
+  if (entry === paymentMigration || entry === notesMigration || entry === standaloneMigration) continue;
   await entry.up(adapter);
 }
 await adapter.runAsync(
@@ -121,6 +124,15 @@ db.prepare(`INSERT INTO reminders
    VALUES ('v4_reminder', 'v4_expense', 1, '2026-10-20', '09:00', '2026-10-20T09:00:00+08:00', '2026-10-05', '2026-10-05')`).run();
 await paymentMigration.up(adapter);
 await notesMigration.up(adapter);
+const preStandalone = await adapter.getFirstAsync(
+  `SELECT transaction_id, notes FROM reminders WHERE id = 'v4_reminder'`,
+);
+check(
+  'the pre-upgrade reminder still holds its link and notes',
+  preStandalone?.transaction_id === 'v4_expense' && preStandalone?.notes === '',
+  JSON.stringify(preStandalone),
+);
+await standaloneMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -174,13 +186,18 @@ check(
   'the upgrade leaves income without a payment status',
   v4Rows.find((row) => row.id === 'v4_income')?.payment_status === null,
 );
-const v4ReminderNotes = await adapter.getFirstAsync(
-  `SELECT notes FROM reminders WHERE id = 'v4_reminder'`,
+const v4ReminderAfter = await adapter.getFirstAsync(
+  `SELECT transaction_id, status, notes FROM reminders WHERE id = 'v4_reminder'`,
 );
 check(
   'existing reminders gain empty notes on upgrade, never losing the row',
-  v4ReminderNotes?.notes === '',
-  JSON.stringify(v4ReminderNotes),
+  v4ReminderAfter?.notes === '',
+  JSON.stringify(v4ReminderAfter),
+);
+check(
+  'the rebuild keeps the link and marks old reminders active',
+  v4ReminderAfter?.transaction_id === 'v4_expense' && v4ReminderAfter?.status === 'active',
+  JSON.stringify(v4ReminderAfter),
 );
 await adapter.runAsync(`DELETE FROM reminders WHERE id = 'v4_reminder'`);
 await adapter.runAsync(`DELETE FROM transactions WHERE id IN ('v4_expense', 'v4_income')`);
@@ -188,20 +205,34 @@ await adapter.runAsync(`DELETE FROM budgets WHERE id = 'v4_budget'`);
 
 const reminderColumns = columnsOf('reminders');
 check(
-  'reminders hold the schedule and the notification id',
-  ['transaction_id', 'enabled', 'remind_date', 'remind_time', 'remind_at', 'notification_id'].every(
+  'reminders hold the schedule, lifecycle status and the notification id',
+  ['transaction_id', 'enabled', 'status', 'remind_date', 'remind_time', 'remind_at', 'notification_id'].every(
     (column) => reminderColumns.includes(column),
   ),
   reminderColumns.join(','),
 );
-const reminderIndexes = db
-  .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'reminders'`)
+const transactionIdInfo = db
+  .prepare(`PRAGMA table_info(reminders)`)
   .all()
-  .map((row) => row.name);
+  .find((column) => column.name === 'transaction_id');
 check(
-  'one reminder per transaction is indexed',
-  reminderIndexes.includes('idx_reminders_transaction'),
-  reminderIndexes.join(','),
+  'transaction_id is nullable so a reminder can stand alone',
+  transactionIdInfo?.notnull === 0,
+  JSON.stringify(transactionIdInfo),
+);
+const reminderIndexes = db.prepare(`PRAGMA index_list(reminders)`).all();
+check(
+  'reminder lookups by transaction are indexed',
+  reminderIndexes.some((index) => index.name === 'idx_reminders_transaction'),
+  reminderIndexes.map((index) => index.name).join(','),
+);
+check(
+  'the per-transaction index no longer enforces one reminder per transaction',
+  reminderIndexes.find((index) => index.name === 'idx_reminders_transaction')?.unique === 0,
+);
+check(
+  'reminder dates are indexed for the calendar',
+  reminderIndexes.some((index) => index.name === 'idx_reminders_date'),
 );
 
 check(
@@ -209,7 +240,7 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 6, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 7, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -362,7 +393,7 @@ const orphan = await adapter.getFirstAsync(
 check('deleting a tag keeps its transactions', orphan.amount === 100, String(orphan.amount));
 check('deleting a tag clears the reference', orphan.tag_id === null, String(orphan.tag_id));
 
-// A reminder belongs to exactly one transaction — enforced by the schema.
+// A reminder optionally belongs to a transaction; several may share one.
 await adapter.runAsync(
   `INSERT INTO reminders
      (id, transaction_id, enabled, remind_date, remind_time, remind_at, notification_id, created_at, updated_at)
@@ -370,19 +401,21 @@ await adapter.runAsync(
   '2026-10-06T00:00:00.000Z',
   '2026-10-06T00:00:00.000Z',
 );
-let secondReminderRejected = false;
-try {
-  await adapter.runAsync(
-    `INSERT INTO reminders
-       (id, transaction_id, enabled, remind_date, remind_time, remind_at, notification_id, created_at, updated_at)
-     VALUES ('rem_two', 't_cascade', 1, '2026-10-05', '09:00', '2026-10-05T09:00:00+08:00', NULL, ?, ?)`,
-    '2026-10-06T00:00:00.000Z',
-    '2026-10-06T00:00:00.000Z',
-  );
-} catch {
-  secondReminderRejected = true;
-}
-check('a second reminder for one transaction is rejected', secondReminderRejected);
+await adapter.runAsync(
+  `INSERT INTO reminders
+     (id, transaction_id, enabled, remind_date, remind_time, remind_at, notification_id, created_at, updated_at)
+   VALUES ('rem_two', 't_cascade', 1, '2026-10-06', '09:00', '2026-10-06T09:00:00+08:00', NULL, ?, ?)`,
+  '2026-10-06T00:00:00.000Z',
+  '2026-10-06T00:00:00.000Z',
+);
+const linkedReminders = await adapter.getAllAsync(
+  `SELECT id FROM reminders WHERE transaction_id = 't_cascade' ORDER BY id`,
+);
+check(
+  'a transaction can own several reminders',
+  linkedReminders.length === 2,
+  JSON.stringify(linkedReminders),
+);
 
 let accountDeleteBlocked = false;
 try {
@@ -397,8 +430,18 @@ const afterCascade = await adapter.getFirstAsync(
   `SELECT COUNT(*) AS total FROM transactions WHERE budget_id = 'b_oct'`,
 );
 check('deleting a budget cascades to its transactions', afterCascade.total === 0, String(afterCascade.total));
-const afterReminderCascade = await adapter.getFirstAsync('SELECT COUNT(*) AS total FROM reminders');
-check('deleting a budget also removes its reminders', afterReminderCascade.total === 0, String(afterReminderCascade.total));
+const unlinkedReminders = await adapter.getAllAsync(
+  `SELECT id, transaction_id FROM reminders ORDER BY id`,
+);
+check(
+  'deleting a budget unlinks its reminders instead of deleting them',
+  unlinkedReminders.length === 2 &&
+    unlinkedReminders.every((row) => row.transaction_id === null),
+  JSON.stringify(unlinkedReminders),
+);
+// Clear them so the parity snapshots below start from an empty table, the
+// same as a fresh memory adapter.
+await adapter.runAsync(`DELETE FROM reminders`);
 
 console.log('\n--- storage adapter parity (sqlite vs memory) ---');
 
@@ -547,6 +590,7 @@ async function runScenario(store) {
     id: 'p_reminder',
     transaction_id: 'p_reminder_tx',
     enabled: 1,
+    status: 'active',
     remind_date: '2026-10-19',
     remind_time: '09:00',
     remind_at: '2026-10-19T09:00:00+08:00',
@@ -556,10 +600,11 @@ async function runScenario(store) {
     updated_at: STAMP,
   });
   snapshot.reminder = await store.getReminderByTransaction('p_reminder_tx');
+  snapshot.reminderById = await store.getReminder('p_reminder');
   snapshot.reminders = await store.listReminders();
   snapshot.reminderTransaction = await store.getTransaction('p_reminder_tx');
 
-  // Rescheduling replaces the OS id in place — still one row per transaction.
+  // Rescheduling replaces the OS id in place.
   await store.updateReminder({
     id: 'p_reminder',
     transaction_id: 'p_reminder_tx',
@@ -604,23 +649,70 @@ async function runScenario(store) {
   });
   snapshot.notesClearedReminder = await store.getReminderByTransaction('p_reminder_tx');
 
-  let duplicateReminderRejected = false;
-  try {
-    await store.insertReminder({
-      id: 'p_reminder_2',
-      transaction_id: 'p_reminder_tx',
-      enabled: 1,
-      remind_date: '2026-10-21',
-      remind_time: '09:00',
-      remind_at: '2026-10-21T09:00:00+08:00',
-      notification_id: null,
-      created_at: STAMP,
-      updated_at: STAMP,
-    });
-  } catch {
-    duplicateReminderRejected = true;
-  }
-  snapshot.duplicateReminderRejected = duplicateReminderRejected;
+  // One transaction may own several reminders now: the second insert is
+  // accepted and the oldest row stays the one the transaction form manages.
+  await store.insertReminder({
+    id: 'p_reminder_2',
+    transaction_id: 'p_reminder_tx',
+    enabled: 1,
+    status: 'active',
+    remind_date: '2026-10-21',
+    remind_time: '09:00',
+    remind_at: '2026-10-21T09:00:00+08:00',
+    notification_id: null,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.secondReminder = await store.getReminder('p_reminder_2');
+  snapshot.oldestReminderUnchanged = await store.getReminderByTransaction('p_reminder_tx');
+
+  // A standalone reminder: no transaction, still a first-class row.
+  await store.insertReminder({
+    id: 'p_standalone',
+    transaction_id: null,
+    enabled: 1,
+    status: 'active',
+    remind_date: '2026-10-25',
+    remind_time: '08:00',
+    remind_at: '2026-10-25T08:00:00+08:00',
+    notification_id: null,
+    notes: 'Submit the travel report.',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.standaloneReminder = await store.getReminder('p_standalone');
+  snapshot.standaloneByTransaction = await store.getReminderByTransaction(null);
+  snapshot.remindersWithStandalone = await store.listReminders();
+
+  // Completing only flips the lifecycle status; an omitted status key in a
+  // later bookkeeping update keeps it.
+  await store.updateReminder({
+    ...snapshot.notesClearedReminder,
+    status: 'completed',
+    updated_at: STAMP,
+  });
+  snapshot.completedReminder = await store.getReminder('p_reminder');
+
+  // Deleting a reminder removes only that row.
+  await store.insertReminder({
+    id: 'p_temp',
+    transaction_id: null,
+    enabled: 1,
+    status: 'active',
+    remind_date: '2026-10-26',
+    remind_time: '08:00',
+    remind_at: '2026-10-26T08:00:00+08:00',
+    notification_id: null,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.tempDeletedCount = await store.deleteReminder('p_temp');
+  snapshot.tempAfterDelete = await store.getReminder('p_temp');
+
+  // A budget's reminders go with it, but only through the explicit call the
+  // budgets store makes — the foreign key alone would just unlink them.
+  snapshot.budgetRemindersRemoved = await store.deleteRemindersForBudget('p_budget');
+  snapshot.remindersAfterBudgetCleanup = await store.listReminders();
 
   // Home text search: identical rows, order, and tag columns from both
   // engines, including case-insensitive partial matches and the rule that
@@ -659,7 +751,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 6);
+check('both adapters report the same schema version', LATEST_VERSION === 7);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -753,7 +845,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has five pending migrations', pending.length === 5, String(pending.length));
+check('legacy database has six pending migrations', pending.length === 6, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -1035,6 +1127,22 @@ check(
   reminderValidationError('2026-10-06', '09:00', new Date(2026, 9, 7)) === 'Pick a time in the future.',
 );
 
+const upcomingStatus = deriveReminderStatus(
+  { status: 'active', remind_at: buildRemindAt('2026-10-08', '09:00') },
+  new Date(2026, 9, 7),
+);
+const overdueStatus = deriveReminderStatus(
+  { status: 'active', remind_at: buildRemindAt('2026-10-06', '09:00') },
+  new Date(2026, 9, 7),
+);
+const completedStatus = deriveReminderStatus(
+  { status: 'completed', remind_at: buildRemindAt('2026-10-06', '09:00') },
+  new Date(2026, 9, 7),
+);
+check('a future armed reminder is upcoming', upcomingStatus === 'upcoming', upcomingStatus);
+check('a past armed reminder is overdue', overdueStatus === 'overdue', overdueStatus);
+check('a completed reminder never reads as overdue', completedStatus === 'completed', completedStatus);
+
 const freshSuggestion = suggestReminderValues({ reference: new Date(2026, 9, 7) });
 check(
   'a fresh reminder defaults to today at 9:00 AM',
@@ -1056,6 +1164,13 @@ check(
   notedCopy.body,
 );
 check('the notification is titled as a payment reminder', notedCopy.title === 'Payment reminder', notedCopy.title);
+
+const standaloneCopy = buildReminderNotification({ notes: 'Buy milk', linked: false });
+check(
+  'a standalone reminder is titled as a plain reminder',
+  standaloneCopy.title === 'Reminder',
+  standaloneCopy.title,
+);
 
 const blankCopy = buildReminderNotification({ notes: '   \n\t ' });
 check(

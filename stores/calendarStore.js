@@ -10,9 +10,11 @@ import { currentMonthKey, isWithin, monthRange, todayIso } from '../utils/dates'
  * rows already in memory, so tapping dates never hits storage.
  *
  * Reminder rows are the joined ones from the repository (they carry the
- * transaction's description and amount); only enabled reminders inside the
- * visible month are kept, and each transaction is hydrated with its reminder
- * exactly like the budget detail store does.
+ * transaction's description and amount when linked); only enabled reminders
+ * inside the visible month are kept for the per-day dots, and each
+ * transaction is hydrated with its oldest reminder exactly like the budget
+ * detail store does. The interactive per-day list lives in the reminders
+ * store, not here.
  */
 export const useCalendarStore = create((set, get) => ({
   monthKey: currentMonthKey(),
@@ -32,9 +34,15 @@ export const useCalendarStore = create((set, get) => ({
         getReminders(),
       ]);
 
-      const reminderByTransaction = new Map(
-        allReminders.map((reminder) => [reminder.transaction_id, reminder]),
-      );
+      // A transaction can own several reminders; hydrate with the oldest,
+      // the same one getReminderByTransaction and the form manage.
+      const reminderByTransaction = new Map();
+      for (const reminder of allReminders) {
+        if (reminder.transaction_id == null) continue;
+        if (!reminderByTransaction.has(reminder.transaction_id)) {
+          reminderByTransaction.set(reminder.transaction_id, reminder);
+        }
+      }
       const transactions = rows.map((row) => ({
         ...row,
         reminder: reminderByTransaction.get(row.id) ?? null,

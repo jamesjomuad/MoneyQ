@@ -85,7 +85,11 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       if (index >= 0) store.budgets[index] = { ...store.budgets[index], ...row };
     },
 
-    /** Mirrors `ON DELETE CASCADE` on transactions (and their reminders). */
+    /**
+     * Cascades to the budget's transactions through the foreign key; their
+     * reminders are only unlinked (`ON DELETE SET NULL`), not deleted — the
+     * app layer calls deleteRemindersForBudget when a budget is removed.
+     */
     async deleteBudget(id) {
       const before = store.budgets.length;
       store.budgets = store.budgets.filter((budget) => budget.id !== id);
@@ -96,9 +100,9 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       store.transactions = store.transactions.filter(
         (transaction) => transaction.budget_id !== id,
       );
-      store.reminders = store.reminders.filter(
-        (reminder) => !doomed.has(reminder.transaction_id),
-      );
+      for (const reminder of store.reminders) {
+        if (doomed.has(reminder.transaction_id)) reminder.transaction_id = null;
+      }
       return removed;
     },
 
@@ -213,52 +217,95 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       return 1;
     },
 
+    /**
+     * Mirrors `ON DELETE SET NULL` on reminders: the transaction goes, the
+     * reminder survives as a standalone record.
+     */
     async deleteTransaction(id) {
       const before = store.transactions.length;
       store.transactions = store.transactions.filter((transaction) => transaction.id !== id);
-      store.reminders = store.reminders.filter((reminder) => reminder.transaction_id !== id);
+      for (const reminder of store.reminders) {
+        if (reminder.transaction_id === id) reminder.transaction_id = null;
+      }
       return before - store.transactions.length;
     },
 
     // --- reminders -----------------------------------------------------
 
-    /** Same projection as the SQLite join: reminder row + transaction fields. */
+    /**
+     * Same projection as the SQLite LEFT JOIN: reminder row + transaction
+     * fields, or NULL transaction fields for a standalone reminder.
+     */
     async listReminders() {
       return store.reminders
         .map((reminder) => {
-          const transaction = store.transactions.find((tx) => tx.id === reminder.transaction_id);
-          if (!transaction) return null;
+          const transaction = reminder.transaction_id
+            ? store.transactions.find((tx) => tx.id === reminder.transaction_id)
+            : null;
           return {
             ...reminder,
-            budget_id: transaction.budget_id,
-            amount: transaction.amount,
-            description: transaction.description ?? null,
-            transaction_date: transaction.transaction_date,
+            budget_id: transaction?.budget_id ?? null,
+            amount: transaction?.amount ?? null,
+            description: transaction?.description ?? null,
+            transaction_date: transaction?.transaction_date ?? null,
           };
         })
-        .filter(Boolean)
         .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
     },
 
+    async getReminder(id) {
+      return copy(store.reminders.find((reminder) => reminder.id === id) ?? null);
+    },
+
+    /** The oldest reminder linked to a transaction, if any. */
     async getReminderByTransaction(transactionId) {
+      if (transactionId == null) return null;
       return copy(
-        store.reminders.find((reminder) => reminder.transaction_id === transactionId) ?? null,
+        [...store.reminders]
+          .filter((reminder) => reminder.transaction_id === transactionId)
+          .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))[0] ??
+          null,
       );
     },
 
     async insertReminder(row) {
-      // The UNIQUE (transaction_id) constraint lives in the schema on SQLite;
-      // mirror it here so both adapters reject a second reminder the same way.
-      if (store.reminders.some((reminder) => reminder.transaction_id === row.transaction_id)) {
-        throw new Error('UNIQUE constraint failed: reminders.transaction_id');
-      }
-      store.reminders.push({ ...row, notes: row.notes ?? '' });
+      store.reminders.push({ ...row, status: row.status ?? 'active', notes: row.notes ?? '' });
     },
 
     async updateReminder(row) {
       const index = store.reminders.findIndex((reminder) => reminder.id === row.id);
-      if (index >= 0) store.reminders[index] = { ...store.reminders[index], ...row };
-      return index >= 0 ? 1 : 0;
+      if (index < 0) return 0;
+      const existing = store.reminders[index];
+      // notes and status mirror SQLite's COALESCE: an omitted or null value
+      // keeps what the row already holds, so notification-id bookkeeping can
+      // never blank either one.
+      store.reminders[index] = {
+        ...existing,
+        ...row,
+        status: row.status == null ? existing.status : row.status,
+        notes: row.notes == null ? existing.notes : row.notes,
+      };
+      return 1;
+    },
+
+    async deleteReminder(id) {
+      const before = store.reminders.length;
+      store.reminders = store.reminders.filter((reminder) => reminder.id !== id);
+      return before - store.reminders.length;
+    },
+
+    /** Mirrors the subquery DELETE used before a budget is removed. */
+    async deleteRemindersForBudget(budgetId) {
+      const doomed = new Set(
+        store.transactions
+          .filter((transaction) => transaction.budget_id === budgetId)
+          .map((t) => t.id),
+      );
+      const before = store.reminders.length;
+      store.reminders = store.reminders.filter(
+        (reminder) => !doomed.has(reminder.transaction_id),
+      );
+      return before - store.reminders.length;
     },
 
     // --- settings ------------------------------------------------------
@@ -357,9 +404,27 @@ function seedDemoData(store, timestamp) {
     transaction_id: 'demo_tx_reminder',
     notes: 'Reload the prepaid wifi before it cuts out.',
     enabled: 1,
+    status: 'active',
     remind_date: reminderDate,
     remind_time: '09:00',
     remind_at: buildRemindAt(reminderDate, '09:00'),
+    notification_id: null,
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
+
+  // A standalone reminder with no transaction, so the Calendar tab's reminder
+  // editor shows both shapes in the browser harness.
+  const standaloneDate = addDaysIso(today, 3);
+  store.reminders.push({
+    id: 'demo_reminder_standalone',
+    transaction_id: null,
+    notes: 'Submit the travel expense report.',
+    enabled: 1,
+    status: 'active',
+    remind_date: standaloneDate,
+    remind_time: '14:00',
+    remind_at: buildRemindAt(standaloneDate, '14:00'),
     notification_id: null,
     created_at: timestamp,
     updated_at: timestamp,

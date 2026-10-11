@@ -17,6 +17,16 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 export const DEFAULT_REMINDER_TIME = '09:00';
 
+/** Lifecycle states a reminder row can hold. */
+export const REMINDER_STATUSES = ['active', 'completed'];
+
+/** UI labels for the derived status of a reminder. */
+export const REMINDER_STATUS_LABELS = {
+  upcoming: 'Upcoming',
+  overdue: 'Overdue',
+  completed: 'Completed',
+};
+
 /** True for a real local 'YYYY-MM-DD' value such as '2026-10-15'. */
 export function isValidLocalDate(date) {
   if (!ISO_DATE_PATTERN.test(String(date ?? ''))) return false;
@@ -71,6 +81,18 @@ export function isRemindAtPast(remindAt, reference = new Date()) {
 }
 
 /**
+ * The status a reminder currently shows, derived only from its own stored
+ * schedule and completion state — never from whatever date the user happens
+ * to be viewing. 'completed' wins; then an armed instant behind us reads as
+ * 'overdue'; everything else is 'upcoming'.
+ */
+export function deriveReminderStatus(reminder, reference = new Date()) {
+  if (reminder?.status === 'completed') return 'completed';
+  if (isRemindAtPast(reminder?.remind_at, reference)) return 'overdue';
+  return 'upcoming';
+}
+
+/**
  * The single validation rule for an enabled reminder, shared by the form (for
  * immediate feedback) and the repository (so the rule cannot be bypassed).
  * Returns an error message, or null when the input may be scheduled.
@@ -118,9 +140,10 @@ const MAX_REMINDER_BODY_LENGTH = 500;
  * Notification copy for one reminder, taken straight from the note the user
  * wrote on it — the note *is* the message. Notes are optional, so blank or
  * whitespace-only input falls back to a neutral line instead of inventing
- * transaction details the user never typed.
+ * transaction details the user never typed. A linked reminder keeps the
+ * familiar payment title; a standalone one is not necessarily a payment.
  */
-export function buildReminderNotification({ notes }) {
+export function buildReminderNotification({ notes, linked = true }) {
   const note = String(notes ?? '').trim();
   let body = FALLBACK_REMINDER_BODY;
   if (note) {
@@ -130,7 +153,7 @@ export function buildReminderNotification({ notes }) {
         : note;
   }
   return {
-    title: 'Payment reminder',
+    title: linked ? 'Payment reminder' : 'Reminder',
     body,
   };
 }

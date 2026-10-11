@@ -11,6 +11,7 @@ import {
   getPinnedBudgetIds,
   setPinnedBudgetIds,
 } from '../storage/repositories/settingsRepository';
+import { deleteRemindersForBudget } from '../storage/repositories/reminderRepository';
 import { cancelScheduledRemindersForBudget } from '../services/reminderService';
 
 /**
@@ -59,9 +60,11 @@ export const useBudgetsStore = create((set, get) => ({
   },
 
   removeBudget: async (id) => {
-    // Notifications first: the cascade below deletes the reminder rows that
-    // tell us which OS notifications to cancel.
+    // Notifications first: the rows below tell us which OS notifications to
+    // cancel. Then the reminder rows themselves — the foreign key would only
+    // unlink them, but a deleted budget's reminders belong with it.
     await cancelScheduledRemindersForBudget(id);
+    await deleteRemindersForBudget(id);
     await deleteBudget(id);
     const pinnedIds = get().pinnedIds.filter((pinnedId) => pinnedId !== id);
     if (pinnedIds.length !== get().pinnedIds.length) await setPinnedBudgetIds(pinnedIds);

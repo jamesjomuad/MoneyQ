@@ -9,7 +9,7 @@ import {
   getTransactionsForBudget,
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
-import { applyReminder, cancelScheduledReminder } from '../services/reminderService';
+import { applyReminder } from '../services/reminderService';
 import {
   collectUsedTagIds,
   computeTagExpenseBreakdown,
@@ -81,9 +81,15 @@ export const useBudgetDetailStore = create((set, get) => {
           return;
         }
 
-        const reminderByTransaction = new Map(
-          reminders.map((reminder) => [reminder.transaction_id, reminder]),
-        );
+        // A transaction can own several reminders; hydrate with the oldest,
+        // the same one the form's "Set Reminder" switch manages.
+        const reminderByTransaction = new Map();
+        for (const reminder of reminders) {
+          if (reminder.transaction_id == null) continue;
+          if (!reminderByTransaction.has(reminder.transaction_id)) {
+            reminderByTransaction.set(reminder.transaction_id, reminder);
+          }
+        }
         const hydrated = entries.map((entry) => ({
           ...entry,
           reminder: reminderByTransaction.get(entry.id) ?? null,
@@ -164,9 +170,8 @@ export const useBudgetDetailStore = create((set, get) => {
     },
 
     removeTransaction: async (transactionId) => {
-      // The row cascades away with its reminder; the OS notification must be
-      // cancelled explicitly, or a deleted entry would still speak up.
-      await cancelScheduledReminder(transactionId);
+      // The transaction goes; its reminders survive as standalone records
+      // (the foreign key clears the link), keeping their schedules.
       await deleteTransaction(transactionId);
       await get().load(get().budgetId);
     },

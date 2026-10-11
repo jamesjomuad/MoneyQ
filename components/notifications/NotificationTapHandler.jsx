@@ -15,15 +15,16 @@ function isId(value) {
 /**
  * Turns a tapped MoneyQ notification into a route.
  *
- *   notification → data.transactionId + data.budgetId → transaction screen
+ *   linked notification → data.transactionId + data.budgetId → transaction form
+ *   standalone reminder → data.reminderId only          → reminder form
  *
  * The payload travels with the notification, so nothing is looked up twice
  * and the navigation works whether the app was foregrounded, backgrounded or
  * not running. Mounted inside the navigation shell, after storage is ready,
  * so a cold-start tap lands on a screen that can actually load the entry.
  * Ids are validated before any navigation; a row deleted since the schedule
- * was armed lands on the form's own "Transaction not found" state, which
- * offers a way back instead of a broken screen.
+ * was armed lands on the form's own "not found" state, which offers a way
+ * back instead of a broken screen.
  * The response is cleared once handled, so reopening the app later does not
  * replay the same jump.
  */
@@ -42,12 +43,21 @@ export function NotificationTapHandler() {
       if (handledRef.current.has(key)) return;
       handledRef.current.add(key);
 
-      if (!isId(data.transactionId) || !isId(data.budgetId)) return;
-      router.push({
-        pathname: '/transaction/form',
-        params: { budgetId: data.budgetId, transactionId: data.transactionId },
-      });
-      clearLastResponseAsync();
+      if (isId(data.transactionId) && isId(data.budgetId)) {
+        router.push({
+          pathname: '/transaction/form',
+          params: { budgetId: data.budgetId, transactionId: data.transactionId },
+        });
+        clearLastResponseAsync();
+        return;
+      }
+      if (isId(data.reminderId)) {
+        router.push({
+          pathname: '/reminder/form',
+          params: { reminderId: data.reminderId },
+        });
+        clearLastResponseAsync();
+      }
     }
 
     // Cold start: the tap happened before this component existed.

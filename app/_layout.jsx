@@ -161,6 +161,14 @@ function NavigationShell() {
           }}
         />
         <Stack.Screen
+          name="reminder/form"
+          options={{
+            presentation: "modal",
+            animation: "slide_from_bottom",
+            title: "Reminder",
+          }}
+        />
+        <Stack.Screen
           name="tags"
           options={{
             presentation: "modal",

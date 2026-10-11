@@ -252,8 +252,10 @@ export function createSqliteAdapter(getDb) {
     // --- reminders -----------------------------------------------------
 
     /**
-     * Reminder rows joined with the transaction fields needed to rebuild the
-     * notification body, so rescheduling never needs one query per reminder.
+     * Reminder rows LEFT JOINed with their transaction, so a standalone
+     * reminder (transaction_id NULL) still appears with NULL transaction
+     * fields. The joined columns exist so rescheduling and the Calendar tab
+     * never need one query per reminder. Ordered by the instant they fire.
      */
     async listReminders() {
       return query(`
@@ -263,24 +265,37 @@ export function createSqliteAdapter(getDb) {
                t.description          AS description,
                t.transaction_date    AS transaction_date
           FROM reminders r
-          JOIN transactions t ON t.id = r.transaction_id
+          LEFT JOIN transactions t ON t.id = r.transaction_id
          ORDER BY r.remind_at ASC
       `);
     },
 
+    async getReminder(id) {
+      return first('SELECT * FROM reminders WHERE id = ?', id);
+    },
+
+    /** The oldest reminder linked to a transaction, if any. */
     async getReminderByTransaction(transactionId) {
-      return first('SELECT * FROM reminders WHERE transaction_id = ?', transactionId);
+      if (transactionId == null) return null;
+      return first(
+        `SELECT * FROM reminders
+          WHERE transaction_id = ?
+          ORDER BY created_at ASC, id ASC
+          LIMIT 1`,
+        transactionId,
+      );
     },
 
     async insertReminder(row) {
       await run(
         `INSERT INTO reminders
-           (id, transaction_id, enabled, remind_date, remind_time, remind_at,
+           (id, transaction_id, enabled, status, remind_date, remind_time, remind_at,
             notification_id, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
-        row.transaction_id,
+        row.transaction_id ?? null,
         row.enabled,
+        row.status ?? 'active',
         row.remind_date,
         row.remind_time,
         row.remind_at,
@@ -292,14 +307,16 @@ export function createSqliteAdapter(getDb) {
     },
 
     async updateReminder(row) {
-      // notes is COALESCEd so notification bookkeeping — which updates only
-      // the OS id — can never blank a reminder's notes; pass '' to clear.
+      // notes and status are COALESCEd so notification bookkeeping — which
+      // updates only the OS id — can never blank a note or a lifecycle state;
+      // pass '' / an explicit value to change them.
       const result = await run(
         `UPDATE reminders
-            SET enabled = ?, remind_date = ?, remind_time = ?, remind_at = ?,
+            SET enabled = ?, status = COALESCE(?, status), remind_date = ?, remind_time = ?, remind_at = ?,
                 notification_id = ?, notes = COALESCE(?, notes), updated_at = ?
           WHERE id = ?`,
         row.enabled,
+        row.status ?? null,
         row.remind_date,
         row.remind_time,
         row.remind_at,
@@ -307,6 +324,25 @@ export function createSqliteAdapter(getDb) {
         row.notes ?? null,
         row.updated_at,
         row.id,
+      );
+      return result.changes ?? 0;
+    },
+
+    async deleteReminder(id) {
+      const result = await run('DELETE FROM reminders WHERE id = ?', id);
+      return result.changes ?? 0;
+    },
+
+    /**
+     * Removes every reminder linked to a budget's transactions. Used before a
+     * budget delete: the FK would only SET NULL on the reminders, but a
+     * deleted budget's reminders belong with it.
+     */
+    async deleteRemindersForBudget(budgetId) {
+      const result = await run(
+        `DELETE FROM reminders
+          WHERE transaction_id IN (SELECT id FROM transactions WHERE budget_id = ?)`,
+        budgetId,
       );
       return result.changes ?? 0;
     },

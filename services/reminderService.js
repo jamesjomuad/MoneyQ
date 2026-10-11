@@ -14,10 +14,15 @@
  */
 
 import {
+  completeReminder as completeReminderRow,
+  createReminder as createReminderRow,
+  deleteReminder as deleteReminderRow,
+  getReminder,
   getReminderForTransaction,
   getReminders,
   saveReminder,
   saveReminderNotification,
+  updateReminder as updateReminderRow,
 } from '../storage/repositories/reminderRepository';
 import { buildReminderNotification, isRemindAtPast } from '../utils/reminders';
 import * as notifications from './notificationService';
@@ -25,9 +30,14 @@ import * as notifications from './notificationService';
 /**
  * Notification payload for one reminder row, rebuilt from stored data only:
  * the note the user wrote, plus the ids a tap needs to find its way back.
+ * Standalone reminders carry null transaction ids; the tap handler routes
+ * those to the reminder editor instead of the transaction form.
  */
 function contentFor(reminder) {
-  const text = buildReminderNotification({ notes: reminder.notes });
+  const text = buildReminderNotification({
+    notes: reminder.notes,
+    linked: Boolean(reminder.transaction_id),
+  });
   return {
     title: text.title,
     body: text.body,
@@ -56,6 +66,26 @@ async function scheduleNow(reminder) {
 }
 
 /**
+ * Cancels whatever notification the reminder currently owns and clears the
+ * stored id, so a reschedule can never leave two notifications behind.
+ */
+async function cancelOwnedNotification(row) {
+  if (row?.notification_id) await notifications.cancelAsync(row.notification_id);
+}
+
+/**
+ * Resolves the permission for arming a schedule. Returns `{ permission, ok }`;
+ * a denied permission never blocks the save — the row is already stored.
+ */
+async function resolvePermission(requestPermission) {
+  if (!notifications.isSupported) return { permission: null, ok: false };
+  const permission = requestPermission
+    ? await notifications.requestPermissionAsync()
+    : await notifications.getPermissionStatusAsync();
+  return { permission, ok: permission.granted };
+}
+
+/**
  * Applies the reminder a transaction form just produced.
  *
  * Editing cancels the previous notification before anything else, so a date
@@ -67,9 +97,7 @@ export async function applyReminder({ transaction, reminder, requestPermission =
   if (!transaction?.id) throw new Error('A reminder needs a transaction.');
 
   const existing = await getReminderForTransaction(transaction.id);
-  if (existing?.notification_id) {
-    await notifications.cancelAsync(existing.notification_id);
-  }
+  await cancelOwnedNotification(existing);
 
   if (!reminder?.enabled) {
     const row = await saveReminder({
@@ -97,11 +125,56 @@ export async function applyReminder({ transaction, reminder, requestPermission =
     return { status: 'unsupported', reminder: row };
   }
 
-  const permission = requestPermission
-    ? await notifications.requestPermissionAsync()
-    : await notifications.getPermissionStatusAsync();
+  const { permission, ok } = await resolvePermission(requestPermission);
+  if (!ok) return { status: 'blocked', permission, reminder: row };
 
-  if (!permission.granted) {
+  const outcome = await scheduleNow(row);
+  return { ...outcome, permission, reminder: row };
+}
+
+/**
+ * Creates a reminder — standalone or linked — and arms its notification.
+ * Same outcome vocabulary as applyReminder: 'scheduled', 'blocked',
+ * 'unsupported' or 'failed'.
+ */
+export async function createReminder({ date, time, notes, transactionId = null, requestPermission = true }) {
+  const row = await createReminderRow({ date, time, notes, transactionId });
+
+  if (!notifications.isSupported) {
+    return { status: 'unsupported', reminder: row };
+  }
+
+  const { permission, ok } = await resolvePermission(requestPermission);
+  if (!ok) return { status: 'blocked', permission, reminder: row };
+
+  const outcome = await scheduleNow(row);
+  return { ...outcome, permission, reminder: row };
+}
+
+/**
+ * Edits a reminder's schedule, notes or link. Cancels the previous
+ * notification first, then re-arms — one reminder, at most one scheduled
+ * notification, never duplicates. A completed reminder keeps its status and
+ * is not re-armed; fixing its date alone does not resurrect the notification.
+ */
+export async function editReminder(id, { date, time, notes, transactionId, requestPermission = true }) {
+  const existing = await getReminder(id);
+  if (!existing) throw new Error('That reminder no longer exists.');
+  await cancelOwnedNotification(existing);
+
+  const row = await updateReminderRow(id, { date, time, notes, transactionId });
+  if (row.enabled !== 1 || row.status === 'completed') {
+    await saveReminderNotification(row, null);
+    return { status: 'saved', reminder: row };
+  }
+
+  if (!notifications.isSupported) {
+    return { status: 'unsupported', reminder: row };
+  }
+
+  const { permission, ok } = await resolvePermission(requestPermission);
+  if (!ok) {
+    await saveReminderNotification(row, null);
     return { status: 'blocked', permission, reminder: row };
   }
 
@@ -110,15 +183,24 @@ export async function applyReminder({ transaction, reminder, requestPermission =
 }
 
 /**
- * Cancels the notification a transaction owns and clears its id, leaving the
- * reminder row (and the transaction) intact. Used when a reminder is disabled
- * or its transaction is deleted: the record stays, only the delivery stops.
+ * Completes a reminder: cancels any pending notification and marks the row.
+ * Never touches the linked transaction — a reminder's lifecycle is its own.
  */
-export async function cancelScheduledReminder(transactionId) {
-  const row = await getReminderForTransaction(transactionId);
-  if (!row) return;
-  if (row.notification_id) await notifications.cancelAsync(row.notification_id);
-  await saveReminderNotification(row, null);
+export async function completeReminder(id) {
+  const existing = await getReminder(id);
+  if (!existing) throw new Error('That reminder no longer exists.');
+  await cancelOwnedNotification(existing);
+  await saveReminderNotification(existing, null);
+  const row = await completeReminderRow(id);
+  return { status: 'completed', reminder: row };
+}
+
+/** Cancels any notification the reminder owns, then removes the row. */
+export async function removeReminder(id) {
+  const existing = await getReminder(id);
+  if (!existing) return 0;
+  await cancelOwnedNotification(existing);
+  return deleteReminderRow(id);
 }
 
 /** Cancels every notification belonging to a budget that is about to go. */
@@ -132,9 +214,9 @@ export async function cancelScheduledRemindersForBudget(budgetId) {
 /**
  * Reconciles the OS with the database: schedules anything active that is not
  * scheduled, cancels anything scheduled that is no longer active (disabled,
- * past, deleted) and repairs ids that drifted. Runs once at launch, which is
- * what allows MoneyQ to be correct even when a notification failed, was
- * cleared, or the app was reinstalled.
+ * completed, past, deleted) and repairs ids that drifted. Runs once at launch,
+ * which is what allows MoneyQ to be correct even when a notification failed,
+ * was cleared, or the app was reinstalled.
  */
 export async function resyncReminders() {
   if (!notifications.isSupported) return { scheduled: 0, cancelled: 0 };
@@ -164,6 +246,7 @@ export async function resyncReminders() {
   for (const row of rows) {
     const active =
       row.enabled === 1 &&
+      row.status !== 'completed' &&
       !isRemindAtPast(row.remind_at, now);
 
     if (!active) continue;
