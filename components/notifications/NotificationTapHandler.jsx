@@ -7,6 +7,11 @@ import {
   subscribeToResponses,
 } from '../../services/notificationService';
 
+/** True for a payload id that can name a stored row. */
+function isId(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 /**
  * Turns a tapped MoneyQ notification into a route.
  *
@@ -16,6 +21,9 @@ import {
  * and the navigation works whether the app was foregrounded, backgrounded or
  * not running. Mounted inside the navigation shell, after storage is ready,
  * so a cold-start tap lands on a screen that can actually load the entry.
+ * Ids are validated before any navigation; a row deleted since the schedule
+ * was armed lands on the form's own "Transaction not found" state, which
+ * offers a way back instead of a broken screen.
  * The response is cleared once handled, so reopening the app later does not
  * replay the same jump.
  */
@@ -34,7 +42,7 @@ export function NotificationTapHandler() {
       if (handledRef.current.has(key)) return;
       handledRef.current.add(key);
 
-      if (!data.transactionId || !data.budgetId) return;
+      if (!isId(data.transactionId) || !isId(data.budgetId)) return;
       router.push({
         pathname: '/transaction/form',
         params: { budgetId: data.budgetId, transactionId: data.transactionId },

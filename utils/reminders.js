@@ -10,7 +10,6 @@
  * Manila-evening timestamp.
  */
 
-import { formatCurrency } from './currency';
 import { addDaysIso, formatDate, formatShortDate, formatTime, toIsoDate } from './dates';
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -105,18 +104,33 @@ export function formatReminderWhen(date, time, { short = false } = {}) {
   return `${day} at ${formatTime(time)}`;
 }
 
-/**
- * Notification copy for one reminder, built from the transaction itself so no
- * message is ever hardcoded. The transaction row — not the notification — is
- * the financial record: this text is a convenience that can be rebuilt at any
- * time from what MoneyQ already stores.
- */
-export function buildReminderNotification({ transaction, currency }) {
-  const money = formatCurrency(transaction.amount, { currency });
-  const name = String(transaction.description ?? '').trim() || 'MoneyQ entry';
+/** The body a noteless reminder falls back to. */
+export const FALLBACK_REMINDER_BODY = 'You have a scheduled reminder.';
 
+/**
+ * Cap for the notification body: a reminder note is a short line of memory
+ * aid, not an essay. Anything longer is cut here so the OS never has to
+ * render (or silently mangle) a wall of text.
+ */
+const MAX_REMINDER_BODY_LENGTH = 500;
+
+/**
+ * Notification copy for one reminder, taken straight from the note the user
+ * wrote on it — the note *is* the message. Notes are optional, so blank or
+ * whitespace-only input falls back to a neutral line instead of inventing
+ * transaction details the user never typed.
+ */
+export function buildReminderNotification({ notes }) {
+  const note = String(notes ?? '').trim();
+  let body = FALLBACK_REMINDER_BODY;
+  if (note) {
+    body =
+      note.length > MAX_REMINDER_BODY_LENGTH
+        ? `${note.slice(0, MAX_REMINDER_BODY_LENGTH).trimEnd()}…`
+        : note;
+  }
   return {
-    title: '🔔 MoneyQ Reminder',
-    body: `Don't forget about your ${money} transaction with ${name}.`,
+    title: 'Payment reminder',
+    body,
   };
 }

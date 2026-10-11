@@ -1049,27 +1049,33 @@ check(
   JSON.stringify(lateSuggestion),
 );
 
-const billCopy = buildReminderNotification({
-  transaction: { description: 'Internet bill', amount: 200_000 },
-  currency: 'PHP',
-});
+const notedCopy = buildReminderNotification({ notes: 'Pay the landlord on the day.' });
 check(
-  'the notification names the transaction and the money',
-  billCopy.body.includes('Internet bill') && billCopy.body.includes('₱2,000.00'),
-  billCopy.body,
+  'the notification body is the saved reminder note',
+  notedCopy.body === 'Pay the landlord on the day.',
+  notedCopy.body,
 );
-check('the notification is titled as a MoneyQ reminder', billCopy.title.includes('MoneyQ Reminder'), billCopy.title);
-check('the notification is generic', !/owe|owed|repay|paid/i.test(billCopy.body), billCopy.body);
+check('the notification is titled as a payment reminder', notedCopy.title === 'Payment reminder', notedCopy.title);
 
-const unnamedCopy = buildReminderNotification({
-  transaction: { description: '', amount: 150_000 },
-  currency: 'PHP',
-});
+const blankCopy = buildReminderNotification({ notes: '   \n\t ' });
 check(
-  'a descriptionless transaction still yields readable copy',
-  unnamedCopy.body.includes('MoneyQ entry') && unnamedCopy.body.includes('₱1,500.00'),
-  unnamedCopy.body,
+  'blank or whitespace-only notes fall back to a generic message',
+  blankCopy.body === 'You have a scheduled reminder.',
+  blankCopy.body,
 );
+
+const paddedCopy = buildReminderNotification({ notes: '  Rent is due Friday.  ' });
+check('the note is trimmed before it becomes the body', paddedCopy.body === 'Rent is due Friday.', paddedCopy.body);
+
+const longCopy = buildReminderNotification({ notes: 'x'.repeat(800) });
+check(
+  'unusually long notes are capped with an ellipsis',
+  longCopy.body.length <= 501 && longCopy.body.endsWith('…'),
+  String(longCopy.body.length),
+);
+
+const unnamedCopy = buildReminderNotification({ notes: undefined });
+check('a missing notes value still yields readable copy', unnamedCopy.body === 'You have a scheduled reminder.', unnamedCopy.body);
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

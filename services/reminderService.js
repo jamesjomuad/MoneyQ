@@ -19,28 +19,21 @@ import {
   saveReminder,
   saveReminderNotification,
 } from '../storage/repositories/reminderRepository';
-import { getSetting, SETTING_KEYS } from '../storage/repositories/settingsRepository';
-import { DEFAULT_CURRENCY } from '../utils/currency';
 import { buildReminderNotification, isRemindAtPast } from '../utils/reminders';
 import * as notifications from './notificationService';
 
-async function currencyOf() {
-  try {
-    return await getSetting(SETTING_KEYS.currency, DEFAULT_CURRENCY);
-  } catch {
-    return DEFAULT_CURRENCY;
-  }
-}
-
-/** Notification payload for one reminder row, rebuilt from stored data only. */
-function contentFor(reminder, transaction, currency) {
-  const text = buildReminderNotification({ transaction, currency });
+/**
+ * Notification payload for one reminder row, rebuilt from stored data only:
+ * the note the user wrote, plus the ids a tap needs to find its way back.
+ */
+function contentFor(reminder) {
+  const text = buildReminderNotification({ notes: reminder.notes });
   return {
     title: text.title,
     body: text.body,
     data: {
       transactionId: reminder.transaction_id,
-      budgetId: transaction.budget_id,
+      budgetId: reminder.budget_id,
       reminderId: reminder.id,
     },
     remindAt: reminder.remind_at,
@@ -52,11 +45,9 @@ function contentFor(reminder, transaction, currency) {
  * throws: a failure leaves the row saved (so a later resync can repair it)
  * and reports what happened instead.
  */
-async function scheduleNow(reminder, transaction, currency) {
+async function scheduleNow(reminder) {
   try {
-    const notificationId = await notifications.scheduleAsync(
-      contentFor(reminder, transaction, currency),
-    );
+    const notificationId = await notifications.scheduleAsync(contentFor(reminder));
     await saveReminderNotification(reminder, notificationId);
     return { status: 'scheduled', notificationId };
   } catch (error) {
@@ -114,8 +105,7 @@ export async function applyReminder({ transaction, reminder, requestPermission =
     return { status: 'blocked', permission, reminder: row };
   }
 
-  const currency = await currencyOf();
-  const outcome = await scheduleNow(row, transaction, currency);
+  const outcome = await scheduleNow(row);
   return { ...outcome, permission, reminder: row };
 }
 
@@ -152,7 +142,6 @@ export async function resyncReminders() {
   const rows = await getReminders();
   const scheduled = await notifications.listScheduledAsync();
   const permission = await notifications.getPermissionStatusAsync();
-  const currency = await currencyOf();
 
   /** Every MoneyQ notification we own, indexed by the reminder it belongs to. */
   const byReminderId = new Map();
@@ -189,13 +178,7 @@ export async function resyncReminders() {
     }
     if (!permission.granted) continue;
 
-    const transaction = {
-      id: row.transaction_id,
-      budget_id: row.budget_id,
-      amount: row.amount,
-      description: row.description,
-    };
-    const outcome = await scheduleNow(row, transaction, currency);
+    const outcome = await scheduleNow(row);
     if (outcome.status === 'scheduled') scheduledCount += 1;
   }
 
