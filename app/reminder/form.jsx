@@ -45,7 +45,7 @@ export default function ReminderFormScreen() {
   const paramTransactionId =
     typeof params.transactionId === 'string' ? params.transactionId : null;
 
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const navigation = useNavigation();
 
   const fetchReminder = useRemindersStore((state) => state.fetchReminder);
@@ -62,6 +62,9 @@ export default function ReminderFormScreen() {
   const resetLinkSearch = useRemindersStore((state) => state.resetLinkSearch);
 
   const editing = Boolean(reminderId);
+  // Opened from a transaction's Reminder section ("add"): the link is fixed to
+  // that transaction, so the screen never asks the user to pick one.
+  const lockedTransaction = !editing && Boolean(paramTransactionId);
   const [loading, setLoading] = useState(editing);
   const [status, setStatus] = useState(null); // 'active' | 'completed'
   // Create mode seeds from the tapped calendar date when it is still
@@ -232,8 +235,14 @@ export default function ReminderFormScreen() {
 
   return (
     <Screen>
+      <View style={styles.formBody}>
       {statusLabel ? (
-        <View style={[styles.statusRow, { backgroundColor: colors.surfaceMuted }]}>
+        <View
+          style={[
+            styles.statusRow,
+            { backgroundColor: colors.surfaceMuted, borderRadius: radius.md },
+          ]}
+        >
           <Icon
             name={status === 'completed' ? 'check' : 'clock'}
             size={16}
@@ -249,7 +258,7 @@ export default function ReminderFormScreen() {
       ) : null}
 
       <SectionHeader title="Reminder" />
-      <Card>
+      <Card style={{ marginBottom: spacing.md }}>
         <DatePicker
           label="Reminder Date"
           title="Reminder Date"
@@ -277,9 +286,16 @@ export default function ReminderFormScreen() {
       </Card>
 
       <SectionHeader title="Linked transaction" />
-      <Card>
+      <Card style={{ marginBottom: spacing.md }}>
         {linkedTransaction ? (
-          <View style={[styles.linkRow, { borderBottomColor: colors.border }]}>
+          <View
+            style={[
+              styles.linkRow,
+              lockedTransaction
+                ? { marginBottom: 0, borderBottomWidth: 0 }
+                : { borderBottomColor: colors.border },
+            ]}
+          >
             <View style={styles.linkCopy}>
               <Text variant="body" numberOfLines={1}>
                 {linkedTransaction.description || 'Transaction'}
@@ -289,56 +305,64 @@ export default function ReminderFormScreen() {
                 {formatCurrency(linkedTransaction.amount)}
               </Text>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Unlink transaction"
-              onPress={unlinkTransaction}
-              hitSlop={8}
-              style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}
-            >
-              <Icon name="close" size={18} color={colors.textFaint} />
-            </Pressable>
+            {lockedTransaction ? null : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Unlink transaction"
+                onPress={unlinkTransaction}
+                hitSlop={8}
+                style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}
+              >
+                <Icon name="close" size={18} color={colors.textFaint} />
+              </Pressable>
+            )}
           </View>
         ) : (
           <Text variant="caption" tone="muted" style={{ marginBottom: spacing.md }}>
-            None — this is a standalone reminder. Search below to link one.
+            {lockedTransaction
+              ? 'Linked to this transaction.'
+              : 'None — this is a standalone reminder. Search below to link one.'}
           </Text>
         )}
 
-        <TextField
-          label="Find a transaction"
-          value={search}
-          onChangeText={(value) => {
-            setSearch(value);
-            searchLink(value);
-          }}
-          placeholder="Search by description or tag"
-          autoCapitalize="none"
-        />
+        {lockedTransaction ? null : (
+          <>
+            <TextField
+              label="Find a transaction"
+              value={search}
+              onChangeText={(value) => {
+                setSearch(value);
+                searchLink(value);
+              }}
+              placeholder="Search by description or tag"
+              autoCapitalize="none"
+            />
 
-        {linkResults.map((transaction) => (
-          <Pressable
-            key={transaction.id}
-            accessibilityRole="button"
-            onPress={() => pickTransaction(transaction)}
-            style={({ pressed }) => [
-              styles.resultRow,
-              { borderBottomColor: colors.border, opacity: pressed ? 0.6 : 1 },
-            ]}
-          >
-            <View style={styles.linkCopy}>
-              <Text variant="body" numberOfLines={1}>
-                {transaction.description || 'Transaction'}
-              </Text>
-              <Text variant="caption" tone="muted">
-                {transaction.budget_name ? `${transaction.budget_name} · ` : ''}
-                {formatDate(transaction.transaction_date)} ·{' '}
-                {formatCurrency(transaction.amount)}
-              </Text>
-            </View>
-            <Icon name="add" size={18} color={colors.primary} />
-          </Pressable>
-        ))}
+            {linkResults.map((transaction) => (
+              <Pressable
+                key={transaction.id}
+                accessibilityRole="button"
+                onPress={() => pickTransaction(transaction)}
+                style={({ pressed }) => [
+                  styles.resultRow,
+                  { borderBottomColor: colors.border, opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <View style={styles.linkCopy}>
+                  <Text variant="body" numberOfLines={1}>
+                    {transaction.description || 'Transaction'}
+                  </Text>
+                  <Text variant="caption" tone="muted">
+                    {transaction.budget_name ? `${transaction.budget_name} · ` : ''}
+                    {formatDate(transaction.transaction_date)} ·{' '}
+                    {formatCurrency(transaction.amount)}
+                  </Text>
+                </View>
+                <Icon name="add" size={18} color={colors.primary} />
+              </Pressable>
+            ))}
+          </>
+        )}
       </Card>
 
       {formError ? (
@@ -346,24 +370,27 @@ export default function ReminderFormScreen() {
           {formError}
         </Text>
       ) : null}
+      </View>
 
-      <Button
-        label={saving ? 'Saving…' : 'Save reminder'}
-        onPress={handleSave}
-        disabled={saving}
-        style={{ marginBottom: spacing.md }}
-      />
-
-      {editing && status === 'active' ? (
+      <View>
         <Button
-          label="Mark as completed"
-          variant="secondary"
-          onPress={handleComplete}
+          label={saving ? 'Saving…' : 'Save reminder'}
+          onPress={handleSave}
+          disabled={saving}
           style={{ marginBottom: spacing.md }}
         />
-      ) : null}
 
-      {editing ? <Button label="Delete reminder" variant="danger" onPress={handleDelete} /> : null}
+        {editing && status === 'active' ? (
+          <Button
+            label="Mark as completed"
+            variant="secondary"
+            onPress={handleComplete}
+            style={{ marginBottom: spacing.md }}
+          />
+        ) : null}
+
+        {editing ? <Button label="Delete reminder" variant="danger" onPress={handleDelete} /> : null}
+      </View>
 
       {permission?.supported === false || permission?.granted === false ? (
         <Text variant="caption" tone="muted" style={{ marginTop: spacing.md }}>
@@ -406,9 +433,11 @@ function announceOutcome(outcome) {
 }
 
 const styles = StyleSheet.create({
+  formBody: {
+    flexGrow: 1,
+  },
   statusRow: {
     alignItems: 'center',
-    borderRadius: 10,
     flexDirection: 'row',
     gap: 8,
     marginBottom: 12,

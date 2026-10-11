@@ -17,7 +17,8 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl';
 import { Text } from '../../components/ui/Text';
 import { TextField } from '../../components/ui/TextField';
 import { useTheme } from '../../components/ui/ThemeProvider';
-import { ReminderFields } from '../../components/reminders/ReminderFields';
+import { PendingReminders } from '../../components/reminders/PendingReminders';
+import { TransactionReminders } from '../../components/reminders/TransactionReminders';
 import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
 import { useRemindersStore } from '../../stores/remindersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -25,7 +26,6 @@ import { useTagsStore } from '../../stores/tagsStore';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
 import { formatShortDate, parseFlexibleDate, toIsoDate } from '../../utils/dates';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
-import { reminderValidationError, suggestReminderValues } from '../../utils/reminders';
 import { showToast } from '../../stores/toastStore';
 
 const TYPE_OPTIONS = [
@@ -58,10 +58,14 @@ function defaultNewTransactionDate(budget) {
 
 /**
  * Normalized, deterministic snapshot for the dirty check: amounts are minor
- * units, dates ISO, description trimmed, payment status only meaningful for
- * expenses, and disabled reminders store no date/time. Serialized with one
- * literal key order, so equal values always compare equal — restoring a
- * field to its original value makes the form clean again.
+ * units, dates ISO, description trimmed, and payment status only meaningful
+ * for expenses. Serialized with one literal key order, so equal values always
+ * compare equal — restoring a field to its original value makes the form
+ * clean again.
+ *
+ * An existing transaction's reminders are managed separately (the shared
+ * reminder form), so they are not part of the snapshot: adding, editing or
+ * removing a reminder must never make the transaction form look dirty.
  */
 function formSnapshot(values) {
   return JSON.stringify({
@@ -71,10 +75,6 @@ function formSnapshot(values) {
     tagId: values.tagId || null,
     date: values.date,
     description: values.description?.trim() ? values.description.trim() : null,
-    reminderEnabled: Boolean(values.reminderEnabled),
-    reminderDate: values.reminderEnabled ? values.reminderDate || '' : '',
-    reminderTime: values.reminderEnabled ? values.reminderTime || '' : '',
-    reminderNotes: values.reminderEnabled ? (values.reminderNotes ?? '').trim() : '',
   });
 }
 
@@ -87,10 +87,6 @@ function snapshotOfRow(row) {
     tagId: row.tag_id,
     date: row.transaction_date,
     description: row.description,
-    reminderEnabled: row.reminder?.enabled === 1,
-    reminderDate: row.reminder?.remind_date ?? '',
-    reminderTime: row.reminder?.remind_time ?? '',
-    reminderNotes: row.reminder?.notes ?? '',
   });
 }
 
@@ -136,14 +132,14 @@ function validateFields(f, currency) {
   if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
   if (f.type !== 'transfer' && !f.tagId) nextErrors.tag = 'Choose a tag.';
   if (!resolvedDate) nextErrors.date = 'Pick a date.';
-  if (f.reminderOn) {
-    const reminderError = reminderValidationError(f.reminderDate, f.reminderTime);
-    if (reminderError) nextErrors.reminder = reminderError;
-  }
   return nextErrors;
 }
 
-/** Assumes validateFields passed. */
+/**
+ * Assumes validateFields passed. Reminders are not part of the transaction
+ * payload: an edit leaves them untouched, and a new transaction's staged
+ * reminders are created separately once the row exists.
+ */
 function buildPayload(f, currency) {
   return {
     type: f.type,
@@ -152,12 +148,6 @@ function buildPayload(f, currency) {
     description: f.description.trim() || null,
     date: parseFlexibleDate(f.date),
     paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
-    reminder: {
-      enabled: f.reminderOn,
-      date: f.reminderDate,
-      time: f.reminderTime,
-      notes: f.reminderNotes.trim(),
-    },
   };
 }
 
@@ -185,6 +175,18 @@ function announceReminderOutcome(outcome) {
   }
 }
 
+/**
+ * Announces the most important of several reminder outcomes (a new
+ * transaction can stage more than one): a blocked or failed schedule is
+ * surfaced once, never as several stacked alerts.
+ */
+function announceReminderOutcomes(outcomes) {
+  const notable = outcomes.find(
+    (outcome) => outcome?.status === 'blocked' || outcome?.status === 'failed',
+  );
+  if (notable) announceReminderOutcome(notable);
+}
+
 export default function TransactionFormScreen() {
   const params = useLocalSearchParams();
   const { colors, spacing } = useTheme();
@@ -200,6 +202,7 @@ export default function TransactionFormScreen() {
   const loadBudget = useBudgetDetailStore((state) => state.load);
   const refreshPermission = useRemindersStore((state) => state.refreshPermission);
   const permission = useRemindersStore((state) => state.permission);
+  const addReminder = useRemindersStore((state) => state.addReminder);
 
   const budgetId = typeof params.budgetId === 'string' ? params.budgetId : '';
   const preselectedTagId = typeof params.tagId === 'string' ? params.tagId : '';
@@ -219,10 +222,7 @@ export default function TransactionFormScreen() {
   );
   const [description, setDescription] = useState('');
   const [query, setQuery] = useState('');
-  const [reminderOn, setReminderOn] = useState(false);
-  const [reminderDate, setReminderDate] = useState('');
-  const [reminderTime, setReminderTime] = useState('');
-  const [reminderNotes, setReminderNotes] = useState('');
+  const [pendingReminders, setPendingReminders] = useState([]);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [hydratedFrom, setHydratedFrom] = useState(null);
@@ -287,10 +287,6 @@ export default function TransactionFormScreen() {
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
     setDescription(editing.description ?? '');
-    setReminderOn(editing.reminder?.enabled === 1);
-    setReminderDate(editing.reminder?.remind_date ?? '');
-    setReminderTime(editing.reminder?.remind_time ?? '');
-    setReminderNotes(editing.reminder?.notes ?? '');
   }
 
   // Transfers have no creation UI yet, but an existing one must stay editable.
@@ -320,15 +316,6 @@ export default function TransactionFormScreen() {
     storeBudgetId === budgetId &&
     budget.start_date > toIsoDate(new Date());
 
-  function handleReminderToggle(next) {
-    setReminderOn(next);
-    if (!next) return;
-    // Only seed a first choice; an edited reminder keeps what it already has.
-    const suggestion = suggestReminderValues();
-    setReminderDate((current) => current || suggestion.date);
-    setReminderTime((current) => current || suggestion.time);
-  }
-
   // Mirror of the saved row, refreshed whenever the store reloads it. Read
   // inside autoSave so a listener from an older render cannot write twice.
   useEffect(() => {
@@ -353,10 +340,6 @@ export default function TransactionFormScreen() {
       tagId,
       date,
       description,
-      reminderOn,
-      reminderDate,
-      reminderTime,
-      reminderNotes,
     };
     const snapshot = formSnapshot({
       type,
@@ -365,10 +348,6 @@ export default function TransactionFormScreen() {
       tagId,
       date,
       description,
-      reminderEnabled: reminderOn,
-      reminderDate,
-      reminderTime,
-      reminderNotes,
     });
     if (snapshot === snapshotOfRow(editing)) return undefined;
 
@@ -393,13 +372,12 @@ export default function TransactionFormScreen() {
 
       setErrors({});
       try {
-        const result = await updateTransaction({
+        await updateTransaction({
           id: transactionId,
           ...buildPayload(fields, currency),
         });
         rowSnapshotRef.current = snapshot;
         showToast('Changes saved successfully', 'success');
-        announceReminderOutcome(result?.reminder);
         return 'saved';
       } catch {
         showToast("Couldn't save changes. Please try again.", 'error');
@@ -473,10 +451,6 @@ export default function TransactionFormScreen() {
     tagId,
     date,
     description,
-    reminderOn,
-    reminderDate,
-    reminderTime,
-    reminderNotes,
     currency,
     budget,
     editing?.transaction_date,
@@ -500,10 +474,6 @@ export default function TransactionFormScreen() {
       tagId,
       date,
       description,
-      reminderOn,
-      reminderDate,
-      reminderTime,
-      reminderNotes,
     };
     const nextErrors = validateFields(fields, currency);
     if (Object.keys(nextErrors).length > 0) {
@@ -515,12 +485,30 @@ export default function TransactionFormScreen() {
     setSaving(true);
 
     try {
-      const result = await addTransaction({
+      const { transaction } = await addTransaction({
         budgetId,
         ...buildPayload(fields, currency),
       });
+      // Reminders staged in this form are created now, linked to the row that
+      // was just written. The transaction is already saved, so a single
+      // reminder failure is reported by outcome, never as a failed save.
+      const outcomes = [];
+      for (const reminder of pendingReminders) {
+        try {
+          outcomes.push(
+            await addReminder({
+              date: reminder.remind_date,
+              time: reminder.remind_time,
+              notes: reminder.notes ?? '',
+              transactionId: transaction.id,
+            }),
+          );
+        } catch {
+          // Keep the saved transaction; move on to the next reminder.
+        }
+      }
       router.back();
-      announceReminderOutcome(result?.reminder);
+      announceReminderOutcomes(outcomes);
     } catch (error) {
       setSaving(false);
       Alert.alert('Could not save', error?.message ?? 'Please try again.');
@@ -706,19 +694,16 @@ export default function TransactionFormScreen() {
 
         <View style={{ height: spacing.lg }} />
 
-        <ReminderFields
-          enabled={reminderOn}
-          onEnabledChange={handleReminderToggle}
-          date={reminderDate}
-          onDateChange={setReminderDate}
-          time={reminderTime}
-          onTimeChange={setReminderTime}
-          notes={reminderNotes}
-          onNotesChange={setReminderNotes}
-          error={errors.reminder}
-          permission={permission}
-          onOpenSettings={openDeviceSettings}
-        />
+        {transactionId ? (
+          <TransactionReminders transactionId={transactionId} />
+        ) : (
+          <PendingReminders
+            value={pendingReminders}
+            onChange={setPendingReminders}
+            permission={permission}
+            onOpenSettings={openDeviceSettings}
+          />
+        )}
 
         {transactionId ? (
           <Text

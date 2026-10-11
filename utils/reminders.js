@@ -92,6 +92,28 @@ export function deriveReminderStatus(reminder, reference = new Date()) {
   return 'upcoming';
 }
 
+/** Display grouping for a transaction's reminder list: overdue, upcoming, completed. */
+const REMINDER_LIST_ORDER = { overdue: 0, upcoming: 1, completed: 2 };
+
+/**
+ * Orders one transaction's reminders for the transaction view: overdue first,
+ * then upcoming, then completed. Within a group the order is chronological by
+ * the exact instant each reminder fires — which puts the nearest upcoming
+ * reminder first and the earliest overdue one on top. Ties break on id so the
+ * list never reshuffles between renders.
+ */
+export function sortRemindersForList(reminders, reference = new Date()) {
+  return [...reminders].sort((a, b) => {
+    const rankA = REMINDER_LIST_ORDER[deriveReminderStatus(a, reference)];
+    const rankB = REMINDER_LIST_ORDER[deriveReminderStatus(b, reference)];
+    if (rankA !== rankB) return rankA - rankB;
+    const instantA = String(a.remind_at ?? '');
+    const instantB = String(b.remind_at ?? '');
+    if (instantA !== instantB) return instantA < instantB ? -1 : 1;
+    return String(a.id).localeCompare(String(b.id));
+  });
+}
+
 /**
  * The single validation rule for an enabled reminder, shared by the form (for
  * immediate feedback) and the repository (so the rule cannot be bypassed).

@@ -34,7 +34,7 @@ export default function CalendarScreen() {
   const setMonth = useCalendarStore((state) => state.setMonth);
   const selectDate = useCalendarStore((state) => state.selectDate);
 
-  const dayReminders = useRemindersStore((state) => state.dayReminders);
+  const dayCache = useRemindersStore((state) => state.dayCache);
   const reminderDate = useRemindersStore((state) => state.dayDate);
   const remindersLoading = useRemindersStore((state) => state.dayIsLoading);
   const loadDay = useRemindersStore((state) => state.loadDay);
@@ -68,8 +68,10 @@ export default function CalendarScreen() {
     () => transactions.filter((entry) => entry.transaction_date === selectedDate),
     [transactions, selectedDate],
   );
-  // Trust the store's list only once it has caught up with the selection.
-  const remindersForDay = reminderDate === selectedDate ? dayReminders : [];
+  // Results are cached per date; a date that was never fetched renders empty
+  // until its first load lands.
+  const remindersForDay = dayCache[selectedDate] ?? [];
+  const dayLoading = remindersLoading && reminderDate === selectedDate;
   const totals = useMemo(() => computeTotals(dayTransactions), [dayTransactions]);
   const tagById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
 
@@ -173,14 +175,15 @@ export default function CalendarScreen() {
         }
       />
 
-      {remindersLoading || remindersForDay.length > 0 ? (
+      {dayLoading ? (
         <Card style={{ marginBottom: spacing.md }}>
-          {remindersLoading ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color={colors.primary} />
-            </View>
-          ) : (
-            remindersForDay.map((reminder, index) => (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+          </View>
+        </Card>
+      ) : remindersForDay.length > 0 ? (
+        <Card style={{ marginBottom: spacing.md }}>
+          {remindersForDay.map((reminder, index) => (
               <Pressable
                 key={reminder.id}
                 accessibilityRole="button"
@@ -207,8 +210,7 @@ export default function CalendarScreen() {
                 </View>
                 <ReminderStatusChip reminder={reminder} />
               </Pressable>
-            ))
-          )}
+            ))}
         </Card>
       ) : (
         <Card style={{ marginBottom: spacing.md }}>

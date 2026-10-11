@@ -23,23 +23,36 @@ import {
  * SQLite rows are the source of truth — every action reads back through the
  * repository after mutating, so nothing here can drift.
  *
- * `dayReminders` is scoped to a single date (`dayDate`). Loading a new date
- * claims the scope and clears the list immediately, and a stale response can
- * never overwrite a newer selection (`dayRequestId`), so the Calendar tab
- * never shows one day's reminders under another day's header.
+ * `dayCache` holds one loaded list per date, so revisiting a date is
+ * instant (no spinner flash). Loading a new date keeps `dayIsLoading` true
+ * until its rows land, and a stale response can never overwrite a newer
+ * selection (`dayRequestId`), so the Calendar tab never shows one day's
+ * reminders under another day's header.
  */
 export const useRemindersStore = create((set, get) => {
   let dayRequestId = 0;
   let linkRequestId = 0;
+  let transactionRequestId = 0;
+
+  /** Re-reads both open scopes: the selected day and the open transaction, if any. */
+  const refreshOpenLists = async () => {
+    const { dayDate, transactionId } = get();
+    if (dayDate) await get().loadDay(dayDate, { force: true });
+    if (transactionId) await get().loadForTransaction(transactionId);
+  };
 
   return {
     permission: null, // { supported, granted, canAskAgain, status } | null
     dayDate: null,
-    dayReminders: [],
+    dayCache: {},
     dayIsLoading: false,
     dayError: null,
     linkResults: [],
     linkError: null,
+    transactionId: null,
+    transactionReminders: [],
+    transactionIsLoading: false,
+    transactionError: null,
 
     refreshPermission: async () => {
       try {
@@ -71,13 +84,20 @@ export const useRemindersStore = create((set, get) => {
       await get().refreshPermission();
     },
 
-    /** Loads the enabled reminders scheduled for one local date. */
-    loadDay: async (date = get().dayDate) => {
+    /**
+     * Loads the enabled reminders scheduled for one local date, cached per
+     * date so revisits are instant. Pass `{ force: true }` to re-read — the
+     * mutations use it after every change.
+     */
+    loadDay: async (date = get().dayDate, options = {}) => {
+      const { force = false } = options || {};
       if (!date) return;
+      if (!force && Object.prototype.hasOwnProperty.call(get().dayCache, date)) {
+        set({ dayDate: date });
+        return;
+      }
       const id = ++dayRequestId;
-      // Claim the date at once and clear the list: while the read is in
-      // flight the UI shows an empty day, never the previous selection.
-      set({ dayDate: date, dayReminders: [], dayIsLoading: true, dayError: null });
+      set({ dayDate: date, dayIsLoading: true, dayError: null });
 
       try {
         const rows = await getReminders();
@@ -85,10 +105,51 @@ export const useRemindersStore = create((set, get) => {
         const dayReminders = rows.filter(
           (reminder) => reminder.enabled === 1 && reminder.remind_date === date,
         );
-        set({ dayReminders, dayIsLoading: false });
+        set((state) => ({
+          dayCache: { ...state.dayCache, [date]: dayReminders },
+          dayIsLoading: false,
+        }));
       } catch (error) {
         if (id !== dayRequestId) return;
         set({ dayError: error, dayIsLoading: false });
+      }
+    },
+
+    /**
+     * Loads every reminder linked to one transaction — standalone reminders
+     * (transaction_id NULL) are never included. Like `loadDay`, the scope is
+     * claimed up front and the list cleared, and a stale response can never
+     * overwrite a newer selection (`transactionRequestId`), so the transaction
+     * view never shows one transaction's reminders under another.
+     */
+    loadForTransaction: async (transactionId) => {
+      if (!transactionId) {
+        set({
+          transactionId: null,
+          transactionReminders: [],
+          transactionIsLoading: false,
+          transactionError: null,
+        });
+        return;
+      }
+      const id = ++transactionRequestId;
+      set({
+        transactionId,
+        transactionReminders: [],
+        transactionIsLoading: true,
+        transactionError: null,
+      });
+
+      try {
+        const rows = await getReminders();
+        if (id !== transactionRequestId) return;
+        const transactionReminders = rows.filter(
+          (reminder) => reminder.transaction_id === transactionId,
+        );
+        set({ transactionReminders, transactionIsLoading: false });
+      } catch (error) {
+        if (id !== transactionRequestId) return;
+        set({ transactionError: error, transactionIsLoading: false });
       }
     },
 
@@ -121,25 +182,25 @@ export const useRemindersStore = create((set, get) => {
 
     addReminder: async (input) => {
       const outcome = await createReminder(input);
-      await get().loadDay();
+      await refreshOpenLists();
       return outcome;
     },
 
     editReminder: async (id, input) => {
       const outcome = await editReminder(id, input);
-      await get().loadDay();
+      await refreshOpenLists();
       return outcome;
     },
 
     completeReminder: async (id) => {
       const outcome = await completeReminder(id);
-      await get().loadDay();
+      await refreshOpenLists();
       return outcome;
     },
 
     removeReminder: async (id) => {
       await removeReminder(id);
-      await get().loadDay();
+      await refreshOpenLists();
     },
   };
 });
