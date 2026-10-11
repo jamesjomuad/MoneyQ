@@ -120,7 +120,7 @@ export default function HomeScreen() {
       {/* Home animates its own items, so the scroll body stays put. */}
       {/* The tab bar is in normal flow, so no large reserved clearance is
           needed; a modest gap keeps the last card off the pinned strip. */}
-      <Screen topInset enter={false} contentContainerStyle={{ paddingBottom: spacing.lg }}>
+      <Screen topInset enter={false}>
         {budgets.length > 0 && !searching ? (
           <Animated.View entering={introEnter(1)}>
             <SectionHeader title={`Your Budgets · ${budgets.length}`} />

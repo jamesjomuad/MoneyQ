@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { BottomTabBarHeightContext } from "expo-router/js-tabs";
+import { useContext, useEffect } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import Animated, {
   FadeInDown,
@@ -31,10 +32,16 @@ export function Screen({
   onRefresh,
   topInset = false,
   enter = true,
+  bottomSpace = 0,
 }) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const entering = useEnter(enter);
+  // Inside a bottom-tab screen the floating tab bar is laid out in-flow below
+  // the scene, and its band already reserves the bottom safe-area inset. We
+  // only need the context's presence (undefined on stack/modal screens) to
+  // avoid double-counting the inset.
+  const inTabScreen = useContext(BottomTabBarHeightContext) !== undefined;
 
   const contentStyle = [
     styles.content,
@@ -43,9 +50,11 @@ export function Screen({
       // Tab pages render without a header, so the status bar would overlap
       // the first row; opt-in padding hands the inset back.
       paddingTop: spacing.lg + (topInset ? insets.top : 0),
-      // Content runs edge-to-edge behind Android's navigation bar, so the last
-      // row needs the inset added to keep it tappable.
-      paddingBottom: spacing.lg + insets.bottom,
+      // Stack screens sit at the physical bottom edge, so content needs the
+      // inset to clear Android's navigation bar. Tab screens stop above the
+      // tab bar band, which already accounts for it.
+      paddingBottom:
+        spacing.lg + (inTabScreen ? 0 : insets.bottom) + bottomSpace,
     },
     contentContainerStyle,
   ];

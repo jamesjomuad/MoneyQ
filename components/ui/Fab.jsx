@@ -4,6 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from './Icon';
 import { useTheme } from './ThemeProvider';
 
+/** Diameter of the floating action button; screens pad their content by this. */
+export const FAB_SIZE = 56;
+
 /** Floating action button, rendered as a sibling of <Screen/> inside a flex:1 View. */
 export function Fab({ onPress, icon = 'add', accessibilityLabel = 'Add', bottomOffset = 0 }) {
   const { colors, spacing } = useTheme();
@@ -38,14 +41,14 @@ export function Fab({ onPress, icon = 'add', accessibilityLabel = 'Add', bottomO
 const styles = StyleSheet.create({
   fab: {
     alignItems: 'center',
-    borderRadius: 28,
+    borderRadius: FAB_SIZE / 2,
     elevation: 6,
-    height: 56,
+    height: FAB_SIZE,
     justifyContent: 'center',
     position: 'absolute',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.22,
     shadowRadius: 8,
-    width: 56,
+    width: FAB_SIZE,
   },
 });

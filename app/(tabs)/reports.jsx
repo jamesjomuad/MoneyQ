@@ -62,7 +62,7 @@ export default function ReportsScreen() {
 
   return (
     <View style={styles.fill}>
-      <Screen topInset contentContainerStyle={{ paddingBottom: spacing.xl }}>
+      <Screen topInset>
         {error ? (
           <Text variant="body" tone="expense" style={{ marginTop: spacing.md }}>
             {error.message ?? String(error)}

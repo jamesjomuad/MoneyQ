@@ -7,7 +7,7 @@ import { TransactionRow } from '../../components/transactions/TransactionRow';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Fab } from '../../components/ui/Fab';
+import { FAB_SIZE, Fab } from '../../components/ui/Fab';
 import { Icon } from '../../components/ui/Icon';
 import { Screen, SectionHeader } from '../../components/ui/Screen';
 import { Stat } from '../../components/ui/Stat';
@@ -286,7 +286,9 @@ export default function BudgetDetailScreen() {
         </Card>
       </View>
 
-      <Screen contentContainerStyle={{ paddingBottom: 96 }}>
+      {/* Reserve room for the floating add button: its own bottom offset plus
+          the button height, so the last transaction row scrolls clear of it. */}
+      <Screen bottomSpace={FAB_SIZE + spacing.xl}>
         <SectionHeader
           title={`Tags · ${tagSummaries.length}`}
           fontSize={14}
