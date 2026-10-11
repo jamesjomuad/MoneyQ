@@ -38,7 +38,12 @@ export const useBudgetDetailStore = create((set, get) => {
     transactions: [],
     activeTagId: null,
     isLoading: true,
+    // Two distinct failure modes so the UI never mislabels one as the other:
+    // `error`  — the budget row genuinely does not exist (a real not-found).
+    // `loadError` — a database/read failure while loading; the row may well
+    //               exist, so the screen must offer a retry, not "not found".
     error: null,
+    loadError: null,
 
     load: async (budgetId) => {
       if (!budgetId) return;
@@ -49,7 +54,7 @@ export const useBudgetDetailStore = create((set, get) => {
 
       // Claim the route identity immediately. A superseded request can never
       // write itself back after a newer budget has taken over.
-      set({ budgetId, isLoading: true, error: null, activeTagId });
+      set({ budgetId, isLoading: true, error: null, loadError: null, activeTagId });
 
       try {
         const [budget, tags, entries, reminders] = await Promise.all([
@@ -70,6 +75,7 @@ export const useBudgetDetailStore = create((set, get) => {
             transactions: [],
             activeTagId: null,
             error: new Error('That budget no longer exists.'),
+            loadError: null,
             isLoading: false,
           });
           return;
@@ -112,11 +118,15 @@ export const useBudgetDetailStore = create((set, get) => {
           transactions: selectedTagId
             ? withShares.filter((entry) => entry.tag_id === selectedTagId)
             : withShares,
+          error: null,
+          loadError: null,
           isLoading: false,
         });
       } catch (error) {
         if (id !== requestId) return;
-        set({ error, isLoading: false });
+        // A thrown query is a read failure, not proof the budget is gone —
+        // keep whatever `budget` we had and surface a retryable error.
+        set({ loadError: error, isLoading: false });
       }
     },
 

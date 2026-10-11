@@ -68,6 +68,7 @@ export default function BudgetDetailScreen() {
   const activeTagId = useBudgetDetailStore((state) => state.activeTagId);
   const storeBudgetId = useBudgetDetailStore((state) => state.budgetId);
   const error = useBudgetDetailStore((state) => state.error);
+  const loadError = useBudgetDetailStore((state) => state.loadError);
   const load = useBudgetDetailStore((state) => state.load);
   const setActiveTag = useBudgetDetailStore((state) => state.setActiveTag);
   const removeTransaction = useBudgetDetailStore((state) => state.removeTransaction);
@@ -87,6 +88,26 @@ export default function BudgetDetailScreen() {
   // The route ID is the identity of this screen. Until the store has data for
   // exactly that ID, the previous budget's values must never render.
   const isCurrentBudget = Boolean(budget) && storeBudgetId === budgetId && budget.id === budgetId;
+
+  // A failed read is not proof the folder is gone. Offer a retry instead of
+  // the "not found" dead-end, and make clear the data itself is intact.
+  if (loadError && storeBudgetId === budgetId) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Stack.Screen options={{ title: 'Couldn’t load budget' }} />
+        <EmptyState
+          icon="folder"
+          title="Couldn’t load this budget"
+          description="MoneyQ couldn’t read this folder from local storage. Your data is still on this device — try again."
+        >
+          <View style={{ alignItems: 'center', gap: spacing.sm }}>
+            <Button label="Try again" onPress={() => load(budgetId)} />
+            <Button label="Back to Home" onPress={() => router.replace('/')} />
+          </View>
+        </EmptyState>
+      </View>
+    );
+  }
 
   if (error && storeBudgetId === budgetId) {
     return (

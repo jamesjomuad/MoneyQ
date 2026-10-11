@@ -1077,5 +1077,70 @@ check(
 const unnamedCopy = buildReminderNotification({ notes: undefined });
 check('a missing notes value still yields readable copy', unnamedCopy.body === 'You have a scheduled reminder.', unnamedCopy.body);
 
+// Regression guard for the budget-detail crash: expo-sqlite's async calls run
+// on a thread pool and only lock per statement, so overlapping queries on the
+// shared connection could race prepare/step/finalize ("prepareAsync ...
+// Cannot use shared object that was already released"). The adapter must
+// serialize every operation so no two ever overlap.
+{
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const fakeDb = {
+    async getAllAsync() {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      return [];
+    },
+    async getFirstAsync() {
+      return fakeDb.getAllAsync();
+    },
+    async runAsync() {
+      await fakeDb.getAllAsync();
+      return { changes: 0 };
+    },
+  };
+  const serialized = createSqliteAdapter(async () => fakeDb);
+
+  // Fan out several reads at once, exactly like the budget screen's Promise.all.
+  await Promise.all([
+    serialized.getBudget('b1'),
+    serialized.listTags(),
+    serialized.listTransactionsByBudget('b1'),
+    serialized.listReminders(),
+    serialized.getSchemaVersion(),
+  ]);
+  check('sqlite adapter serializes concurrent reads (max 1 in flight)', maxInFlight === 1, String(maxInFlight));
+
+  // A failing operation must reject its caller but not wedge the queue.
+  let shouldThrow = true;
+  const flakyDb = {
+    async getAllAsync() {
+      if (shouldThrow) {
+        shouldThrow = false;
+        throw new Error('boom');
+      }
+      return [];
+    },
+    async getFirstAsync() {
+      return { ok: true };
+    },
+    async runAsync() {
+      return { changes: 0 };
+    },
+  };
+  const recovering = createSqliteAdapter(async () => flakyDb);
+  let firstThrew = false;
+  try {
+    await recovering.listBudgets();
+  } catch {
+    firstThrew = true;
+  }
+  const after = await recovering.listBudgets();
+  check('a failed sqlite operation rejects its caller', firstThrew);
+  check('the sqlite queue keeps working after a failure', Array.isArray(after), JSON.stringify(after));
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

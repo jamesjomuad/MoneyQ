@@ -11,9 +11,31 @@
  */
 
 export function createSqliteAdapter(getDb) {
-  const query = async (sql, ...params) => (await getDb()).getAllAsync(sql, ...params);
-  const first = async (sql, ...params) => (await getDb()).getFirstAsync(sql, ...params);
-  const run = async (sql, ...params) => (await getDb()).runAsync(sql, ...params);
+  // One FIFO chain for every operation. `expo-sqlite`'s async native calls run
+  // on a coroutine *pool* and only lock per prepared statement, never per
+  // connection, so overlapping queries against the shared `NativeDatabase`
+  // handle can race sqlite3_prepare/step/finalize — surfacing as
+  // "prepareAsync ... Cannot use shared object that was already released".
+  // Serializing here (in the adapter, the layer that owns the engine) keeps
+  // each operation's prepare → execute → finalize whole before the next
+  // starts. A failed operation rejects its own caller but never wedges the
+  // chain, so the next query still runs.
+  let tail = Promise.resolve();
+  const serialize = (operation) => {
+    const result = tail.then(operation, operation);
+    tail = result.then(
+      () => {},
+      () => {},
+    );
+    return result;
+  };
+
+  const query = (sql, ...params) =>
+    serialize(async () => (await getDb()).getAllAsync(sql, ...params));
+  const first = (sql, ...params) =>
+    serialize(async () => (await getDb()).getFirstAsync(sql, ...params));
+  const run = (sql, ...params) =>
+    serialize(async () => (await getDb()).runAsync(sql, ...params));
 
   return {
     source: 'sqlite',
