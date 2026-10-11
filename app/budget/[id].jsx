@@ -18,7 +18,7 @@ import { useBudgetsStore } from '../../stores/budgetsStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { groupByDate } from '../../utils/calculations';
 import { formatCurrency } from '../../utils/currency';
-import { resolveFolderPalette } from '../../utils/colors';
+import { isHexColor, resolveFolderPalette } from '../../utils/colors';
 import { dayLabel, formatDateRange } from '../../utils/dates';
 
 /** Parse a `#rgb`/`#rrggbb` theme color to [r, g, b]. */
@@ -146,6 +146,8 @@ export default function BudgetDetailScreen() {
   const spentPercent = summary.income > 0 ? (summary.expense / summary.income) * 100 : 0;
   const spentFill = Math.min(100, Math.max(0, spentPercent));
   const fillColor = spendColor(colors, spentPercent);
+  const folderCard = isHexColor(budget.color) ? resolveFolderPalette(budget.color, colors) : null;
+  const folderInk = folderCard ? folderCard.folderInk : null;
 
   function confirmDeleteTransaction(transaction) {
     Alert.alert(
@@ -219,29 +221,35 @@ export default function BudgetDetailScreen() {
           },
         ]}
       >
-        <View style={styles.periodRow}>
-          <View
-            style={[
-              styles.periodDot,
-              {
-                backgroundColor: resolveFolderPalette(budget.color, colors).folder,
-                borderColor: resolveFolderPalette(budget.color, colors).folderBorder,
-              },
-            ]}
-          />
-          <Text variant="body" tone="muted" style={{ marginBottom: spacing.lg }}>
+        <Card
+          style={
+            folderCard
+              ? { backgroundColor: folderCard.folder, borderColor: folderCard.folderBorder }
+              : null
+          }
+        >
+          <Text
+            variant="caption"
+            tone="muted"
+            style={
+              folderInk
+                ? { color: folderInk, opacity: 0.85, marginBottom: spacing.xs }
+                : { marginBottom: spacing.xs }
+            }
+          >
             {formatDateRange(budget.start_date, budget.end_date)}
           </Text>
-        </View>
-
-        <Card>
-          <Text variant="label" tone="muted">
+          <Text
+            variant="label"
+            tone="muted"
+            style={folderInk ? { color: folderInk, opacity: 0.85 } : undefined}
+          >
             REMAINING
           </Text>
           <Text
             variant="display"
             tone={summary.remaining < 0 ? 'expense' : 'default'}
-            style={{ marginTop: 4 }}
+            style={folderInk ? { marginTop: 4, color: folderInk } : { marginTop: 4 }}
           >
             {formatCurrency(summary.remaining, { currency })}
           </Text>
@@ -251,18 +259,25 @@ export default function BudgetDetailScreen() {
           <View
             style={[
               styles.progressTrack,
-              { backgroundColor: colors.surfaceMuted, marginTop: spacing.md },
+              {
+                backgroundColor: folderCard ? folderCard.folderBorder : colors.surfaceMuted,
+                marginTop: spacing.md,
+              },
             ]}
           >
             <View
               style={[
                 styles.progressFill,
-                { backgroundColor: fillColor, width: `${spentFill}%` },
+                { backgroundColor: folderInk ?? fillColor, width: `${spentFill}%` },
               ]}
             />
           </View>
 
-          <Text variant="caption" tone="muted" style={{ marginTop: 6 }}>
+          <Text
+            variant="caption"
+            tone="muted"
+            style={folderInk ? { marginTop: 6, color: folderInk, opacity: 0.85 } : { marginTop: 6 }}
+          >
             {Math.round(spentPercent)}% of income spent
           </Text>
 
@@ -271,16 +286,22 @@ export default function BudgetDetailScreen() {
               label="Income"
               value={formatCurrency(summary.income, { currency })}
               tone="income"
+              labelColor={folderInk}
+              valueColor={folderInk}
             />
             <Stat
               label="Expenses"
               value={formatCurrency(summary.expense, { currency })}
               tone="expense"
+              labelColor={folderInk}
+              valueColor={folderInk}
             />
             <Stat
               label="Transactions"
               value={String(summary.transactionCount)}
               style={{ marginRight: 0 }}
+              labelColor={folderInk}
+              valueColor={folderInk}
             />
           </View>
         </Card>
@@ -431,13 +452,4 @@ const styles = StyleSheet.create({
   // Capped height keeps the section compact and scrolls independently inside
   // the page ScrollView. ~5 rows of chips before the tags start scrolling.
   tagScroll: { flexGrow: 0, maxHeight: 260 },
-  periodRow: { alignItems: 'center', flexDirection: 'row', gap: 8 },
-  periodDot: {
-    borderRadius: 6,
-    borderWidth: 2,
-    height: 12,
-    // Matches the Text's marginBottom (spacing.lg) so both align in the row.
-    marginBottom: 16,
-    width: 12,
-  },
 });
