@@ -9,31 +9,44 @@ import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
-/** Fixed row pitch; rows keep one-line descriptions so it never drifts. */
-const ROW_HEIGHT = 56;
+/** Minimum touch-target height for the drag handle. */
+const HANDLE_MIN_HEIGHT = 56;
 
 /**
  * Ordered list of breakdown items inside the transaction form, wrapped in the
  * same Card shell the Reminder section uses: quiet rows separated by hairline
  * dividers, a Total line at the bottom, and a centred circular add button
  * under it. When there are no items the empty state shows the same circular
- * add affordance instead. Rows are dragged by the dedicated handle;
- * tapping a row opens its detail sheet (full description, notes, move/delete).
+ * add affordance instead. Rows are dragged by the dedicated handle: the list
+ * is measured per row (onLayout), so the drop position follows the finger at
+ * any row height, the dragged row lifts and moves with the gesture, and the
+ * rest of the list re-slots live. The handle refuses responder termination so
+ * the enclosing ScrollView cannot steal the gesture mid-drag.
+ * Tapping a row opens its detail sheet (full description, notes, move/delete).
  * Deletion feedback is the app-wide bottom snackbar with Undo, raised by the
  * form; reordering only changes positions — the parent total is the sum, so
  * it can never move.
  */
 export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReorder }) {
   const { colors, radius, spacing } = useTheme();
-  const [drag, setDrag] = useState(null); // { id, originalIndex, dy }
+  const [drag, setDrag] = useState(null); // { id, originTop, height, dy }
   // Gesture bookkeeping only; never read while rendering a branch.
   const dragRef = useRef(null);
+  // Live measured geometry per row: id -> { top, height }, relative to the
+  // Card's content view. Rows share one parent, so tops are comparable.
+  const layoutsRef = useRef(new Map());
+
+  function measure(id, event) {
+    const { y, height } = event.nativeEvent.layout;
+    layoutsRef.current.set(id, { top: y, height });
+  }
 
   function grant(id, pageY) {
     const index = items.findIndex((entry) => entry.id === id);
-    if (index < 0) return;
-    dragRef.current = { id, originalIndex: index, startY: pageY };
-    setDrag({ id, originalIndex: index, dy: 0 });
+    const layout = layoutsRef.current.get(id);
+    if (index < 0 || !layout) return;
+    dragRef.current = { id, startY: pageY, originTop: layout.top, height: layout.height };
+    setDrag({ id, originTop: layout.top, height: layout.height, dy: 0 });
   }
 
   function move(id, pageY) {
@@ -41,14 +54,19 @@ export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReo
     if (!current || current.id !== id) return;
     const dy = pageY - current.startY;
     dragRef.current = { ...current, dy };
+    // The dragged row's visual centre, in card coordinates.
+    const center = current.originTop + current.height / 2 + dy;
+    // Its slot is the number of *other* rows whose measured centre is above.
+    let target = 0;
+    for (const entry of items) {
+      if (entry.id === id) continue;
+      const layout = layoutsRef.current.get(entry.id);
+      if (layout && layout.top + layout.height / 2 < center) target += 1;
+    }
+    target = Math.max(0, Math.min(items.length - 1, target));
     const index = items.findIndex((entry) => entry.id === id);
-    if (index < 0) return;
-    const target = Math.max(
-      0,
-      Math.min(items.length - 1, current.originalIndex + Math.round(dy / ROW_HEIGHT)),
-    );
-    if (target !== index) onReorder(index, target);
-    setDrag({ id, originalIndex: current.originalIndex, dy });
+    if (index >= 0 && target !== index) onReorder(index, target);
+    setDrag({ ...current, dy });
   }
 
   function end() {
@@ -102,6 +120,7 @@ export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReo
           count={items.length}
           currency={currency}
           drag={drag}
+          onMeasure={measure}
           onGrant={grant}
           onMove={move}
           onEnd={end}
@@ -147,11 +166,26 @@ export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReo
   );
 }
 
-function BreakdownRow({ item, index, count, currency, drag, onGrant, onMove, onEnd, onOpen }) {
+function BreakdownRow({
+  item,
+  index,
+  count,
+  currency,
+  drag,
+  onMeasure,
+  onGrant,
+  onMove,
+  onEnd,
+  onOpen,
+}) {
   const { colors, spacing } = useTheme();
-
   const isDragging = drag?.id === item.id;
-  const dy = isDragging ? drag.dy - (index - drag.originalIndex) * ROW_HEIGHT : 0;
+  // Own measured top, kept in state so the lifted row's offset is render-safe.
+  const [top, setTop] = useState(null);
+
+  // Keep the row under the finger: drag start + travel, minus where the row
+  // now actually sits after the list re-slotted around it.
+  const dragOffset = isDragging && top !== null ? drag.originTop + drag.dy - top : 0;
 
   const when = item.purchase_date
     ? `${formatShortDate(item.purchase_date)}${item.purchase_time ? ` · ${formatTime(item.purchase_time)}` : ''}`
@@ -159,6 +193,11 @@ function BreakdownRow({ item, index, count, currency, drag, onGrant, onMove, onE
 
   return (
     <View
+      onLayout={(event) => {
+        const { y } = event.nativeEvent.layout;
+        setTop(y);
+        onMeasure(item.id, event);
+      }}
       style={[
         styles.row,
         index > 0 && {
@@ -168,13 +207,25 @@ function BreakdownRow({ item, index, count, currency, drag, onGrant, onMove, onE
           paddingTop: spacing.sm,
         },
         isDragging
-          ? { transform: [{ translateY: dy }], zIndex: 2, opacity: 0.85 }
+          ? {
+              transform: [{ translateY: dragOffset }],
+              zIndex: 2,
+              opacity: 0.92,
+              backgroundColor: colors.surfaceElevated,
+              borderRadius: 8,
+              shadowColor: '#000',
+              shadowOpacity: 0.18,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 4 },
+              elevation: 6,
+            }
           : null,
       ]}
     >
       <View
         onStartShouldSetResponder={() => true}
         onMoveShouldSetResponder={() => true}
+        onResponderTerminationRequest={() => false}
         onResponderGrant={(event) => onGrant(item.id, event.nativeEvent.pageY)}
         onResponderMove={(event) => onMove(item.id, event.nativeEvent.pageY)}
         onResponderRelease={onEnd}
@@ -225,7 +276,7 @@ const styles = StyleSheet.create({
   handle: {
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: ROW_HEIGHT,
+    minHeight: HANDLE_MIN_HEIGHT,
     minWidth: 28,
   },
   copy: {
