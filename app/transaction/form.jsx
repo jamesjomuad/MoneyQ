@@ -5,12 +5,24 @@ import {
   useNavigation,
 } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Keyboard,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DatePicker } from '../../components/dates/DatePicker';
 import { AmountInput } from '../../components/ui/AmountInput';
 import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
 import { Chip } from '../../components/ui/Chip';
+import { Icon } from '../../components/ui/Icon';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Screen, SectionHeader } from '../../components/ui/Screen';
 import { SegmentedControl } from '../../components/ui/SegmentedControl';
@@ -27,8 +39,9 @@ import { BreakdownSection } from '../../components/transactions/BreakdownSection
 import { SubTransactionDetailSheet } from '../../components/transactions/SubTransactionDetailSheet';
 import { SubTransactionSheet } from '../../components/transactions/SubTransactionSheet';
 import { computeBreakdownTotal } from '../../utils/breakdown';
+import { isHexColor, resolveFolderPalette } from '../../utils/colors';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
-import { formatShortDate, parseFlexibleDate, toIsoDate } from '../../utils/dates';
+import { formatDateRange, formatShortDate, parseFlexibleDate, toIsoDate } from '../../utils/dates';
 import { createId } from '../../utils/id';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { showToast } from '../../stores/toastStore';
@@ -99,7 +112,10 @@ function formSnapshot(values) {
       : values.amountMinor,
     tagId: values.tagId || null,
     date: values.date,
-    dueDate: values.dueDate || null,
+    dueDate:
+      values.type === 'expense' && values.paymentStatus === 'unpaid'
+        ? values.dueDate || null
+        : null,
     description: values.description?.trim() ? values.description.trim() : null,
     breakdown: breakdownSnapshot(values.breakdownActive, values.items),
   });
@@ -190,7 +206,8 @@ function buildPayload(f, currency) {
     description: f.description.trim() || null,
     date: parseFlexibleDate(f.date),
     paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
-    paymentDueDate: f.dueDate || null,
+    paymentDueDate:
+      f.type === 'expense' && f.paymentStatus === 'unpaid' ? f.dueDate || null : null,
     ...(f.breakdownActive
       ? {
           hasBreakdown: true,
@@ -245,7 +262,7 @@ function announceReminderOutcomes(outcomes) {
 
 export default function TransactionFormScreen() {
   const params = useLocalSearchParams();
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
   const tags = useTagsStore((state) => state.tags);
   const loadTags = useTagsStore((state) => state.load);
@@ -284,6 +301,22 @@ export default function TransactionFormScreen() {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [hydratedFrom, setHydratedFrom] = useState(null);
+  const insets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // The sticky action bar rides the keyboard: with the Android window in pan
+  // mode it would otherwise sit behind the keyboard, so it lifts by exactly
+  // the keyboard height minus the home-bar clearance it already reserves.
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', (event) =>
+      setKeyboardHeight(event.endCoordinates?.height ?? 0),
+    );
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // Breakdown editing state: the mode flag mirrors has_breakdown, items is
   // the live ordered list, and everything here is unsaved until the parent
@@ -491,6 +524,15 @@ export default function TransactionFormScreen() {
     budget.id === budgetId &&
     storeBudgetId === budgetId &&
     budget.start_date > toIsoDate(new Date());
+
+  // Sticky summary card palette: a budget's saved custom color paints the
+  // card directly (same WCAG-derived ink/border as folder cards). No custom
+  // or invalid color → the theme's own card surface, i.e. the Card default.
+  const activeBudget = storeBudgetId === budgetId && budget?.id === budgetId ? budget : null;
+  const summaryPalette = isHexColor(activeBudget?.color)
+    ? resolveFolderPalette(activeBudget.color, colors)
+    : null;
+  const summaryInk = summaryPalette ? summaryPalette.folderInk : null;
 
   // Mirror of the saved row, refreshed whenever the store reloads it. Read
   // inside autoSave so a listener from an older render cannot write twice.
@@ -746,31 +788,21 @@ export default function TransactionFormScreen() {
     <View style={styles.fill}>
       <Stack.Screen options={{ title: transactionId ? 'Edit Transaction' : 'Add Transaction' }} />
 
-      <Screen contentContainerStyle={{ paddingBottom: 48 }}>
-        <SectionHeader title="Type" />
-        <SegmentedControl
-          options={typeOptions}
-          value={type}
-          onChange={setType}
-          style={{ marginBottom: spacing.lg }}
-        />
-
-        {type === 'expense' ? (
-          <>
-            <SectionHeader title="Payment" />
-            <SegmentedControl
-              options={PAYMENT_OPTIONS}
-              value={paymentStatus}
-              onChange={setPaymentStatus}
-            />
-            <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
-              Unpaid expenses still count toward every budget total.
-            </Text>
-            <View style={{ height: spacing.lg }} />
-          </>
-        ) : null}
-
-        <SectionHeader title="Amount" />
+      {/* Amount stays pinned above the scroll body: it is the number every
+          other field on this screen explains, so it never scrolls away. The
+          card is the sticky element itself — no wrapper band around it. */}
+      <Card
+        style={{
+          marginBottom: spacing.sm,
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          padding: spacing.md,
+          ...(summaryPalette
+            ? { backgroundColor: summaryPalette.folder, borderColor: summaryPalette.folderBorder }
+            : null),
+        }}
+      >
+          <SectionHeader title="Amount" color={summaryInk} />
         {breakdownActive ? (
           <>
             <AmountInput
@@ -779,7 +811,14 @@ export default function TransactionFormScreen() {
               editable={false}
               decimalPlaces={getCurrency(currency).minorUnits}
             />
-            <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+            <Text
+              variant="caption"
+              tone="faint"
+              style={{
+                marginTop: spacing.xs,
+                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
+              }}
+            >
               Calculated from items · {items.length} item{items.length === 1 ? '' : 's'} ·{' '}
               {formatCurrency(breakdownTotal, { currency })}
             </Text>
@@ -794,51 +833,122 @@ export default function TransactionFormScreen() {
               autoFocus={!transactionId}
             />
             {errors.amount ? (
-              <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
+              <Text
+                variant="caption"
+                tone="expense"
+                style={{ marginTop: spacing.xs, ...(summaryInk ? { color: summaryInk } : null) }}
+              >
                 {errors.amount}
               </Text>
             ) : null}
-            <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+            <Text
+              variant="caption"
+              tone="faint"
+              style={{
+                marginTop: spacing.xs,
+                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
+              }}
+            >
               {formatCurrency(toMinor(amount, currency), { currency })}
             </Text>
-            {type !== 'transfer' ? (
-              <View style={{ marginTop: spacing.sm }}>
-                <Button label="Add breakdown" variant="secondary" onPress={askActivateBreakdown} />
-              </View>
-            ) : null}
           </>
         )}
 
-        {breakdownActive ? (
-          <>
-            <View style={{ height: spacing.lg }} />
-            <SectionHeader
-              title={`Breakdown · ${items.length}`}
-              fontSize={14}
-              collapsed={!breakdownOpen}
-              onToggle={() => setBreakdownOpen((open) => !open)}
-              action={
-                <Text variant="caption" tone="muted" style={{ fontVariant: ['tabular-nums'] }}>
-                  {formatCurrency(breakdownTotal, { currency })}
-                </Text>
-              }
-            />
-            {breakdownOpen ? (
-              <BreakdownSection
-                items={items}
-                currency={currency}
-                onAddItem={() => setItemSheet({ item: null })}
-                onOpenItem={(item) => setItemDetail(item)}
-                onReorder={handleReorder}
+        {/* Type and Status are core one-tap choices: kept dense beside the
+            amount so they never scroll away from the fields they govern
+            (due date follows payment status). */}
+        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <SectionHeader title="Type" color={summaryInk} />
+            <SegmentedControl options={typeOptions} value={type} onChange={setType} dense />
+          </View>
+          {type === 'expense' ? (
+            <View style={{ flex: 1 }}>
+              <SectionHeader title="Status" color={summaryInk} />
+              <SegmentedControl
+                options={PAYMENT_OPTIONS}
+                value={paymentStatus}
+                onChange={setPaymentStatus}
+                dense
               />
-            ) : null}
-            {errors.breakdown ? (
-              <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
-                {errors.breakdown}
+            </View>
+          ) : null}
+        </View>
+      </Card>
+
+      <Screen contentContainerStyle={{ paddingBottom: 48 + keyboardHeight }}>
+        <SectionHeader title="Description" />
+        <TextField
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Groceries, rent, salary…"
+          returnKeyType="next"
+        />
+
+        <SectionHeader title="Date" />
+        <DatePicker
+          label="Transaction Date"
+          title="Transaction Date"
+          value={date}
+          onChange={applyDate}
+          shortcuts
+          error={errors.date}
+          hint={
+            transactionId
+              ? undefined
+              : futureBudget
+                ? `New transactions start on ${formatShortDate(budget.start_date)}.`
+                : 'New transactions start on today.'
+          }
+        />
+        <View style={styles.wrap}>
+          {DATE_CHIPS.map((chip) => (
+            <Chip
+              key={chip.offset}
+              label={chip.label}
+              active={date === offsetIso(chip.offset)}
+              onPress={() => applyDate(offsetIso(chip.offset))}
+            />
+          ))}
+        </View>
+        {outsidePeriod ? (
+          <Text variant="caption" tone="warning" style={{ marginTop: spacing.xs }}>
+            Dated outside this folder’s period (
+            {formatShortDate(budget?.start_date)} – {formatShortDate(budget?.end_date)});
+            saving it will ask you to confirm.
+          </Text>
+        ) : null}
+
+        <View style={{ height: spacing.lg }} />
+
+        <SectionHeader title="Budget" />
+        <View
+          style={{
+            alignItems: 'center',
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            borderRadius: radius.md,
+            borderWidth: StyleSheet.hairlineWidth,
+            flexDirection: 'row',
+            gap: spacing.md,
+            padding: spacing.md,
+          }}
+        >
+          <Icon name="folder" size={18} color={budget?.color || colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text variant="label" numberOfLines={1}>
+              {budget?.name ?? 'This budget'}
+            </Text>
+            {budget?.start_date ? (
+              <Text variant="caption" tone="faint">
+                {formatDateRange(budget.start_date, budget.end_date)}
               </Text>
             ) : null}
-          </>
-        ) : null}
+          </View>
+        </View>
+        <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+          Every entry stays inside the folder that opened this screen.
+        </Text>
 
         <View style={{ height: spacing.lg }} />
 
@@ -887,79 +997,88 @@ export default function TransactionFormScreen() {
           </>
         )}
 
-        <View style={{ height: spacing.lg }} />
-
-        <SectionHeader title="Date" />
-        <DatePicker
-          label="Transaction Date"
-          title="Transaction Date"
-          value={date}
-          onChange={applyDate}
-          shortcuts
-          error={errors.date}
-          hint={
-            transactionId
-              ? undefined
-              : futureBudget
-                ? `New transactions start on ${formatShortDate(budget.start_date)}.`
-                : 'New transactions start on today.'
-          }
+        {/* Everything below is optional: a hairline divider and quieter
+            section titles mark the switch from core details to settings. */}
+        <View
+          style={{
+            backgroundColor: colors.border,
+            height: StyleSheet.hairlineWidth,
+            marginTop: spacing.xl,
+          }}
         />
-        <View style={styles.wrap}>
-          {DATE_CHIPS.map((chip) => (
-            <Chip
-              key={chip.offset}
-              label={chip.label}
-              active={date === offsetIso(chip.offset)}
-              onPress={() => applyDate(offsetIso(chip.offset))}
+
+        {breakdownActive ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <SectionHeader
+              title={`Breakdown · ${items.length}`}
+              fontSize={14}
+              collapsed={!breakdownOpen}
+              onToggle={() => setBreakdownOpen((open) => !open)}
+              action={
+                <Text variant="caption" tone="muted" style={{ fontVariant: ['tabular-nums'] }}>
+                  {formatCurrency(breakdownTotal, { currency })}
+                </Text>
+              }
             />
-          ))}
-        </View>
-        {outsidePeriod ? (
-          <Text variant="caption" tone="warning" style={{ marginTop: spacing.xs }}>
-            Dated outside this folder’s period (
-            {formatShortDate(budget?.start_date)} – {formatShortDate(budget?.end_date)});
-            saving it will ask you to confirm.
-          </Text>
+            {breakdownOpen ? (
+              <BreakdownSection
+                items={items}
+                currency={currency}
+                onAddItem={() => setItemSheet({ item: null })}
+                onOpenItem={(item) => setItemDetail(item)}
+                onReorder={handleReorder}
+              />
+            ) : null}
+            {errors.breakdown ? (
+              <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
+                {errors.breakdown}
+              </Text>
+            ) : null}
+          </>
         ) : null}
 
-        <View style={{ height: spacing.md }} />
-
-        <SectionHeader title="Payment Due Date" />
-        <DatePicker
-          label="Due date (optional)"
-          title="Payment Due Date"
-          value={dueDate}
-          onChange={setDueDate}
-          hint={
-            dueDate
-              ? undefined
-              : 'Shown as an all-day payment event on the Calendar, separate from the folder period and item purchase dates.'
-          }
-        />
-        {dueDate ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Clear payment due date"
-            onPress={() => setDueDate('')}
-            hitSlop={6}
-            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text variant="label" tone="primary">
-              Clear due date
+        {!breakdownActive && type !== 'transfer' ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <SectionHeader title="Breakdown" fontSize={14} />
+            <Text variant="caption" tone="faint" style={{ marginBottom: spacing.sm }}>
+              Optional — split this amount into dated items and adjustments.
             </Text>
-          </Pressable>
+            <Button label="Add breakdown" variant="secondary" onPress={askActivateBreakdown} />
+          </>
         ) : null}
 
-        <View style={{ height: spacing.md }} />
-
-        <SectionHeader title="Description" />
-        <TextField
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Groceries, rent, salary…"
-          returnKeyType="done"
-        />
+        {type === 'expense' && paymentStatus === 'unpaid' ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <SectionHeader title="Payment Due Date" fontSize={14} />
+            <DatePicker
+              label="Due date (optional)"
+              title="Payment Due Date"
+              value={dueDate}
+              onChange={setDueDate}
+              hint={
+                dueDate
+                  ? undefined
+                  : 'Shown as an all-day payment event on the Calendar, separate from the folder period and item purchase dates.'
+              }
+            />
+            {dueDate ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear payment due date"
+                onPress={() => setDueDate('')}
+                hitSlop={6}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Text variant="label" tone="primary">
+                  Clear due date
+                </Text>
+              </Pressable>
+            ) : null}
+          </>
+        ) : null}
 
         <View style={{ height: spacing.lg }} />
 
@@ -978,21 +1097,32 @@ export default function TransactionFormScreen() {
           <Text
             variant="caption"
             tone="faint"
-            style={{ marginTop: spacing.md, textAlign: 'center' }}
+            style={{ marginTop: spacing.lg, textAlign: 'center' }}
           >
             Changes save automatically when you leave this screen.
           </Text>
-        ) : (
-          <>
-            <View style={{ height: spacing.sm }} />
-            <Button
-              label={saving ? 'Saving…' : 'Add transaction'}
-              onPress={handleSave}
-              disabled={saving}
-            />
-          </>
-        )}
+        ) : null}
       </Screen>
+
+      {transactionId ? null : (
+        <View
+          style={{
+            backgroundColor: colors.background,
+            borderColor: colors.border,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.md,
+            paddingBottom: spacing.md + insets.bottom,
+            transform: [{ translateY: -Math.max(0, keyboardHeight - insets.bottom) }],
+          }}
+        >
+          <Button
+            label={saving ? 'Saving…' : 'Add transaction'}
+            onPress={handleSave}
+            disabled={saving}
+          />
+        </View>
+      )}
 
       {itemSheet ? (
         <SubTransactionSheet

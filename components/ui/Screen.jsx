@@ -129,6 +129,7 @@ export function SectionHeader({
   collapsed,
   onToggle,
   fontSize,
+  color,
 }) {
   const { colors, spacing } = useTheme();
 
@@ -141,7 +142,7 @@ export function SectionHeader({
         <Text
           variant="label"
           tone="muted"
-          style={fontSize ? { fontSize } : null}
+          style={[{ fontWeight: '700' }, color ? { color } : null, fontSize ? { fontSize } : null]}
         >
           {title.toUpperCase()}
         </Text>
