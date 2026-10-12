@@ -30,6 +30,12 @@ import {
   effectivePaymentStatus,
 } from '../utils/paymentStatus.js';
 import {
+  breakdownValidationError,
+  computeBreakdownTotal,
+  normalizeBreakdownItems,
+  prepareBreakdownRows,
+} from '../utils/breakdown.js';
+import {
   buildRemindAt,
   buildReminderNotification,
   deriveReminderStatus,
@@ -96,9 +102,17 @@ console.log('\n--- schema ---');
 // tested against real pre-existing data, not just declared.
 const paymentMigration = migrations.find((entry) => entry.version === 5);
 const notesMigration = migrations.find((entry) => entry.version === 6);
-const standaloneMigration = migrations.find((entry) => entry.version === LATEST_VERSION);
+const standaloneMigration = migrations.find((entry) => entry.version === 7);
+const subTransactionsMigration = migrations.find((entry) => entry.version === 8);
 for (const entry of migrations) {
-  if (entry === paymentMigration || entry === notesMigration || entry === standaloneMigration) continue;
+  if (
+    entry === paymentMigration ||
+    entry === notesMigration ||
+    entry === standaloneMigration ||
+    entry === subTransactionsMigration
+  ) {
+    continue;
+  }
   await entry.up(adapter);
 }
 await adapter.runAsync(
@@ -133,6 +147,7 @@ check(
   JSON.stringify(preStandalone),
 );
 await standaloneMigration.up(adapter);
+await subTransactionsMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -141,7 +156,15 @@ const tables = (
   await adapter.getAllAsync(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
 ).map((row) => row.name);
 
-for (const expected of ['accounts', 'budgets', 'reminders', 'settings', 'tags', 'transactions']) {
+for (const expected of [
+  'accounts',
+  'budgets',
+  'reminders',
+  'settings',
+  'sub_transactions',
+  'tags',
+  'transactions',
+]) {
   check(`table ${expected} exists`, tables.includes(expected));
 }
 
@@ -172,6 +195,42 @@ check(
   'transactions gained a payment_status column',
   transactionColumns.includes('payment_status'),
   transactionColumns.join(','),
+);
+check(
+  'transactions gained a has_breakdown flag',
+  transactionColumns.includes('has_breakdown'),
+  transactionColumns.join(','),
+);
+const v4AfterBreakdown = await adapter.getFirstAsync(
+  `SELECT id, amount, has_breakdown FROM transactions WHERE id = 'v4_expense'`,
+);
+check(
+  'the breakdown rebuild keeps pre-existing transactions with an inactive breakdown',
+  v4AfterBreakdown?.amount === 500 && v4AfterBreakdown?.has_breakdown === 0,
+  JSON.stringify(v4AfterBreakdown),
+);
+const v4LinkAfterRebuild = await adapter.getFirstAsync(
+  `SELECT transaction_id FROM reminders WHERE id = 'v4_reminder'`,
+);
+check(
+  'the transactions rebuild keeps reminder links through the FK SET NULL',
+  v4LinkAfterRebuild?.transaction_id === 'v4_expense',
+  JSON.stringify(v4LinkAfterRebuild),
+);
+const subColumns = columnsOf('sub_transactions');
+check(
+  'breakdown items carry parent, description, signed amount, and position',
+  ['transaction_id', 'description', 'amount', 'position'].every((column) =>
+    subColumns.includes(column),
+  ),
+  subColumns.join(','),
+);
+const subIndexes = db.prepare(`PRAGMA index_list(sub_transactions)`).all();
+check(
+  'breakdown reads by parent and description search are indexed',
+  subIndexes.some((index) => index.name === 'idx_sub_transactions_parent') &&
+    subIndexes.some((index) => index.name === 'idx_sub_transactions_description'),
+  subIndexes.map((index) => index.name).join(','),
 );
 
 const v4Rows = await adapter.getAllAsync(
@@ -240,7 +299,7 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 7, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 8, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -361,7 +420,6 @@ const rejected = [
   ['expense may not carry a destination account', { id: 'x2', budget_id: 'b_oct', type: 'expense', amount: 100, tag_id: 'default_work', account_id: 'acc_bdo', to_account_id: 'acc_gcash', transaction_date: '2026-10-05' }],
   ['transfer requires a destination account', { id: 'x3', budget_id: 'b_oct', type: 'transfer', amount: 100, account_id: 'acc_bdo', transaction_date: '2026-10-05' }],
   ['transfer may not target its own account', { id: 'x4', budget_id: 'b_oct', type: 'transfer', amount: 100, account_id: 'acc_bdo', to_account_id: 'acc_bdo', transaction_date: '2026-10-05' }],
-  ['amount must be greater than zero', { id: 'x5', budget_id: 'b_oct', type: 'expense', amount: 0, tag_id: 'default_work', account_id: 'acc_bdo', transaction_date: '2026-10-05' }],
   ['negative amounts are not allowed', { id: 'x6', budget_id: 'b_oct', type: 'expense', amount: -500, tag_id: 'default_work', account_id: 'acc_bdo', transaction_date: '2026-10-05' }],
   ['type must be a known kind', { id: 'x7', budget_id: 'b_oct', type: 'refund', amount: 100, tag_id: 'default_work', account_id: 'acc_bdo', transaction_date: '2026-10-05' }],
 ];
@@ -375,6 +433,99 @@ for (const [label, row] of rejected) {
   }
   check(`rejects: ${label}`, threw);
 }
+
+// The breakdown CHECK relaxation: a calculated parent total of zero must be
+// storable. The repository still refuses zero (and negative) amounts for
+// transactions without a breakdown.
+let zeroStored = true;
+try {
+  insertTransaction(db, {
+    id: 'x_zero_breakdown',
+    budget_id: 'b_oct',
+    type: 'expense',
+    amount: 0,
+    tag_id: 'default_work',
+    account_id: 'acc_bdo',
+    transaction_date: '2026-10-05',
+  });
+} catch {
+  zeroStored = false;
+}
+check('accepts a zero parent amount for an empty breakdown', zeroStored);
+
+console.log('\n--- breakdown integrity ---');
+insertTransaction(db, {
+  id: 't_break',
+  budget_id: 'b_oct',
+  type: 'expense',
+  amount: 900_000, // ₱9,000.00 calculated total
+  tag_id: 'default_daily-expenses',
+  account_id: 'acc_bdo',
+  description: 'Weekly groceries',
+  transaction_date: '2026-10-05',
+});
+await adapter.runAsync(
+  `INSERT INTO sub_transactions (id, transaction_id, description, amount, position, created_at, updated_at)
+   VALUES ('s_rice', 't_break', 'Rice 5kg', 1_000_000, 0, '2026-10-06', '2026-10-06')`,
+);
+await adapter.runAsync(
+  `INSERT INTO sub_transactions (id, transaction_id, description, amount, position, created_at, updated_at)
+   VALUES ('s_discount', 't_break', 'Loyalty discount', -100_000, 1, '2026-10-06', '2026-10-06')`,
+);
+
+let orphanRejected = false;
+try {
+  await adapter.runAsync(
+    `INSERT INTO sub_transactions (id, transaction_id, description, amount, position, created_at, updated_at)
+     VALUES ('s_orphan', 'tx_missing', 'Ghost', 100, 0, '2026-10-06', '2026-10-06')`,
+  );
+} catch {
+  orphanRejected = true;
+}
+check('rejects a breakdown item with an unknown parent', orphanRejected);
+
+let duplicateIdRejected = false;
+try {
+  await adapter.runAsync(
+    `INSERT INTO sub_transactions (id, transaction_id, description, amount, position, created_at, updated_at)
+     VALUES ('s_rice', 't_break', 'Dup', 100, 2, '2026-10-06', '2026-10-06')`,
+  );
+} catch {
+  duplicateIdRejected = true;
+}
+check('rejects a duplicate breakdown item id', duplicateIdRejected);
+
+const orderedItems = await adapter.getAllAsync(
+  `SELECT description, amount FROM sub_transactions WHERE transaction_id = 't_break' ORDER BY position ASC`,
+);
+check(
+  'items read back in persisted order with their signed amounts',
+  orderedItems.length === 2 &&
+    orderedItems[0].description === 'Rice 5kg' &&
+    orderedItems[1].amount === -100_000,
+  JSON.stringify(orderedItems),
+);
+
+const childRowsInTransactions = await adapter.getFirstAsync(
+  `SELECT COUNT(*) AS total FROM transactions WHERE id IN ('s_rice', 's_discount')`,
+);
+check(
+  'breakdown items never appear as financial transactions',
+  childRowsInTransactions.total === 0,
+  String(childRowsInTransactions.total),
+);
+
+await adapter.runAsync(`DELETE FROM transactions WHERE id = 't_break'`);
+const orphansAfterCascade = await adapter.getFirstAsync(
+  `SELECT COUNT(*) AS total FROM sub_transactions WHERE transaction_id = 't_break'`,
+);
+check(
+  'deleting a parent cascades its breakdown items',
+  orphansAfterCascade.total === 0,
+  String(orphansAfterCascade.total),
+);
+await adapter.runAsync(`DELETE FROM sub_transactions`);
+await adapter.runAsync(`DELETE FROM transactions WHERE id = 'x_zero_breakdown'`);
 
 console.log('\n--- referential behaviour ---');
 insertTransaction(db, {
@@ -727,9 +878,99 @@ async function runScenario(store) {
   snapshot.transactionKeepsAmount = await store.getTransaction('p_expense');
   snapshot.searchAfterTagDelete = await store.searchTransactions('renamed', 10);
 
+  // Breakdown items: identical ordered reads, child-description search that
+  // returns the parent with its item count, reordering with an unchanged
+  // total, a zero-total parent, rollback of a failed group, and the cascade
+  // that follows the parent — on both engines.
+  snapshot.subsBefore = await store.listSubTransactionsByParent('p_expense');
+  await store.insertSubTransaction({
+    id: 'p_sub_rice',
+    transaction_id: 'p_expense',
+    description: 'Rice 5kg',
+    amount: 100_000,
+    position: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertSubTransaction({
+    id: 'p_sub_discount',
+    transaction_id: 'p_expense',
+    description: 'Loyalty discount',
+    amount: -5_000,
+    position: 1,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.subsByParent = await store.listSubTransactionsByParent('p_expense');
+  snapshot.subsByBudget = await store.listSubTransactionsByBudget('p_budget');
+  snapshot.searchByChild = await store.searchTransactions('rice', 10);
+  snapshot.subsRemoved = await store.deleteSubTransactionsForParent('p_expense');
+  // Persisted reorder: the same items come back with swapped positions.
+  await store.insertSubTransaction({
+    id: 'p_sub_discount',
+    transaction_id: 'p_expense',
+    description: 'Loyalty discount',
+    amount: -5_000,
+    position: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertSubTransaction({
+    id: 'p_sub_rice',
+    transaction_id: 'p_expense',
+    description: 'Rice 5kg',
+    amount: 100_000,
+    position: 1,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.subsReordered = await store.listSubTransactionsByParent('p_expense');
+
+  // A zero-total breakdown parent must store and read back identically.
+  await store.insertTransaction({
+    id: 'p_zero_break',
+    budget_id: 'p_budget',
+    type: 'expense',
+    amount: 0,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Offsetting split',
+    transaction_date: '2026-10-07',
+    payment_status: 'paid',
+    has_breakdown: 1,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertSubTransaction({
+    id: 'p_sub_deposit',
+    transaction_id: 'p_zero_break',
+    description: 'Deposit',
+    amount: 5_000,
+    position: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  // A group that fails mid-write leaves nothing behind on either engine.
+  await store.beginTransaction();
+  await store.insertSubTransaction({
+    id: 'p_sub_doomed',
+    transaction_id: 'p_zero_break',
+    description: 'Doomed',
+    amount: 1,
+    position: 1,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.rollbackTransaction();
+  snapshot.subsAfterRollback = await store.listSubTransactionsByParent('p_zero_break');
+  snapshot.zeroParentDeleteChanges = await store.deleteTransaction('p_zero_break');
+  snapshot.subsAfterParentDelete = await store.listSubTransactionsByParent('p_zero_break');
+
   snapshot.deletedBudgets = await store.deleteBudget('p_budget');
   snapshot.budgetAfterDelete = await store.getBudget('p_budget');
   snapshot.transactionsAfterDelete = await store.listTransactionsByBudget('p_budget');
+  snapshot.subsAfterBudgetDelete = await store.listSubTransactionsByParent('p_expense');
   snapshot.remindersAfterDelete = await store.listReminders();
 
   snapshot.schemaVersion = await store.getSchemaVersion();
@@ -751,7 +992,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 7);
+check('both adapters report the same schema version', LATEST_VERSION === 8);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -807,6 +1048,54 @@ check(
     memoryResult.searchAfterTagDelete.length === 0,
 );
 
+check(
+  'searching a child description returns the parent once, with its item count',
+  sqliteResult.searchByChild.length === 1 &&
+    sqliteResult.searchByChild[0].id === 'p_expense' &&
+    sqliteResult.searchByChild[0].sub_transaction_count === 2 &&
+    memoryResult.searchByChild.length === 1 &&
+    memoryResult.searchByChild[0].id === 'p_expense' &&
+    memoryResult.searchByChild[0].sub_transaction_count === 2,
+  JSON.stringify(sqliteResult.searchByChild.map((row) => row.id)),
+);
+check(
+  'breakdown items read back in persisted order on both engines',
+  sqliteResult.subsReordered.map((item) => item.id).join(',') === 'p_sub_discount,p_sub_rice' &&
+    memoryResult.subsReordered.map((item) => item.id).join(',') === 'p_sub_discount,p_sub_rice',
+  JSON.stringify(sqliteResult.subsReordered?.map((item) => item.id)),
+);
+check(
+  'reordering never changes the calculated total',
+  sqliteResult.subsByParent.reduce((total, item) => total + item.amount, 0) ===
+    sqliteResult.subsReordered.reduce((total, item) => total + item.amount, 0) &&
+    memoryResult.subsByParent.reduce((total, item) => total + item.amount, 0) ===
+      memoryResult.subsReordered.reduce((total, item) => total + item.amount, 0),
+);
+check(
+  'a zero-total breakdown parent stores and reads back on both engines',
+  sqliteResult.zeroParentDeleteChanges === 1 &&
+    memoryResult.zeroParentDeleteChanges === 1,
+  String(sqliteResult.zeroParentDeleteChanges),
+);
+check(
+  'a rolled-back group leaves no partial write on either engine',
+  sqliteResult.subsAfterRollback.length === 1 &&
+    sqliteResult.subsAfterRollback[0].id === 'p_sub_deposit' &&
+    memoryResult.subsAfterRollback.length === 1 &&
+    memoryResult.subsAfterRollback[0].id === 'p_sub_deposit',
+  JSON.stringify(sqliteResult.subsAfterRollback),
+);
+check(
+  'deleting a parent removes its breakdown items on both engines',
+  sqliteResult.subsAfterParentDelete.length === 0 &&
+    memoryResult.subsAfterParentDelete.length === 0,
+);
+check(
+  'deleting a budget cascades through transactions to breakdown items',
+  sqliteResult.subsAfterBudgetDelete.length === 0 &&
+    memoryResult.subsAfterBudgetDelete.length === 0,
+);
+
 console.log('\n--- legacy milestone-1 upgrade ---');
 
 /** The schema milestone 1 shipped under the same user_version = 1. */
@@ -845,7 +1134,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has six pending migrations', pending.length === 6, String(pending.length));
+check('legacy database has seven pending migrations', pending.length === 7, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -1014,6 +1303,60 @@ check(
   'the folder row still reports spent unchanged',
   folderRow('b_positive').spent === 3_250_000,
   String(folderRow('b_positive').spent),
+);
+
+console.log('\n--- breakdown rules ---');
+check(
+  'the parent total is the signed sum of its items',
+  computeBreakdownTotal([
+    { description: 'Groceries', amount: 100_000 },
+    { description: 'Discount', amount: -10_000 },
+  ]) === 90_000,
+);
+check('an empty breakdown totals zero', computeBreakdownTotal([]) === 0);
+check(
+  'a zero calculated total is valid',
+  breakdownValidationError(
+    normalizeBreakdownItems([
+      { description: 'Deposit', amount: 5_000 },
+      { description: 'Refund', amount: -5_000 },
+    ]),
+  ) === null,
+);
+check(
+  'a negative calculated total is rejected, never clamped',
+  breakdownValidationError(normalizeBreakdownItems([{ description: 'Refund', amount: -5_000 }])) ===
+    'The breakdown total cannot be negative.',
+);
+check(
+  'negative individual items are valid adjustments',
+  breakdownValidationError(
+    normalizeBreakdownItems([
+      { description: 'Cart', amount: 20_000 },
+      { description: 'Discount', amount: -10_000 },
+    ]),
+  ) === null,
+);
+check(
+  'every item needs a non-blank description',
+  breakdownValidationError(normalizeBreakdownItems([{ description: '   ', amount: 100 }])) ===
+    'Every breakdown item needs a description.',
+);
+const trimmedItem = normalizeBreakdownItems([{ id: 's1', description: '  Rice 5kg  ', amount: 100 }])[0];
+check('descriptions are trimmed and ids are kept', trimmedItem.description === 'Rice 5kg' && trimmedItem.id === 's1');
+const preparedRows = prepareBreakdownRows(
+  [trimmedItem, { description: 'Oil', amount: 50 }],
+  { createId: (prefix) => `${prefix}_minted`, timestamp: STAMP },
+);
+check(
+  'positions persist list order from zero',
+  preparedRows.map((row) => row.position).join(',') === '0,1',
+  JSON.stringify(preparedRows),
+);
+check(
+  'items keep existing ids and mint fresh ones for duplicates',
+  preparedRows[0].id === 's1' && preparedRows[1].id === 'subtx_minted',
+  JSON.stringify(preparedRows.map((row) => row.id)),
 );
 
 console.log('\n--- date handling ---');

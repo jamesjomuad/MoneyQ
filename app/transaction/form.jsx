@@ -23,8 +23,12 @@ import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
 import { useRemindersStore } from '../../stores/remindersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
+import { BreakdownSection } from '../../components/transactions/BreakdownSection';
+import { SubTransactionSheet } from '../../components/transactions/SubTransactionSheet';
+import { computeBreakdownTotal } from '../../utils/breakdown';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
 import { formatShortDate, parseFlexibleDate, toIsoDate } from '../../utils/dates';
+import { createId } from '../../utils/id';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { showToast } from '../../stores/toastStore';
 
@@ -57,11 +61,23 @@ function defaultNewTransactionDate(budget) {
 }
 
 /**
+ * A breakdown snapshot compares only what persists: description, signed
+ * amount, and order. Item ids stay out — a save rewrites the same items, so
+ * identity cannot make a form look dirty.
+ */
+function breakdownSnapshot(active, items) {
+  if (!active) return null;
+  return (items ?? []).map((item) => [item.description.trim(), item.amount]);
+}
+
+/**
  * Normalized, deterministic snapshot for the dirty check: amounts are minor
  * units, dates ISO, description trimmed, and payment status only meaningful
  * for expenses. Serialized with one literal key order, so equal values always
  * compare equal — restoring a field to its original value makes the form
- * clean again.
+ * clean again. While a breakdown is active the amount field no longer holds
+ * a user-entered value, so the dirty check reads the calculated total and the
+ * ordered item list instead.
  *
  * An existing transaction's reminders are managed separately (the shared
  * reminder form), so they are not part of the snapshot: adding, editing or
@@ -71,10 +87,13 @@ function formSnapshot(values) {
   return JSON.stringify({
     type: values.type,
     paymentStatus: values.type === 'expense' ? values.paymentStatus : null,
-    amountMinor: values.amountMinor,
+    amountMinor: values.breakdownActive
+      ? computeBreakdownTotal(values.items)
+      : values.amountMinor,
     tagId: values.tagId || null,
     date: values.date,
     description: values.description?.trim() ? values.description.trim() : null,
+    breakdown: breakdownSnapshot(values.breakdownActive, values.items),
   });
 }
 
@@ -87,6 +106,8 @@ function snapshotOfRow(row) {
     tagId: row.tag_id,
     date: row.transaction_date,
     description: row.description,
+    breakdownActive: row.has_breakdown === 1,
+    items: row.subTransactions ?? [],
   });
 }
 
@@ -127,9 +148,17 @@ function askPeriodConfirmation(outside, budget, onProceed) {
 function validateFields(f, currency) {
   const nextErrors = {};
   const resolvedDate = parseFlexibleDate(f.date);
-  const minorAmount = toMinor(f.amount, currency);
 
-  if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
+  if (f.breakdownActive) {
+    // The parent amount is calculated; only the total rule can fail here.
+    // Zero is valid, negative never is, and the repository re-checks both.
+    if (computeBreakdownTotal(f.items) < 0) {
+      nextErrors.breakdown = 'The breakdown total cannot be negative.';
+    }
+  } else {
+    const minorAmount = toMinor(f.amount, currency);
+    if (minorAmount <= 0) nextErrors.amount = 'Enter an amount greater than zero.';
+  }
   if (f.type !== 'transfer' && !f.tagId) nextErrors.tag = 'Choose a tag.';
   if (!resolvedDate) nextErrors.date = 'Pick a date.';
   return nextErrors;
@@ -138,16 +167,30 @@ function validateFields(f, currency) {
 /**
  * Assumes validateFields passed. Reminders are not part of the transaction
  * payload: an edit leaves them untouched, and a new transaction's staged
- * reminders are created separately once the row exists.
+ * reminders are created separately once the row exists. While a breakdown is
+ * active the payload carries the ordered signed items; the repository
+ * recalculates the parent amount from them and never trusts the amount field.
  */
 function buildPayload(f, currency) {
   return {
     type: f.type,
-    amount: toMinor(f.amount, currency),
+    amount: f.breakdownActive
+      ? computeBreakdownTotal(f.items)
+      : toMinor(f.amount, currency),
     tagId: f.tagId,
     description: f.description.trim() || null,
     date: parseFlexibleDate(f.date),
     paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
+    ...(f.breakdownActive
+      ? {
+          hasBreakdown: true,
+          subTransactions: f.items.map((item) => ({
+            id: item.id,
+            description: item.description,
+            amount: item.amount,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -227,6 +270,16 @@ export default function TransactionFormScreen() {
   const [saving, setSaving] = useState(false);
   const [hydratedFrom, setHydratedFrom] = useState(null);
 
+  // Breakdown editing state: the mode flag mirrors has_breakdown, items is
+  // the live ordered list, and everything here is unsaved until the parent
+  // transaction saves (auto-save on leave in edit mode, the button in create
+  // mode). Leaving the create form discards it all — nothing was written.
+  const [breakdownActive, setBreakdownActive] = useState(false);
+  const [items, setItems] = useState([]);
+  const [itemSheet, setItemSheet] = useState(null); // { item | null }
+  const [undoSlot, setUndoSlot] = useState(null); // { item, index }
+  const [breakdownOpen, setBreakdownOpen] = useState(true);
+
   // Auto-save state (edit mode only): one save at a time, at most one
   // scheduled departure, and the freshest saved-row snapshot so a listener
   // from an older render can never write the same values twice. Touched
@@ -287,6 +340,99 @@ export default function TransactionFormScreen() {
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
     setDescription(editing.description ?? '');
+    setBreakdownActive(editing.has_breakdown === 1);
+    setItems(
+      (editing.subTransactions ?? []).map((item) => ({
+        id: item.id,
+        description: item.description,
+        amount: item.amount,
+      })),
+    );
+    // Details convention: the breakdown section opens collapsed; the list
+    // header still shows the item count and the calculated total.
+    setBreakdownOpen(false);
+  }
+
+  const breakdownTotal = useMemo(
+    () => computeBreakdownTotal(items),
+    [items],
+  );
+
+  // Deletion is immediate but reversible for a moment: the undo pill expires
+  // on its own, and any other breakdown change clears it so an Undo can
+  // never resurrect an item next to a newer edit that already replaced it.
+  useEffect(() => {
+    if (!undoSlot) return undefined;
+    const timer = setTimeout(() => setUndoSlot(null), 6000);
+    return () => clearTimeout(timer);
+  }, [undoSlot]);
+
+  function askActivateBreakdown() {
+    Alert.alert(
+      'Add a breakdown?',
+      'The amount will be replaced by a total calculated from its items. ' +
+        'The breakdown starts empty, so the total is zero until you add items.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Add breakdown',
+          onPress: () => {
+            setBreakdownActive(true);
+            setItems([]);
+            setAmount('0');
+            setBreakdownOpen(true);
+            setErrors({});
+          },
+        },
+      ],
+    );
+  }
+
+  function handleSaveItem(draft) {
+    setUndoSlot(null);
+    if (draft.id) {
+      setItems((list) =>
+        list.map((item) =>
+          item.id === draft.id ? { ...item, description: draft.description, amount: draft.amount } : item,
+        ),
+      );
+    } else {
+      setItems((list) => [...list, { id: createId('subtx'), description: draft.description, amount: draft.amount }]);
+    }
+    setItemSheet(null);
+  }
+
+  function handleDeleteItem(deleted) {
+    const index = items.findIndex((item) => item.id === deleted.id);
+    if (index < 0) return;
+    setItems((list) => list.filter((item) => item.id !== deleted.id));
+    // Restore position on the same tick's index: the item leaves with its
+    // slot remembered, and reinserting it there puts the order back exactly.
+    setUndoSlot({ item: deleted, index });
+  }
+
+  function handleUndoDelete() {
+    if (!undoSlot) return;
+    setItems((list) => {
+      if (list.some((item) => item.id === undoSlot.item.id)) return list;
+      const next = [...list];
+      next.splice(Math.min(undoSlot.index, next.length), 0, undoSlot.item);
+      return next;
+    });
+    setUndoSlot(null);
+  }
+
+  function handleReorder(from, to) {
+    setUndoSlot(null);
+    setItems((list) => {
+      if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) {
+        return list;
+      }
+      const next = [...list];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
   }
 
   // Transfers have no creation UI yet, but an existing one must stay editable.
@@ -340,6 +486,8 @@ export default function TransactionFormScreen() {
       tagId,
       date,
       description,
+      breakdownActive,
+      items,
     };
     const snapshot = formSnapshot({
       type,
@@ -348,6 +496,8 @@ export default function TransactionFormScreen() {
       tagId,
       date,
       description,
+      breakdownActive,
+      items,
     });
     if (snapshot === snapshotOfRow(editing)) return undefined;
 
@@ -451,6 +601,8 @@ export default function TransactionFormScreen() {
     tagId,
     date,
     description,
+    breakdownActive,
+    items,
     currency,
     budget,
     editing?.transaction_date,
@@ -474,6 +626,8 @@ export default function TransactionFormScreen() {
       tagId,
       date,
       description,
+      breakdownActive,
+      items,
     };
     const nextErrors = validateFields(fields, currency);
     if (Object.keys(nextErrors).length > 0) {
@@ -583,21 +737,77 @@ export default function TransactionFormScreen() {
         ) : null}
 
         <SectionHeader title="Amount" />
-        <AmountInput
-          symbol={getCurrency(currency).symbol}
-          value={amount}
-          onChangeText={setAmount}
-          decimalPlaces={getCurrency(currency).minorUnits}
-          autoFocus={!transactionId}
-        />
-        {errors.amount ? (
-          <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
-            {errors.amount}
-          </Text>
+        {breakdownActive ? (
+          <>
+            <AmountInput
+              symbol={getCurrency(currency).symbol}
+              value={String(fromMinor(breakdownTotal, currency))}
+              editable={false}
+              decimalPlaces={getCurrency(currency).minorUnits}
+            />
+            <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+              Calculated from items · {items.length} item{items.length === 1 ? '' : 's'} ·{' '}
+              {formatCurrency(breakdownTotal, { currency })}
+            </Text>
+          </>
+        ) : (
+          <>
+            <AmountInput
+              symbol={getCurrency(currency).symbol}
+              value={amount}
+              onChangeText={setAmount}
+              decimalPlaces={getCurrency(currency).minorUnits}
+              autoFocus={!transactionId}
+            />
+            {errors.amount ? (
+              <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
+                {errors.amount}
+              </Text>
+            ) : null}
+            <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+              {formatCurrency(toMinor(amount, currency), { currency })}
+            </Text>
+            {type !== 'transfer' ? (
+              <View style={{ marginTop: spacing.sm }}>
+                <Button label="Add breakdown" variant="secondary" onPress={askActivateBreakdown} />
+              </View>
+            ) : null}
+          </>
+        )}
+
+        {breakdownActive ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <SectionHeader
+              title={`Breakdown · ${items.length}`}
+              fontSize={14}
+              collapsed={!breakdownOpen}
+              onToggle={() => setBreakdownOpen((open) => !open)}
+              action={
+                <Text variant="caption" tone="muted" style={{ fontVariant: ['tabular-nums'] }}>
+                  {formatCurrency(breakdownTotal, { currency })}
+                </Text>
+              }
+            />
+            {breakdownOpen ? (
+              <BreakdownSection
+                items={items}
+                currency={currency}
+                onAddItem={() => setItemSheet({ item: null })}
+                onEditItem={(item) => setItemSheet({ item })}
+                onDeleteItem={handleDeleteItem}
+                onReorder={handleReorder}
+                undo={undoSlot}
+                onUndo={handleUndoDelete}
+              />
+            ) : null}
+            {errors.breakdown ? (
+              <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
+                {errors.breakdown}
+              </Text>
+            ) : null}
+          </>
         ) : null}
-        <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
-          {formatCurrency(toMinor(amount, currency), { currency })}
-        </Text>
 
         <View style={{ height: spacing.lg }} />
 
@@ -724,6 +934,15 @@ export default function TransactionFormScreen() {
           </>
         )}
       </Screen>
+
+      {itemSheet ? (
+        <SubTransactionSheet
+          item={itemSheet.item}
+          currency={currency}
+          onSave={handleSaveItem}
+          onClose={() => setItemSheet(null)}
+        />
+      ) : null}
     </View>
   );
 }

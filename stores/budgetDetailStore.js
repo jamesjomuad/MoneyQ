@@ -6,6 +6,7 @@ import { getTags } from '../storage/repositories/tagRepository';
 import {
   createTransaction,
   deleteTransaction,
+  getSubTransactionsForBudget,
   getTransactionsForBudget,
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
@@ -57,11 +58,12 @@ export const useBudgetDetailStore = create((set, get) => {
       set({ budgetId, isLoading: true, error: null, loadError: null, activeTagId });
 
       try {
-        const [budget, tags, entries, reminders] = await Promise.all([
+        const [budget, tags, entries, reminders, breakdowns] = await Promise.all([
           getBudget(budgetId),
           getTags(),
           getTransactionsForBudget(budgetId),
           getReminders(),
+          getSubTransactionsForBudget(budgetId),
         ]);
 
         if (id !== requestId) return;
@@ -90,9 +92,14 @@ export const useBudgetDetailStore = create((set, get) => {
             reminderByTransaction.set(reminder.transaction_id, reminder);
           }
         }
+        // Breakdown items ride along in persisted order, read once for the
+        // whole budget. The list UI only ever needs the count; the form and
+        // the details section read `subTransactions` off the same snapshot.
         const hydrated = entries.map((entry) => ({
           ...entry,
           reminder: reminderByTransaction.get(entry.id) ?? null,
+          subTransactions: breakdowns.get(entry.id) ?? [],
+          sub_transaction_count: (breakdowns.get(entry.id) ?? []).length,
         }));
 
         const summary = computeTotals(hydrated);

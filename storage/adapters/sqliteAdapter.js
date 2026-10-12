@@ -36,6 +36,7 @@ export function createSqliteAdapter(getDb) {
     serialize(async () => (await getDb()).getFirstAsync(sql, ...params));
   const run = (sql, ...params) =>
     serialize(async () => (await getDb()).runAsync(sql, ...params));
+  const exec = (sql) => serialize(async () => (await getDb()).execAsync(sql));
 
   return {
     source: 'sqlite',
@@ -43,6 +44,24 @@ export function createSqliteAdapter(getDb) {
     async getSchemaVersion() {
       const row = await first('PRAGMA user_version');
       return row?.user_version ?? 0;
+    },
+
+    // Explicit transaction control so a repository can commit a parent row
+    // and its breakdown items as one logical write. Because every operation
+    // here runs through the same FIFO chain on one connection, anything
+    // queued between BEGIN and COMMIT participates in the SQL transaction —
+    // a failing child rejects its caller and the repository's ROLLBACK
+    // discards the whole group.
+    beginTransaction() {
+      return exec('BEGIN IMMEDIATE');
+    },
+
+    commitTransaction() {
+      return exec('COMMIT');
+    },
+
+    rollbackTransaction() {
+      return exec('ROLLBACK');
     },
 
     // --- budgets -------------------------------------------------------
@@ -177,9 +196,12 @@ export function createSqliteAdapter(getDb) {
 
     /**
      * Cross-budget text search used by Home. Case-insensitive substring match
-     * on the description or the joined tag name; LIKE wildcards in the term
-     * are escaped so a query of '100%' searches for the literal text. Rows
-     * carry the owning folder's name so results can be grouped by it.
+     * on the description, the joined tag name, or any breakdown item's
+     * description — a child match returns the parent row, never the child,
+     * with `sub_transaction_count` so results can label their items. LIKE
+     * wildcards in the term are escaped so a query of '100%' searches for the
+     * literal text. Rows carry the owning folder's name so results can be
+     * grouped by it.
      */
     async searchTransactions(term, limit) {
       const pattern = `%${String(term)
@@ -187,14 +209,20 @@ export function createSqliteAdapter(getDb) {
         .replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
       return query(
         `SELECT t.*, tg.name AS tag_name, tg.emoji AS tag_emoji, tg.color AS tag_color,
-                b.name AS budget_name
+                b.name AS budget_name,
+                (SELECT COUNT(*) FROM sub_transactions s
+                  WHERE s.transaction_id = t.id) AS sub_transaction_count
           FROM transactions t
           LEFT JOIN tags tg ON tg.id = t.tag_id
           JOIN budgets b ON b.id = t.budget_id
           WHERE lower(t.description) LIKE ? ESCAPE '\\'
              OR lower(tg.name) LIKE ? ESCAPE '\\'
+             OR EXISTS (SELECT 1 FROM sub_transactions s
+                         WHERE s.transaction_id = t.id
+                           AND lower(s.description) LIKE ? ESCAPE '\\')
           ORDER BY t.transaction_date DESC, t.created_at DESC
           LIMIT ?`,
+        pattern,
         pattern,
         pattern,
         limit,
@@ -209,8 +237,8 @@ export function createSqliteAdapter(getDb) {
       await run(
         `INSERT INTO transactions
            (id, budget_id, type, amount, tag_id, account_id, to_account_id, description,
-            transaction_date, payment_status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            transaction_date, payment_status, has_breakdown, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.budget_id,
         row.type,
@@ -221,6 +249,7 @@ export function createSqliteAdapter(getDb) {
         row.description ?? null,
         row.transaction_date,
         row.payment_status ?? null,
+        row.has_breakdown ? 1 : 0,
         row.created_at,
         row.updated_at,
       );
@@ -230,7 +259,7 @@ export function createSqliteAdapter(getDb) {
       const result = await run(
         `UPDATE transactions
             SET type = ?, amount = ?, tag_id = ?, description = ?,
-                transaction_date = ?, payment_status = ?, updated_at = ?
+                transaction_date = ?, payment_status = ?, has_breakdown = ?, updated_at = ?
           WHERE id = ?`,
         row.type,
         row.amount,
@@ -238,6 +267,7 @@ export function createSqliteAdapter(getDb) {
         row.description ?? null,
         row.transaction_date,
         row.payment_status ?? null,
+        row.has_breakdown ? 1 : 0,
         row.updated_at,
         row.id,
       );
@@ -246,6 +276,49 @@ export function createSqliteAdapter(getDb) {
 
     async deleteTransaction(id) {
       const result = await run('DELETE FROM transactions WHERE id = ?', id);
+      return result.changes ?? 0;
+    },
+
+    // --- sub-transactions (breakdown items) ------------------------------
+
+    /** Every breakdown item of one budget in one read — never one per row. */
+    async listSubTransactionsByBudget(budgetId) {
+      return query(
+        `SELECT s.* FROM sub_transactions s
+          JOIN transactions t ON t.id = s.transaction_id
+          WHERE t.budget_id = ?
+          ORDER BY s.transaction_id, s.position ASC, s.id ASC`,
+        budgetId,
+      );
+    },
+
+    async listSubTransactionsByParent(transactionId) {
+      return query(
+        `SELECT * FROM sub_transactions
+          WHERE transaction_id = ?
+          ORDER BY position ASC, id ASC`,
+        transactionId,
+      );
+    },
+
+    async insertSubTransaction(row) {
+      await run(
+        `INSERT INTO sub_transactions
+           (id, transaction_id, description, amount, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        row.id,
+        row.transaction_id,
+        row.description,
+        row.amount,
+        row.position,
+        row.created_at,
+        row.updated_at,
+      );
+    },
+
+    /** Bulk removal before a rewrite; also the manual mirror of the FK cascade. */
+    async deleteSubTransactionsForParent(transactionId) {
+      const result = await run('DELETE FROM sub_transactions WHERE transaction_id = ?', transactionId);
       return result.changes ?? 0;
     },
 

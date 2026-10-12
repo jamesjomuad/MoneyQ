@@ -5,6 +5,7 @@ import { migration as budgetColor } from './004_budget_color';
 import { migration as paymentStatus } from './005_payment_status';
 import { migration as reminderNotes } from './006_reminder_notes';
 import { migration as reminderIndependent } from './007_reminder_independent';
+import { migration as subTransactions } from './008_sub_transactions';
 
 /**
  * Append-only list. Never edit a shipped migration — add a new one so existing
@@ -18,6 +19,7 @@ export const migrations = [
   paymentStatus,
   reminderNotes,
   reminderIndependent,
+  subTransactions,
 ];
 
 export const LATEST_VERSION = migrations.reduce(

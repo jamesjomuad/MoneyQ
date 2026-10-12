@@ -30,8 +30,25 @@ export function TransactionRow({
 
   const isExpense = transaction.type === "expense";
   const isIncome = transaction.type === "income";
-  const sign = isIncome ? "+" : isExpense ? "-" : "";
+  // A zero parent total (an empty or offsetting breakdown) shows no sign:
+  // "-₱0.00" would read as a double negative.
+  const sign =
+    transaction.amount === 0
+      ? ""
+      : isIncome
+        ? "+"
+        : isExpense
+          ? "-"
+          : "";
   const tone = isIncome ? "income" : isExpense ? "expense" : "muted";
+
+  // Transactions never show breakdown items as rows; the parent's list entry
+  // just labels its item count under the description.
+  const itemCount =
+    transaction.sub_transaction_count ??
+    (Array.isArray(transaction.subTransactions)
+      ? transaction.subTransactions.length
+      : 0);
 
   const title =
     transaction.description ||
@@ -54,19 +71,24 @@ export function TransactionRow({
   const paymentLabel = payment ? (payment === "unpaid" ? "Unpaid" : "Paid") : null;
   const metaText = [paymentLabel, shareLabel].filter(Boolean).join(" · ");
 
-  // A reminder rides on the second line: it is the only extra marker a
-  // transaction can carry.
+  // A reminder and a breakdown count ride on the second line: they are the
+  // only extra markers a transaction can carry.
   const hasReminder = transaction.reminder?.enabled === 1;
   const subtitleParts =
     transaction.type === "transfer"
       ? [dayLabel(transaction.transaction_date)]
-      : [dayLabel(transaction.transaction_date), hasReminder ? "🔔" : null];
+      : [
+          dayLabel(transaction.transaction_date),
+          hasReminder ? "🔔" : null,
+          itemCount > 0 ? `${itemCount} item${itemCount === 1 ? '' : 's'}` : null,
+        ];
   const subtitle = subtitleParts.filter(Boolean).join(" · ");
   const a11yTag = showBadge ? tag.name : null;
   const a11ySuffixes = [
     a11yTag,
     payment ? `${payment} expense` : null,
     hasReminder ? "reminder set" : null,
+    itemCount > 0 ? `${itemCount} breakdown items` : null,
     showShareBar
       ? `${shareLabel} of budget ${isIncome ? "income" : "expenses"}`
       : null,

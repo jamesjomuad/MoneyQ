@@ -1,6 +1,12 @@
 import { storage } from '../adapters/adapter';
 import { createId, nowIso } from '../../utils/id';
 import { defaultPaymentStatus, effectivePaymentStatus } from '../../utils/paymentStatus';
+import {
+  breakdownValidationError,
+  computeBreakdownTotal,
+  normalizeBreakdownItems,
+  prepareBreakdownRows,
+} from '../../utils/breakdown';
 
 export async function getTransactionsForBudget(budgetId) {
   return storage.listTransactionsByBudget(budgetId);
@@ -13,6 +19,26 @@ export async function getTransactionsInRange(startIso, endIso) {
 
 export async function getTransaction(id) {
   return storage.getTransaction(id);
+}
+
+/**
+ * Breakdown items of one budget in a single read, grouped by parent id in
+ * persisted order — list screens hydrate every count without one query per
+ * transaction.
+ */
+export async function getSubTransactionsForBudget(budgetId) {
+  const rows = await storage.listSubTransactionsByBudget(budgetId);
+  const byParent = new Map();
+  for (const row of rows) {
+    if (!byParent.has(row.transaction_id)) byParent.set(row.transaction_id, []);
+    byParent.get(row.transaction_id).push(row);
+  }
+  return byParent;
+}
+
+/** One transaction's items in persisted order. */
+export async function getSubTransactions(transactionId) {
+  return storage.listSubTransactionsByParent(transactionId);
 }
 
 const SEARCH_RESULT_LIMIT = 30;
@@ -41,10 +67,98 @@ function resolveUpdatedPaymentStatus(type, existing, input) {
 }
 
 /**
+ * Breakdown rules, resolved authoritatively here — never only in the UI.
+ * Returns { hasBreakdown, items, amount } or throws:
+ *
+ *  - A breakdown belongs to income or expense only; transfers are excluded.
+ *  - The parent amount is the signed sum of the items — the caller's amount
+ *    is ignored while a breakdown is active, because the parent amount is
+ *    read-only then.
+ *  - A zero total is valid (empty breakdown included); a negative total is
+ *    rejected outright, never clamped.
+ *  - An edit that keeps a breakdown without resending its items re-reads the
+ *    stored items, so metadata edits preserve the breakdown and its total.
+ */
+async function resolveBreakdown(type, existing, input) {
+  const hasBreakdown =
+    input.hasBreakdown === undefined ? Boolean(existing?.has_breakdown) : Boolean(input.hasBreakdown);
+
+  if (!hasBreakdown) {
+    if (input.subTransactions !== undefined && input.subTransactions.length > 0) {
+      throw new Error('Only breakdown transactions can carry breakdown items.');
+    }
+    return { hasBreakdown: false, items: null, amount: undefined };
+  }
+
+  if (type === 'transfer') {
+    throw new Error('Breakdowns are only available for income and expenses.');
+  }
+
+  let items;
+  if (input.subTransactions === undefined && existing) {
+    const stored = await storage.listSubTransactionsByParent(existing.id);
+    items = normalizeBreakdownItems(stored);
+  } else {
+    items = normalizeBreakdownItems(input.subTransactions ?? []);
+  }
+
+  const error = breakdownValidationError(items);
+  if (error) throw new Error(error);
+
+  const total = computeBreakdownTotal(items);
+  if (total < 0) throw new Error('The breakdown total cannot be negative.');
+
+  return { hasBreakdown: true, items, amount: total };
+}
+
+/**
+ * Writes one parent row plus its complete, ordered child set inside a single
+ * SQL transaction. If any step fails the whole group rolls back, so a
+ * breakdown can never end up half-written. The caller has already validated
+ * and recomputed the parent amount. `rewriteChildren` clears and re-inserts
+ * the items; a metadata-only save passes false so the stored breakdown is
+ * preserved untouched.
+ */
+async function writeTransactionWithBreakdown({ id, existing, row, items, rewriteChildren }) {
+  await storage.beginTransaction();
+  try {
+    if (existing) {
+      await storage.updateTransaction(row);
+      if (rewriteChildren) await storage.deleteSubTransactionsForParent(id);
+    } else {
+      await storage.insertTransaction(row);
+    }
+    if (rewriteChildren || !existing) {
+      for (const item of items) {
+        await storage.insertSubTransaction({
+          id: item.id ?? createId('subtx'),
+          transaction_id: id,
+          description: item.description,
+          amount: item.amount,
+          position: item.position,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+        });
+      }
+    }
+    await storage.commitTransaction();
+  } catch (error) {
+    try {
+      await storage.rollbackTransaction();
+    } catch {
+      // The engine already discarded the group (or the rollback itself
+      // failed); the original error is the one callers need to see.
+    }
+    throw error;
+  }
+}
+
+/**
  * Case-insensitive substring search across every budget, on transaction
- * descriptions and tag names. Rows come back newest first and carry an
- * embedded `tag` object (or null) so result lists can render without a
- * second query.
+ * descriptions, tag names, and breakdown item descriptions. A child match
+ * returns its parent row (description, total, item count) — never the child
+ * as its own result. Rows come back newest first and carry an embedded `tag`
+ * object (or null) so result lists can render without a second query.
  */
 export async function searchTransactions(query) {
   const term = (query ?? '').trim();
@@ -64,26 +178,42 @@ export async function createTransaction(input) {
   const type = input.type ?? 'expense';
 
   if (!input.budgetId) throw new Error('A transaction needs a budget.');
-  if (!Number.isInteger(input.amount) || input.amount <= 0) {
+
+  const breakdown = await resolveBreakdown(type, null, input);
+
+  let amount = input.amount;
+  if (breakdown.hasBreakdown) {
+    amount = breakdown.amount;
+  } else if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error('Enter an amount greater than zero.');
   }
   if (type !== 'transfer' && !input.tagId) {
     throw new Error('Choose a tag for this transaction.');
   }
 
-  await storage.insertTransaction({
+  const rows = breakdown.hasBreakdown
+    ? prepareBreakdownRows(breakdown.items, { createId, timestamp })
+    : [];
+
+  await writeTransactionWithBreakdown({
     id,
-    budget_id: input.budgetId,
-    type,
-    amount: input.amount,
-    tag_id: input.tagId ?? null,
-    account_id: input.accountId ?? null,
-    to_account_id: input.toAccountId ?? null,
-    description: input.description ?? null,
-    transaction_date: input.date ?? '',
-    payment_status: resolveNewPaymentStatus(type, input.paymentStatus),
-    created_at: timestamp,
-    updated_at: timestamp,
+    existing: null,
+    row: {
+      id,
+      budget_id: input.budgetId,
+      type,
+      amount,
+      tag_id: input.tagId ?? null,
+      account_id: input.accountId ?? null,
+      to_account_id: input.toAccountId ?? null,
+      description: input.description ?? null,
+      transaction_date: input.date ?? '',
+      payment_status: resolveNewPaymentStatus(type, input.paymentStatus),
+      has_breakdown: breakdown.hasBreakdown ? 1 : 0,
+      created_at: timestamp,
+      updated_at: timestamp,
+    },
+    items: rows,
   });
 
   return storage.getTransaction(id);
@@ -94,33 +224,55 @@ export async function updateTransaction(id, input) {
   if (!existing) throw new Error('That transaction no longer exists.');
 
   const type = input.type === undefined ? existing.type : input.type;
-  const amount = input.amount === undefined ? existing.amount : input.amount;
   const tagId = input.tagId === undefined ? existing.tag_id : input.tagId;
   const description =
     input.description === undefined ? existing.description : input.description;
   const date = input.date === undefined ? existing.transaction_date : input.date;
 
-  if (!Number.isInteger(amount) || amount <= 0) {
+  const breakdown = await resolveBreakdown(type, existing, input);
+
+  let amount = input.amount === undefined ? existing.amount : input.amount;
+  if (breakdown.hasBreakdown) {
+    // Read-only parent amount: the calculated total wins over anything sent.
+    amount = breakdown.amount;
+  } else if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error('Enter an amount greater than zero.');
   }
   if (type !== 'transfer' && !tagId) {
     throw new Error('Choose a tag for this transaction.');
   }
 
-  await storage.updateTransaction({
+  const timestamp = nowIso();
+  const rows = breakdown.hasBreakdown
+    ? prepareBreakdownRows(breakdown.items, { createId, timestamp })
+    : [];
+
+  await writeTransactionWithBreakdown({
     id,
-    type,
-    amount,
-    tag_id: tagId || null,
-    description: description || null,
-    transaction_date: date,
-    payment_status: resolveUpdatedPaymentStatus(type, existing, input),
-    updated_at: nowIso(),
+    existing,
+    row: {
+      id,
+      type,
+      amount,
+      tag_id: tagId || null,
+      description: description || null,
+      transaction_date: date,
+      payment_status: resolveUpdatedPaymentStatus(type, existing, input),
+      has_breakdown: breakdown.hasBreakdown ? 1 : 0,
+      updated_at: timestamp,
+    },
+    // A metadata-only save (no breakdown mentioned) must not rewrite — or
+    // wipe — the stored items; writeTransactionWithBreakdown only deletes
+    // children when the breakdown is (re)written.
+    items: breakdown.hasBreakdown ? rows : [],
+    rewriteChildren: breakdown.hasBreakdown && input.subTransactions !== undefined,
   });
 
   return storage.getTransaction(id);
 }
 
 export async function deleteTransaction(id) {
+  // SQLite cascades through the foreign key; the memory adapter mirrors the
+  // cascade so no engine ever leaves orphan items behind.
   return storage.deleteTransaction(id);
 }

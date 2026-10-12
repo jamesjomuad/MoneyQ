@@ -19,6 +19,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     budgets: [],
     tags: [],
     transactions: [],
+    subTransactions: [],
     reminders: [],
     settings: new Map(),
   };
@@ -26,6 +27,10 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
   const timestamp = nowIso();
   seedDefaultTags(store, timestamp);
   if (seedDemo) seedDemoData(store, timestamp);
+
+  // Holds the pre-transaction snapshot while a repository group is open;
+  // see beginTransaction/rollbackTransaction below.
+  let journal = null;
 
   const copy = (row) => (row ? { ...row } : null);
 
@@ -44,11 +49,45 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     return left < right ? -1 : left > right ? 1 : 0;
   };
 
+  /** SQLite's breakdown ordering: `ORDER BY transaction_id, position, id`. */
+  const bySubTransaction = (a, b) =>
+    a.transaction_id.localeCompare(b.transaction_id) ||
+    a.position - b.position ||
+    a.id.localeCompare(b.id);
+
+  /** SQLite's per-parent ordering: `ORDER BY position ASC, id ASC`. */
+  const bySubTransactionPosition = (a, b) => a.position - b.position || a.id.localeCompare(b.id);
+
   return {
     source: 'memory',
 
     async getSchemaVersion() {
       return LATEST_VERSION;
+    },
+
+    // Transaction control mirrors the SQLite adapter's atomic parent+children
+    // write: begin takes a snapshot journal of the two tables a repository
+    // group touches, commit drops it, and rollback restores it, so a failed
+    // child write can never leave a half-updated breakdown in memory either.
+    beginTransaction() {
+      journal = {
+        transactions: store.transactions.map((row) => ({ ...row })),
+        subTransactions: store.subTransactions.map((row) => ({ ...row })),
+      };
+      return Promise.resolve();
+    },
+
+    commitTransaction() {
+      journal = null;
+      return Promise.resolve();
+    },
+
+    rollbackTransaction() {
+      if (!journal) return Promise.resolve();
+      store.transactions = journal.transactions;
+      store.subTransactions = journal.subTransactions;
+      journal = null;
+      return Promise.resolve();
     },
 
     // --- budgets -------------------------------------------------------
@@ -99,6 +138,9 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       );
       store.transactions = store.transactions.filter(
         (transaction) => transaction.budget_id !== id,
+      );
+      store.subTransactions = store.subTransactions.filter(
+        (item) => !doomed.has(item.transaction_id),
       );
       for (const reminder of store.reminders) {
         if (doomed.has(reminder.transaction_id)) reminder.transaction_id = null;
@@ -168,7 +210,11 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         .map(copy);
     },
 
-    /** SQLite's case-insensitive description-or-tag-name search, wildcards literal. */
+    /**
+     * SQLite's case-insensitive description-or-tag-name search, now also
+     * matching breakdown item descriptions — a child match returns the parent
+     * row with `sub_transaction_count`, never the child. Wildcards literal.
+     */
     async searchTransactions(term, limit) {
       const needle = String(term).toLowerCase();
       const tagById = new Map(store.tags.map((tag) => [tag.id, tag]));
@@ -180,7 +226,12 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
             .includes(needle);
           const tag = tagById.get(transaction.tag_id);
           const inTag = tag ? tag.name.toLowerCase().includes(needle) : false;
-          return inDescription || inTag;
+          const inItems = store.subTransactions.some(
+            (item) =>
+              item.transaction_id === transaction.id &&
+              item.description.toLowerCase().includes(needle),
+          );
+          return inDescription || inTag || inItems;
         })
         .sort(byTransactionDate)
         .slice(0, limit)
@@ -192,6 +243,9 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
             tag_emoji: tag?.emoji ?? null,
             tag_color: tag?.color ?? null,
             budget_name: budgetById.get(transaction.budget_id)?.name ?? null,
+            sub_transaction_count: store.subTransactions.filter(
+              (item) => item.transaction_id === transaction.id,
+            ).length,
           });
         });
     },
@@ -201,7 +255,11 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async insertTransaction(row) {
-      store.transactions.push({ ...row, payment_status: row.payment_status ?? null });
+      store.transactions.push({
+        ...row,
+        payment_status: row.payment_status ?? null,
+        has_breakdown: row.has_breakdown ? 1 : 0,
+      });
     },
 
     async updateTransaction(row) {
@@ -213,21 +271,60 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       existing.description = row.description ?? null;
       existing.transaction_date = row.transaction_date;
       existing.payment_status = row.payment_status ?? null;
+      existing.has_breakdown = row.has_breakdown ? 1 : 0;
       existing.updated_at = row.updated_at;
       return 1;
     },
 
     /**
      * Mirrors `ON DELETE SET NULL` on reminders: the transaction goes, the
-     * reminder survives as a standalone record.
+     * reminder survives as a standalone record. Mirrors `ON DELETE CASCADE`
+     * on sub_transactions: the breakdown belongs to its parent and goes with
+     * it, never orphaned.
      */
     async deleteTransaction(id) {
       const before = store.transactions.length;
       store.transactions = store.transactions.filter((transaction) => transaction.id !== id);
+      store.subTransactions = store.subTransactions.filter(
+        (item) => item.transaction_id !== id,
+      );
       for (const reminder of store.reminders) {
         if (reminder.transaction_id === id) reminder.transaction_id = null;
       }
       return before - store.transactions.length;
+    },
+
+    // --- sub-transactions (breakdown items) ------------------------------
+
+    async listSubTransactionsByBudget(budgetId) {
+      const inBudget = new Set(
+        store.transactions
+          .filter((transaction) => transaction.budget_id === budgetId)
+          .map((t) => t.id),
+      );
+      return store.subTransactions
+        .filter((item) => inBudget.has(item.transaction_id))
+        .sort(bySubTransaction)
+        .map(copy);
+    },
+
+    async listSubTransactionsByParent(transactionId) {
+      return store.subTransactions
+        .filter((item) => item.transaction_id === transactionId)
+        .sort(bySubTransactionPosition)
+        .map(copy);
+    },
+
+    async insertSubTransaction(row) {
+      store.subTransactions.push({ ...row });
+    },
+
+    async deleteSubTransactionsForParent(transactionId) {
+      const before = store.subTransactions.length;
+      store.subTransactions = store.subTransactions.filter(
+        (item) => item.transaction_id !== transactionId,
+      );
+      return before - store.subTransactions.length;
     },
 
     // --- reminders -----------------------------------------------------
@@ -382,6 +479,43 @@ function seedDemoData(store, timestamp) {
 
   store.transactions.push(...transactions);
 
+  // A breakdown expense so the browser harness shows the feature populated:
+  // two positive items and one negative adjustment summing to the parent's
+  // amount, in a persisted order.
+  const groceries = transactions.find((entry) => entry.description === 'Groceries');
+  if (groceries) {
+    groceries.has_breakdown = 1;
+    store.subTransactions.push(
+      {
+        id: 'demo_sub_rice',
+        transaction_id: groceries.id,
+        description: 'Rice 5kg',
+        amount: 100_000,
+        position: 0,
+        created_at: timestamp,
+        updated_at: timestamp,
+      },
+      {
+        id: 'demo_sub_fruit',
+        transaction_id: groceries.id,
+        description: 'Fresh fruit',
+        amount: 50_000,
+        position: 1,
+        created_at: timestamp,
+        updated_at: timestamp,
+      },
+      {
+        id: 'demo_sub_discount',
+        transaction_id: groceries.id,
+        description: 'Loyalty discount',
+        amount: -5_000,
+        position: 2,
+        created_at: timestamp,
+        updated_at: timestamp,
+      },
+    );
+  }
+
   // A plain expense with a reminder, so the browser harness shows the reminder
   // editor populated instead of always empty.
   const reminderDate = addDaysIso(today, 10);
@@ -396,6 +530,7 @@ function seedDemoData(store, timestamp) {
     description: 'Internet bill',
     transaction_date: today,
     payment_status: 'unpaid',
+    has_breakdown: 0,
     created_at: timestamp,
     updated_at: timestamp,
   });
@@ -444,6 +579,7 @@ function seedDemoData(store, timestamp) {
       // Mirrors the migration backfill: historical expenses read as paid.
       payment_status:
         paymentStatus ?? (type === 'expense' ? 'paid' : null),
+      has_breakdown: 0,
       created_at: timestamp,
       updated_at: timestamp,
     };
