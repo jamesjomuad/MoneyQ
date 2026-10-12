@@ -4,7 +4,7 @@ import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
 /** options: [{ value, label }] */
-export function SegmentedControl({ options, value, onChange, style }) {
+export function SegmentedControl({ options, value, onChange, style, dense = false }) {
   const { colors, radius, spacing } = useTheme();
 
   return (
@@ -26,6 +26,7 @@ export function SegmentedControl({ options, value, onChange, style }) {
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [
               styles.option,
+              dense && styles.optionDense,
               {
                 backgroundColor: active ? colors.surface : 'transparent',
                 borderColor: active ? colors.border : 'transparent',
@@ -55,5 +56,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 44,
     paddingVertical: 8,
+  },
+  optionDense: {
+    minHeight: 36,
+    paddingVertical: 4,
   },
 });
