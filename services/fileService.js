@@ -8,26 +8,40 @@
  */
 
 import * as DocumentPicker from 'expo-document-picker';
-import { File, Paths } from 'expo-file-system';
-import { ResultCode, startActivityAsync } from 'expo-intent-launcher';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 export const fileService = { supported: true };
 
+function isPickerCancelled(error) {
+  return /picker was cancelled/i.test(String(error?.message ?? error));
+}
+
 /**
- * Real "Save to" dialog (Android SAF CREATE_DOCUMENT): the user picks the
- * folder, renames the file and the system creates it empty; we fill the
- * returned content:// URI with the backup JSON. Resolves null when the user
- * cancels the dialog.
+ * Real "Save to" flow on top of expo-file-system's SAF support: the system
+ * folder picker (OPEN_DOCUMENT_TREE) returns a Directory the app holds a
+ * persistable READ+WRITE grant for, and `createFile` asks the document
+ * provider to create the backup file inside it — giving back a real
+ * document:// URI that `write()` can fill. Never `new File(dir, name)` +
+ * create/write here: File.create() rejects SAF content:// URIs by design.
+ * Resolves null when the user cancels the picker.
  */
 export async function saveBackupToUserFile(json, fileName) {
   const safeName = String(fileName).replace(/[^A-Za-z0-9._-]/g, '-');
-  const result = await startActivityAsync('android.intent.action.CREATE_DOCUMENT', {
-    type: 'application/json',
-    extra: { 'android.intent.extra.TITLE': safeName },
-  });
-  if (result?.resultCode !== ResultCode.Success || !result?.data) return null;
-  const file = new File(result.data);
+  let directory;
+  try {
+    directory = await Directory.pickDirectoryAsync();
+  } catch (error) {
+    if (isPickerCancelled(error)) return null;
+    throw error;
+  }
+  if (!directory) return null;
+
+  // Same backup twice a day would collide; SAF createFile does not overwrite.
+  const existing = directory.list().find((entry) => entry.name === safeName);
+  if (existing && !(existing instanceof Directory)) existing.delete();
+
+  const file = directory.createFile(safeName, 'application/json');
   file.write(json);
   return { name: file.name || safeName, size: file.size };
 }
