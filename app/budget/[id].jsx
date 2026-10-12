@@ -286,20 +286,34 @@ export default function BudgetDetailScreen() {
               label="Income"
               value={formatCurrency(summary.income, { currency })}
               tone="income"
+              style={{ marginRight: 14 }}
               labelColor={folderInk}
               valueColor={folderInk}
+            />
+            <View
+              style={[
+                styles.statDivider,
+                { backgroundColor: folderInk ? `${folderInk}80` : colors.border },
+              ]}
             />
             <Stat
               label="Expenses"
               value={formatCurrency(summary.expense, { currency })}
               tone="expense"
+              style={{ marginLeft: 14, marginRight: 14 }}
               labelColor={folderInk}
               valueColor={folderInk}
+            />
+            <View
+              style={[
+                styles.statDivider,
+                { backgroundColor: folderInk ? `${folderInk}80` : colors.border },
+              ]}
             />
             <Stat
               label="Transactions"
               value={String(summary.transactionCount)}
-              style={{ marginRight: 0 }}
+              style={{ marginLeft: 14, marginRight: 0 }}
               labelColor={folderInk}
               valueColor={folderInk}
             />
@@ -436,6 +450,15 @@ const styles = StyleSheet.create({
   pinned: { flexShrink: 0 },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   stats: { flexDirection: 'row' },
+  // Centered rule between the Income / Expenses / Transactions stats. It is
+  // deliberately shorter than the stat block (not a full-height gridline)
+  // and sits in even gutters: each neighbouring Stat reserves 14px of margin
+  // on the side facing the rule.
+  statDivider: {
+    alignSelf: 'center',
+    height: 38,
+    width: 1.5,
+  },
   progressTrack: { borderRadius: 4, height: 8, overflow: 'hidden', width: '100%' },
   progressFill: { borderRadius: 4, height: '100%' },
   // Keep both axes evenly spaced and stop wrapped rows from stretching cards
