@@ -54,6 +54,7 @@ const TYPE_OPTIONS = [
 const DATE_CHIPS = [
   { label: 'Today', offset: 0 },
   { label: 'Yesterday', offset: 1 },
+  { label: 'Tomorrow', offset: -1 },
 ];
 
 /** Today minus `offset` days, as a local 'YYYY-MM-DD' value. */
@@ -262,7 +263,7 @@ function announceReminderOutcomes(outcomes) {
 
 export default function TransactionFormScreen() {
   const params = useLocalSearchParams();
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
   const tags = useTagsStore((state) => state.tags);
   const loadTags = useTagsStore((state) => state.load);
@@ -326,7 +327,6 @@ export default function TransactionFormScreen() {
   const [items, setItems] = useState([]);
   const [itemSheet, setItemSheet] = useState(null); // { item | null }
   const [itemDetail, setItemDetail] = useState(null); // item being viewed
-  const [breakdownOpen, setBreakdownOpen] = useState(true);
   const undoRef = useRef(null); // latest undo closure, read by the snackbar
 
   // Auto-save state (edit mode only): one save at a time, at most one
@@ -401,16 +401,12 @@ export default function TransactionFormScreen() {
         notes: item.notes ?? null,
       })),
     );
-    // Details convention: the breakdown section opens collapsed; the list
-    // header still shows the item count and the calculated total. A Calendar
-    // purchase event names its item: open the parent with the breakdown
-    // expanded and that item's details on screen.
-    setBreakdownOpen(false);
+    // A Calendar purchase event names its item: open the parent with the
+    // breakdown (always expanded) and the item's details on screen.
     if (
       highlightSubId &&
       (editing.subTransactions ?? []).some((item) => item.id === highlightSubId)
     ) {
-      setBreakdownOpen(true);
       setItemDetail(editing.subTransactions.find((item) => item.id === highlightSubId));
     }
   }
@@ -426,25 +422,12 @@ export default function TransactionFormScreen() {
   // through a ref so it can never act on a stale closure. Other breakdown
   // changes clear the slot, and an undo id-guard skips a double restore.
 
-  function askActivateBreakdown() {
-    Alert.alert(
-      'Add a breakdown?',
-      'The amount will be replaced by a total calculated from its items. ' +
-        'The breakdown starts empty, so the total is zero until you add items.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Add breakdown',
-          onPress: () => {
-            setBreakdownActive(true);
-            setItems([]);
-            setAmount('0');
-            setBreakdownOpen(true);
-            setErrors({});
-          },
-        },
-      ],
-    );
+  function openAddItemSheet() {
+    if (!breakdownActive) {
+      setBreakdownActive(true);
+      setErrors((current) => ({ ...current, breakdown: undefined }));
+    }
+    setItemSheet({ item: null });
   }
 
   function handleAddItem(draft) {
@@ -452,6 +435,7 @@ export default function TransactionFormScreen() {
     // one after another; only Done / dismissal closes it. A newer edit
     // invalidates any pending Undo.
     undoRef.current = null;
+    setBreakdownActive(true);
     setItems((list) => [...list, { ...draft, id: createId('subtx') }]);
   }
 
@@ -465,10 +449,12 @@ export default function TransactionFormScreen() {
     const index = items.findIndex((item) => item.id === deleted.id);
     if (index < 0) return;
     setItems((list) => list.filter((item) => item.id !== deleted.id));
+    if (items.length === 1) setBreakdownActive(false);
     // Restore position on the same tick's index: the item leaves with its
     // slot remembered, and reinserting it there puts the order back exactly.
     const slot = { item: deleted, index };
     undoRef.current = () => {
+      setBreakdownActive(true);
       setItems((list) => {
         if (list.some((item) => item.id === slot.item.id)) return list;
         const next = [...list];
@@ -862,16 +848,50 @@ export default function TransactionFormScreen() {
             <SectionHeader title="Type" color={summaryInk} />
             <SegmentedControl options={typeOptions} value={type} onChange={setType} dense />
           </View>
-          {type === 'expense' ? (
-            <View style={{ flex: 1 }}>
-              <SectionHeader title="Status" color={summaryInk} />
-              <SegmentedControl
-                options={PAYMENT_OPTIONS}
-                value={paymentStatus}
-                onChange={setPaymentStatus}
-                dense
-              />
-            </View>
+          <View style={{ flex: 1 }}>
+            <SectionHeader title="Status" color={summaryInk} />
+            <SegmentedControl
+              options={PAYMENT_OPTIONS}
+              value={paymentStatus}
+              onChange={setPaymentStatus}
+              dense
+            />
+          </View>
+        </View>
+
+        {/* Budget association as a compact detail line: it never scrolls
+            away, so the folder the entry belongs to is always visible. */}
+        <View
+          style={{
+            alignItems: 'center',
+            borderTopWidth: summaryPalette ? 0 : StyleSheet.hairlineWidth,
+            borderColor: colors.border,
+            flexDirection: 'row',
+            gap: spacing.sm,
+            marginTop: spacing.md,
+            paddingTop: spacing.sm,
+          }}
+        >
+          <Icon
+            name="folder"
+            size={14}
+            color={summaryInk ?? (budget?.color || colors.primary)}
+          />
+          <Text
+            variant="label"
+            numberOfLines={1}
+            style={{ flex: 1, ...(summaryInk ? { color: summaryInk } : null) }}
+          >
+            {budget?.name ?? 'This budget'}
+          </Text>
+          {budget?.start_date ? (
+            <Text
+              variant="caption"
+              tone="faint"
+              style={summaryInk ? { color: summaryInk, opacity: 0.85 } : undefined}
+            >
+              {formatDateRange(budget.start_date, budget.end_date)}
+            </Text>
           ) : null}
         </View>
       </Card>
@@ -918,37 +938,6 @@ export default function TransactionFormScreen() {
             saving it will ask you to confirm.
           </Text>
         ) : null}
-
-        <View style={{ height: spacing.lg }} />
-
-        <SectionHeader title="Budget" />
-        <View
-          style={{
-            alignItems: 'center',
-            backgroundColor: colors.surfaceMuted,
-            borderColor: colors.border,
-            borderRadius: radius.md,
-            borderWidth: StyleSheet.hairlineWidth,
-            flexDirection: 'row',
-            gap: spacing.md,
-            padding: spacing.md,
-          }}
-        >
-          <Icon name="folder" size={18} color={budget?.color || colors.primary} />
-          <View style={{ flex: 1 }}>
-            <Text variant="label" numberOfLines={1}>
-              {budget?.name ?? 'This budget'}
-            </Text>
-            {budget?.start_date ? (
-              <Text variant="caption" tone="faint">
-                {formatDateRange(budget.start_date, budget.end_date)}
-              </Text>
-            ) : null}
-          </View>
-        </View>
-        <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
-          Every entry stays inside the folder that opened this screen.
-        </Text>
 
         <View style={{ height: spacing.lg }} />
 
@@ -1007,45 +996,25 @@ export default function TransactionFormScreen() {
           }}
         />
 
-        {breakdownActive ? (
+        {type !== 'transfer' ? (
           <>
             <View style={{ height: spacing.lg }} />
             <SectionHeader
-              title={`Breakdown · ${items.length}`}
+              title={items.length > 0 ? `Breakdown · ${items.length}` : 'Breakdown'}
               fontSize={14}
-              collapsed={!breakdownOpen}
-              onToggle={() => setBreakdownOpen((open) => !open)}
-              action={
-                <Text variant="caption" tone="muted" style={{ fontVariant: ['tabular-nums'] }}>
-                  {formatCurrency(breakdownTotal, { currency })}
-                </Text>
-              }
             />
-            {breakdownOpen ? (
-              <BreakdownSection
-                items={items}
-                currency={currency}
-                onAddItem={() => setItemSheet({ item: null })}
-                onOpenItem={(item) => setItemDetail(item)}
-                onReorder={handleReorder}
-              />
-            ) : null}
+            <BreakdownSection
+              items={items}
+              currency={currency}
+              onAddItem={openAddItemSheet}
+              onOpenItem={(item) => setItemDetail(item)}
+              onReorder={handleReorder}
+            />
             {errors.breakdown ? (
               <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
                 {errors.breakdown}
               </Text>
             ) : null}
-          </>
-        ) : null}
-
-        {!breakdownActive && type !== 'transfer' ? (
-          <>
-            <View style={{ height: spacing.lg }} />
-            <SectionHeader title="Breakdown" fontSize={14} />
-            <Text variant="caption" tone="faint" style={{ marginBottom: spacing.sm }}>
-              Optional — split this amount into dated items and adjustments.
-            </Text>
-            <Button label="Add breakdown" variant="secondary" onPress={askActivateBreakdown} />
           </>
         ) : null}
 

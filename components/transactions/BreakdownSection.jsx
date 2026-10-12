@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { formatCurrency } from '../../utils/currency';
 import { formatShortDate, formatTime } from '../../utils/dates';
+import { Card } from '../ui/Card';
+import { EmptyState } from '../ui/EmptyState';
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
@@ -11,20 +13,18 @@ import { useTheme } from '../ui/ThemeProvider';
 const ROW_HEIGHT = 56;
 
 /**
- * Ordered list of breakdown items inside the transaction form.
- *
- * Rows are deliberately quiet: a dedicated drag handle, one truncated
- * description with its purchase date/time beneath, and the signed amount —
- * nothing else. Tapping a row opens its detail sheet (full description,
- * notes, move/delete), so edit and delete never fight the drag, and the
- * accessible reorder alternative lives there too. The calculated total sits
- * at the bottom of the section, after the list and the Add item action.
+ * Ordered list of breakdown items inside the transaction form, wrapped in the
+ * same Card shell the Reminder section uses: quiet rows separated by hairline
+ * dividers, a Total line at the bottom, and a centred circular add button
+ * under it. When there are no items the empty state shows the same circular
+ * add affordance instead. Rows are dragged by the dedicated handle;
+ * tapping a row opens its detail sheet (full description, notes, move/delete).
  * Deletion feedback is the app-wide bottom snackbar with Undo, raised by the
  * form; reordering only changes positions — the parent total is the sum, so
  * it can never move.
  */
 export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReorder }) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const [drag, setDrag] = useState(null); // { id, originalIndex, dy }
   // Gesture bookkeeping only; never read while rendering a branch.
   const dragRef = useRef(null);
@@ -58,51 +58,56 @@ export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReo
 
   const total = items.reduce((sum, item) => sum + item.amount, 0);
 
-  return (
-    <View style={{ marginTop: spacing.sm }}>
-      {items.length === 0 ? (
-        <Text variant="caption" tone="faint" style={{ paddingVertical: spacing.sm }}>
-          No items yet. The total stays at zero until you add one — an
-          Adjustment can be larger than a single purchase, but never larger
-          than the running total.
-        </Text>
-      ) : (
-        items.map((item, index) => (
-          <BreakdownRow
-            key={item.id}
-            item={item}
-            index={index}
-            count={items.length}
-            currency={currency}
-            drag={drag}
-            onGrant={grant}
-            onMove={move}
-            onEnd={end}
-            onOpen={() => onOpenItem(item)}
-          />
-        ))
-      )}
+  if (items.length === 0) {
+    return (
+      <Card>
+        <EmptyState icon="list" title="No items yet">
+          <View style={styles.emptyAction}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Add your first item"
+              onPress={onAddItem}
+              style={({ pressed }) => [
+                styles.addCircle,
+                {
+                  backgroundColor: colors.primary,
+                  borderRadius: radius.pill,
+                  opacity: pressed ? 0.85 : 1,
+                  transform: [{ scale: pressed ? 0.96 : 1 }],
+                },
+              ]}
+            >
+              <Icon name="add" size={26} color={colors.onPrimary} />
+            </Pressable>
+            <Text
+              variant="label"
+              tone="primary"
+              style={{ marginTop: spacing.sm, textAlign: 'center' }}
+            >
+              Add your first item
+            </Text>
+          </View>
+        </EmptyState>
+      </Card>
+    );
+  }
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add breakdown item"
-        onPress={onAddItem}
-        hitSlop={4}
-        style={({ pressed }) => [
-          styles.addAction,
-          {
-            borderColor: colors.border,
-            borderRadius: 8,
-            marginTop: spacing.sm,
-            opacity: pressed ? 0.7 : 1,
-          },
-        ]}
-      >
-        <Icon name="add" size={16} color={colors.primary} />
-        <Text variant="label" tone="primary" style={{ marginLeft: spacing.xs }}>
-          Add item
-        </Text>
-      </Pressable>
+  return (
+    <Card>
+      {items.map((item, index) => (
+        <BreakdownRow
+          key={item.id}
+          item={item}
+          index={index}
+          count={items.length}
+          currency={currency}
+          drag={drag}
+          onGrant={grant}
+          onMove={move}
+          onEnd={end}
+          onOpen={() => onOpenItem(item)}
+        />
+      ))}
 
       <View
         style={[
@@ -119,12 +124,31 @@ export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReo
           {formatCurrency(total, { currency })}
         </Text>
       </View>
-    </View>
+
+      <View style={[styles.addAction, { marginTop: spacing.md }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Add breakdown item"
+          onPress={onAddItem}
+          style={({ pressed }) => [
+            styles.addCircle,
+            {
+              backgroundColor: colors.primary,
+              borderRadius: radius.pill,
+              opacity: pressed ? 0.85 : 1,
+              transform: [{ scale: pressed ? 0.96 : 1 }],
+            },
+          ]}
+        >
+          <Icon name="add" size={26} color={colors.onPrimary} />
+        </Pressable>
+      </View>
+    </Card>
   );
 }
 
 function BreakdownRow({ item, index, count, currency, drag, onGrant, onMove, onEnd, onOpen }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
 
   const isDragging = drag?.id === item.id;
   const dy = isDragging ? drag.dy - (index - drag.originalIndex) * ROW_HEIGHT : 0;
@@ -137,25 +161,15 @@ function BreakdownRow({ item, index, count, currency, drag, onGrant, onMove, onE
     <View
       style={[
         styles.row,
-        {
-          height: ROW_HEIGHT,
-          borderRadius: radius.md,
-          paddingHorizontal: spacing.xs,
-          backgroundColor: isDragging ? colors.surfaceElevated : colors.surface,
-          borderColor: isDragging ? colors.primary : colors.border,
-          borderWidth: StyleSheet.hairlineWidth,
-          marginBottom: spacing.xs,
-          transform: [{ translateY: dy }],
-          // Keep the dragged row above its shifted neighbours.
-          zIndex: isDragging ? 2 : 1,
-          ...(isDragging
-            ? {
-                shadowOpacity: 0.18,
-                shadowRadius: 8,
-                shadowOffset: { width: 0, height: 4 },
-              }
-            : null),
+        index > 0 && {
+          marginTop: spacing.sm,
+          borderTopColor: colors.border,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          paddingTop: spacing.sm,
         },
+        isDragging
+          ? { transform: [{ translateY: dy }], zIndex: 2, opacity: 0.85 }
+          : null,
       ]}
     >
       <View
@@ -193,7 +207,6 @@ function BreakdownRow({ item, index, count, currency, drag, onGrant, onMove, onE
         style={{
           color: item.amount < 0 ? colors.expense : colors.income,
           fontVariant: ['tabular-nums'],
-          marginLeft: 6,
         }}
       >
         {formatCurrency(item.amount, { currency, showSign: item.amount > 0 })}
@@ -206,7 +219,8 @@ const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
     flexDirection: 'row',
-    shadowColor: '#000',
+    gap: 10,
+    paddingVertical: 2,
   },
   handle: {
     alignItems: 'center',
@@ -216,7 +230,6 @@ const styles = StyleSheet.create({
   },
   copy: {
     flex: 1,
-    marginLeft: 6,
     minWidth: 0,
     paddingVertical: 6,
   },
@@ -226,13 +239,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  addCircle: {
+    alignItems: 'center',
+    height: 56,
+    justifyContent: 'center',
+    width: 56,
+  },
   addAction: {
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderStyle: 'dashed',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    minHeight: 44,
-    paddingVertical: 8,
+  },
+  emptyAction: {
+    alignItems: 'center',
   },
 });
