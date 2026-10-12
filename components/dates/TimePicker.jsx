@@ -26,7 +26,7 @@ export function TimePicker({
   helperText,
   style,
 }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const [open, setOpen] = useState(false);
 
   const display = value ? formatTime(value) : '';
@@ -52,7 +52,7 @@ export function TimePicker({
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: error ? colors.expense : colors.border,
-            borderRadius: radius.sm,
+            borderRadius: 50,
             opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
           },
         ]}

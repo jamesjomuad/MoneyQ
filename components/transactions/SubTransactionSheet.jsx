@@ -252,7 +252,13 @@ export function SubTransactionSheet({ item, currency, otherTotal = 0, onAddItem,
               onChangeText={setNotes}
               placeholder="Card used, receipt number…"
               multiline
-              numberOfLines={3}
+              numberOfLines={4}
+              inputStyle={{
+                borderRadius: 16,
+                minHeight: 96,
+                paddingTop: spacing.md,
+                textAlignVertical: 'top',
+              }}
               style={{ marginBottom: spacing.sm }}
             />
           ) : (
