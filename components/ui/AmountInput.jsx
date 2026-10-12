@@ -45,7 +45,7 @@ export function AmountInput({
               borderWidth: StyleSheet.hairlineWidth,
             },
         { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-        large && { minHeight: 88 },
+        large && { minHeight: 72, paddingVertical: spacing.sm },
         style,
       ]}
     >
