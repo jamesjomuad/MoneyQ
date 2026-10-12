@@ -431,12 +431,15 @@ export default function TransactionFormScreen() {
   }
 
   function handleAddItem(draft) {
-    // The sheet stays open after a successful add so items can be entered
-    // one after another; only Done / dismissal closes it. A newer edit
-    // invalidates any pending Undo.
+    // A successful add closes the drawer and returns to the form: the toast
+    // lives under the native Modal, so it is only ever visible once the
+    // sheet is gone. The section re-renders instantly with the new row,
+    // count and total. A newer add invalidates any pending Undo.
     undoRef.current = null;
     setBreakdownActive(true);
     setItems((list) => [...list, { ...draft, id: createId('subtx') }]);
+    setItemSheet(null);
+    showToast('Breakdown item added', 'success');
   }
 
   function handleApplyItem(draft) {
