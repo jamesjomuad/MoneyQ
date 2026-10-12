@@ -18,7 +18,7 @@ import { useTheme } from '../ui/ThemeProvider';
  * the current value and Cancel can never mutate it.
  */
 export function FolderColorField({ value = null, onChange }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const [open, setOpen] = useState(false);
 
   const palette = resolveFolderPalette(value, colors);
@@ -38,7 +38,7 @@ export function FolderColorField({ value = null, onChange }) {
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: colors.border,
-            borderRadius: radius.sm,
+            borderRadius: 50,
             opacity: pressed ? 0.7 : 1,
           },
         ]}

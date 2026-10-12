@@ -307,6 +307,9 @@ export default function TransactionFormScreen() {
   // Sticky card height: measured so the overlaid scroll body starts its
   // content exactly below the card and its shadow falloff.
   const [cardHeight, setCardHeight] = useState(0);
+  // Bottom action bar height (create mode): measured so the overlaid scroll
+  // body also pads its content clear of the bar pinned over it.
+  const [barHeight, setBarHeight] = useState(0);
 
   // The sticky action bar rides the keyboard: with the Android window in pan
   // mode it would otherwise sit behind the keyboard, so it lifts by exactly
@@ -789,7 +792,7 @@ export default function TransactionFormScreen() {
         <Screen
           contentContainerStyle={{
             paddingTop: spacing.md + cardHeight + spacing.xl,
-            paddingBottom: 48 + keyboardHeight,
+            paddingBottom: (transactionId ? 48 : barHeight) + keyboardHeight,
           }}
         >
         <SectionHeader title="Description" />
@@ -800,9 +803,8 @@ export default function TransactionFormScreen() {
           returnKeyType="next"
         />
 
-        <SectionHeader title="Date" />
+        <SectionHeader title="Transaction Date" />
         <DatePicker
-          label="Transaction Date"
           title="Transaction Date"
           value={date}
           onChange={applyDate}
@@ -976,6 +978,8 @@ export default function TransactionFormScreen() {
       <Card
         onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}
         style={{
+          borderRadius: 25,
+          borderWidth: 0,
           marginHorizontal: spacing.lg,
           marginTop: spacing.md,
           padding: spacing.md,
@@ -987,9 +991,7 @@ export default function TransactionFormScreen() {
             : null),
         }}
       >
-        <View style={{ alignSelf: 'center' }}>
-          <SectionHeader title="Amount" color={summaryInk} />
-        </View>
+        <SectionHeader title="Amount" color={summaryInk} />
         {breakdownActive ? (
           <>
             <AmountInput
@@ -998,14 +1000,13 @@ export default function TransactionFormScreen() {
               editable={false}
               decimalPlaces={getCurrency(currency).minorUnits}
               bare
-              centered
               large
+              align="left"
               ink={summaryInk ?? undefined}
             />
             <Text
               variant="caption"
               tone="faint"
-              textAlign="center"
               style={{
                 marginTop: spacing.xs,
                 ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
@@ -1024,16 +1025,15 @@ export default function TransactionFormScreen() {
               decimalPlaces={getCurrency(currency).minorUnits}
               autoFocus={!transactionId}
               bare
-              centered
               large
+              align="left"
               ink={summaryInk ?? undefined}
             />
             {errors.amount ? (
               <Text
                 variant="caption"
                 tone="expense"
-                textAlign="center"
-                style={{ marginTop: spacing.xs, ...(summaryInk ? { color: summaryInk } : null) }}
+                  style={{ marginTop: spacing.xs, ...(summaryInk ? { color: summaryInk } : null) }}
               >
                 {errors.amount}
               </Text>
@@ -1041,7 +1041,6 @@ export default function TransactionFormScreen() {
             <Text
               variant="caption"
               tone="faint"
-              textAlign="center"
               style={{
                 marginTop: spacing.xs,
                 ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
@@ -1110,13 +1109,22 @@ export default function TransactionFormScreen() {
 
       {transactionId ? null : (
         <View
+          onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
           style={{
+            // The scroll body above is an absolute overlay filling the whole
+            // scene, so nothing in normal flow holds this bar down any more.
+            // Pin it to the bottom explicitly, or it renders directly under
+            // the sticky amount card.
             backgroundColor: colors.background,
             borderColor: colors.border,
             borderTopWidth: StyleSheet.hairlineWidth,
+            bottom: 0,
+            left: 0,
             paddingHorizontal: spacing.lg,
             paddingTop: spacing.md,
             paddingBottom: spacing.md + insets.bottom,
+            position: 'absolute',
+            right: 0,
             transform: [{ translateY: -Math.max(0, keyboardHeight - insets.bottom) }],
           }}
         >

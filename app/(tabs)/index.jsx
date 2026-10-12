@@ -134,9 +134,8 @@ export default function HomeScreen() {
             {
               backgroundColor: colors.surfaceMuted,
               borderColor: colors.border,
-              // Slightly softer than the 8px fields so the search bar reads
-              // as its own gentle rounded rectangle.
-              borderRadius: 10,
+              // Matches the app's pill-shaped fields.
+              borderRadius: 50,
               marginBottom: spacing.md,
               paddingHorizontal: spacing.md,
             },

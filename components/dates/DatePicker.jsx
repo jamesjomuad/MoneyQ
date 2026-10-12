@@ -29,7 +29,7 @@ export function DatePicker({
   shortcuts = false,
   style,
 }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const [open, setOpen] = useState(false);
 
   const display = friendlyDate(value);
@@ -56,7 +56,7 @@ export function DatePicker({
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: error ? colors.expense : pressed ? colors.primary : colors.border,
-            borderRadius: radius.sm,
+            borderRadius: 50,
             opacity: disabled ? 0.5 : 1,
           },
         ]}

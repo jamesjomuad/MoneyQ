@@ -21,10 +21,11 @@ export function AmountInput({
   style,
   bare = false,
   ink,
+  align = 'right',
   centered = false,
   large = false,
 }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
 
   function handleChange(text) {
     if (!onChangeText) return;
@@ -35,13 +36,14 @@ export function AmountInput({
     <View
       style={[
         styles.row,
+        align === 'left' && { justifyContent: 'flex-start' },
         centered && { justifyContent: 'center' },
         bare
           ? { backgroundColor: 'transparent', borderWidth: 0 }
           : {
               backgroundColor: colors.surface,
               borderColor: colors.border,
-              borderRadius: radius.sm,
+              borderRadius: 50,
               borderWidth: StyleSheet.hairlineWidth,
             },
         { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
@@ -70,6 +72,7 @@ export function AmountInput({
         style={[
           styles.input,
           { color: ink ?? colors.text },
+          align === 'left' && { textAlign: 'left' },
           large && { fontSize: 40, letterSpacing: -0.8 },
           centered && { flex: 0, minWidth: 44, textAlign: 'center' },
         ]}

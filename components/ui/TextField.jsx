@@ -4,7 +4,7 @@ import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
 export function TextField({ label, hint, error, style, inputStyle, ...rest }) {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
 
   return (
     <View style={[{ marginBottom: spacing.lg }, style]}>
@@ -22,7 +22,7 @@ export function TextField({ label, hint, error, style, inputStyle, ...rest }) {
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: error ? colors.expense : colors.border,
-            borderRadius: radius.sm,
+            borderRadius: 50,
             color: colors.text,
             paddingHorizontal: spacing.md,
             paddingVertical: spacing.md,

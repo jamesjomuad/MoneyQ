@@ -13,7 +13,7 @@ import { useTheme } from "../../components/ui/ThemeProvider";
 import { useTagsStore } from "../../stores/tagsStore";
 
 export default function TagsScreen() {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const tags = useTagsStore((state) => state.tags);
   const isLoading = useTagsStore((state) => state.isLoading);
   const load = useTagsStore((state) => state.load);
@@ -151,7 +151,7 @@ export default function TagsScreen() {
                 {
                   backgroundColor: colors.surface,
                   borderColor: colors.border,
-                  borderRadius: radius.md,
+                  borderRadius: 50,
                   marginBottom: spacing.sm,
                   paddingHorizontal: spacing.md,
                   paddingVertical: spacing.sm,
