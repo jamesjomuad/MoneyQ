@@ -9,6 +9,10 @@ export const fileService = { supported: false };
 
 const UNSUPPORTED = 'Export & import are not available in the browser preview.';
 
+export async function saveBackupToUserFile() {
+  throw new Error(UNSUPPORTED);
+}
+
 export async function saveBackup() {
   throw new Error(UNSUPPORTED);
 }

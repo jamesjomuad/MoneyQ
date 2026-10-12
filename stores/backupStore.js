@@ -26,7 +26,7 @@ import {
   readSnapshot,
   restoreAll,
 } from '../storage/repositories/backupRepository';
-import { pickBackup, saveBackup } from '../services/fileService';
+import { pickBackup, saveBackup, saveBackupToUserFile } from '../services/fileService';
 import { useBudgetDetailStore } from './budgetDetailStore';
 import { useBudgetsStore } from './budgetsStore';
 import { useCalendarStore } from './calendarStore';
@@ -50,7 +50,11 @@ export const useBackupStore = create((set, get) => ({
     set({ error: null });
   },
 
-  async exportBackup() {
+  /**
+   * destination: 'save' shows the Android "Save to" dialog and writes the
+   * file there; 'share' opens the share sheet from a cache copy.
+   */
+  async exportBackup(destination = 'save') {
     if (get().isBusy) return;
     set({ isBusy: true });
     try {
@@ -59,11 +63,16 @@ export const useBackupStore = create((set, get) => ({
         appVersion: Constants.expoConfig?.version ?? null,
         createdAt: nowIso(),
       });
-      const { name } = await saveBackup(
-        stringifyBackup(envelope),
-        buildBackupFileName(todayIso()),
-      );
-      showToast(`Backup exported as ${name}`, 'success');
+      const json = stringifyBackup(envelope);
+      const fileName = buildBackupFileName(todayIso());
+      if (destination === 'share') {
+        const { name } = await saveBackup(json, fileName);
+        showToast(`Backup exported as ${name}`, 'success');
+      } else {
+        const saved = await saveBackupToUserFile(json, fileName);
+        // A cancelled Save-dialog is a neutral non-event: no toast, no error.
+        if (saved) showToast(`Backup saved as ${saved.name}`, 'success');
+      }
     } catch (error) {
       showToast('Could not export the backup', 'error');
       set({ error: { title: 'Export failed', message: error?.message ?? 'Please try again.' } });

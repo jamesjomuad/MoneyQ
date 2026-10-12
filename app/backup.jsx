@@ -76,13 +76,21 @@ export default function BackupScreen() {
           JSON file. Nothing leaves your device unless you save or share it yourself.
         </Text>
         {fileService.supported ? (
-          <Button
-            label={isBusy && !preview && !plan ? 'Exporting…' : 'Export backup'}
-            icon="database"
-            onPress={exportBackup}
-            disabled={isBusy}
-            style={{ marginTop: spacing.md }}
-          />
+          <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
+            <Button
+              label={isBusy && !preview && !plan ? 'Exporting…' : 'Save backup file'}
+              icon="folder"
+              onPress={() => exportBackup('save')}
+              disabled={isBusy}
+            />
+            <Button
+              label="Share"
+              icon="share"
+              variant="secondary"
+              onPress={() => exportBackup('share')}
+              disabled={isBusy}
+            />
+          </View>
         ) : (
           <Text variant="caption" tone="warning" style={{ marginTop: spacing.sm }}>
             Not available in the browser preview — run MoneyQ on your device to export.

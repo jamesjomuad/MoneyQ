@@ -5,6 +5,10 @@ All notable changes to MoneyQ. Dates are local calendar days; newest first.
 ## 2026-10-12
 
 ### Added
+- Export now offers a real "Save backup file" action: Android's system
+  Save-to dialog lets you pick the folder and name, and the JSON backup is
+  written straight to that location. The share sheet stays available as a
+  secondary "Share" button.
 - Export & Import: one JSON backup file with every budget, transaction,
   breakdown item, tag, reminder and setting, saved through the system share
   sheet or read back with the system file picker. Imports are fully validated

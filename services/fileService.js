@@ -9,9 +9,28 @@
 
 import * as DocumentPicker from 'expo-document-picker';
 import { File, Paths } from 'expo-file-system';
+import { ResultCode, startActivityAsync } from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 
 export const fileService = { supported: true };
+
+/**
+ * Real "Save to" dialog (Android SAF CREATE_DOCUMENT): the user picks the
+ * folder, renames the file and the system creates it empty; we fill the
+ * returned content:// URI with the backup JSON. Resolves null when the user
+ * cancels the dialog.
+ */
+export async function saveBackupToUserFile(json, fileName) {
+  const safeName = String(fileName).replace(/[^A-Za-z0-9._-]/g, '-');
+  const result = await startActivityAsync('android.intent.action.CREATE_DOCUMENT', {
+    type: 'application/json',
+    extra: { 'android.intent.extra.TITLE': safeName },
+  });
+  if (result?.resultCode !== ResultCode.Success || !result?.data) return null;
+  const file = new File(result.data);
+  file.write(json);
+  return { name: file.name || safeName, size: file.size };
+}
 
 /** Write to cache, then open the platform save/share UI on the file. */
 export async function saveBackup(json, fileName) {

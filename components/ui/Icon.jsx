@@ -41,6 +41,7 @@ const ICONS = {
   income: { ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' },
   transfer: { ios: 'arrow.left.arrow.right', android: 'swap_horiz', web: 'swap_horiz' },
   paid: { ios: 'checkmark.circle', android: 'check_circle', web: 'check_circle' },
+  share: { ios: 'square.and.arrow.up', android: 'share', web: 'share' },
   undo: { ios: 'arrow.uturn.backward', android: 'undo', web: 'undo' },
   refresh: { ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' },
   pin: { ios: 'pin', android: 'push_pin', web: 'push_pin' },
