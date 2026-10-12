@@ -787,16 +787,28 @@ export default function TransactionFormScreen() {
           card is the sticky element itself — no wrapper band around it. */}
       <Card
         style={{
-          marginBottom: spacing.sm,
+          // marginBottom clears the full shadow falloff (~offset + blur) so
+          // the opaque scroll body never clips the bottom edge of the lift.
+          marginBottom: spacing.xl,
           marginHorizontal: spacing.lg,
           marginTop: spacing.md,
           padding: spacing.md,
+          // Soft, diffuse drop shadow so the card floats above the page;
+          // the theme shadow token carries its own alpha, and elevation
+          // gives Android the same lift.
+          shadowColor: colors.shadow,
+          shadowOpacity: 0.5,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 6,
           ...(summaryPalette
             ? { backgroundColor: summaryPalette.folder, borderColor: summaryPalette.folderBorder }
             : null),
         }}
       >
+        <View style={{ alignSelf: 'center' }}>
           <SectionHeader title="Amount" color={summaryInk} />
+        </View>
         {breakdownActive ? (
           <>
             <AmountInput
@@ -804,10 +816,15 @@ export default function TransactionFormScreen() {
               value={String(fromMinor(breakdownTotal, currency))}
               editable={false}
               decimalPlaces={getCurrency(currency).minorUnits}
+              bare
+              centered
+              large
+              ink={summaryInk ?? undefined}
             />
             <Text
               variant="caption"
               tone="faint"
+              textAlign="center"
               style={{
                 marginTop: spacing.xs,
                 ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
@@ -825,11 +842,16 @@ export default function TransactionFormScreen() {
               onChangeText={setAmount}
               decimalPlaces={getCurrency(currency).minorUnits}
               autoFocus={!transactionId}
+              bare
+              centered
+              large
+              ink={summaryInk ?? undefined}
             />
             {errors.amount ? (
               <Text
                 variant="caption"
                 tone="expense"
+                textAlign="center"
                 style={{ marginTop: spacing.xs, ...(summaryInk ? { color: summaryInk } : null) }}
               >
                 {errors.amount}
@@ -838,6 +860,7 @@ export default function TransactionFormScreen() {
             <Text
               variant="caption"
               tone="faint"
+              textAlign="center"
               style={{
                 marginTop: spacing.xs,
                 ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),

@@ -19,6 +19,10 @@ export function AmountInput({
   inputRef,
   decimalPlaces = 2,
   style,
+  bare = false,
+  ink,
+  centered = false,
+  large = false,
 }) {
   const { colors, radius, spacing } = useTheme();
 
@@ -31,17 +35,25 @@ export function AmountInput({
     <View
       style={[
         styles.row,
-        {
-          backgroundColor: colors.surface,
-          borderColor: colors.border,
-          borderRadius: radius.lg,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
-        },
+        centered && { justifyContent: 'center' },
+        bare
+          ? { backgroundColor: 'transparent', borderWidth: 0 }
+          : {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radius.lg,
+              borderWidth: StyleSheet.hairlineWidth,
+            },
+        { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+        large && { minHeight: 88 },
         style,
       ]}
     >
-      <Text variant="title" tone="muted" style={{ marginRight: spacing.sm }}>
+      <Text
+        variant="title"
+        tone={ink ? 'default' : 'muted'}
+        style={{ marginRight: spacing.sm, fontSize: large ? 24 : 20, ...(ink ? { color: ink } : null) }}
+      >
         {symbol}
       </Text>
       <TextInput
@@ -51,11 +63,16 @@ export function AmountInput({
         editable={editable}
         autoFocus={autoFocus}
         placeholder="0.00"
-        placeholderTextColor={colors.textFaint}
+        placeholderTextColor={ink ?? colors.textFaint}
         keyboardType="decimal-pad"
         returnKeyType="done"
-        selectionColor={colors.primary}
-        style={[styles.input, { color: colors.text }]}
+        selectionColor={ink ?? colors.primary}
+        style={[
+          styles.input,
+          { color: ink ?? colors.text },
+          large && { fontSize: 40, letterSpacing: -0.8 },
+          centered && { flex: 0, minWidth: 44, textAlign: 'center' },
+        ]}
       />
     </View>
   );
@@ -64,7 +81,6 @@ export function AmountInput({
 const styles = StyleSheet.create({
   row: {
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     justifyContent: 'flex-end',
     minHeight: 64,
