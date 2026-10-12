@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   dayTextSelected: {
-    fontWeight: '700',
+    fontFamily: 'Manrope_700Bold',
   },
   dots: {
     flexDirection: 'row',

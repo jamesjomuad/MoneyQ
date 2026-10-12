@@ -13,7 +13,13 @@ export function SegmentedControl({ options, value, onChange, style, dense = fals
       accessibilityRole="tablist"
       style={[
         styles.track,
-        { backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: spacing.xs },
+        {
+          backgroundColor: colors.surfaceMuted,
+          // Dense tabs are capsules; the track is the capsule radius plus the
+          // padding so the outline wraps the segments concentrically.
+          borderRadius: dense ? 54 : radius.md,
+          padding: spacing.xs,
+        },
         style,
       ]}
     >
@@ -31,7 +37,7 @@ export function SegmentedControl({ options, value, onChange, style, dense = fals
               {
                 backgroundColor: active ? colors.surface : 'transparent',
                 borderColor: active ? colors.border : 'transparent',
-                borderRadius: radius.sm,
+                borderRadius: dense ? 50 : radius.sm,
                 opacity: pressed ? 0.75 : 1,
               },
             ]}

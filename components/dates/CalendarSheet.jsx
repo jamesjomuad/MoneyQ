@@ -560,10 +560,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   dayTextSelected: {
-    fontWeight: '700',
+    fontFamily: 'Manrope_700Bold',
   },
   dayTextToday: {
-    fontWeight: '600',
+    fontFamily: 'Manrope_600SemiBold',
   },
   panel: {
     flexDirection: 'row',
@@ -594,7 +594,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   panelTextStrong: {
-    fontWeight: '700',
+    fontFamily: 'Manrope_700Bold',
   },
   shortcuts: {
     flexDirection: 'row',

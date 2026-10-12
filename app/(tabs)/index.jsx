@@ -134,7 +134,9 @@ export default function HomeScreen() {
             {
               backgroundColor: colors.surfaceMuted,
               borderColor: colors.border,
-              borderRadius: radius.pill,
+              // Slightly softer than the 8px fields so the search bar reads
+              // as its own gentle rounded rectangle.
+              borderRadius: 10,
               marginBottom: spacing.md,
               paddingHorizontal: spacing.md,
             },
@@ -169,7 +171,7 @@ export default function HomeScreen() {
               style={({ pressed }) => [
                 styles.clearButton,
                 {
-                  borderRadius: radius.pill,
+                  borderRadius: radius.sm,
                   opacity: pressed ? 0.55 : 1,
                 },
               ]}
@@ -331,6 +333,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   searchInput: {
+    fontFamily: 'Manrope_400Regular',
     flex: 1,
     fontSize: 15,
     minHeight: 44,

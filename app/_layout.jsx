@@ -1,9 +1,17 @@
 import {
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
+} from "@expo-google-fonts/manrope";
+import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider as NavigationThemeProvider,
   Stack,
 } from "expo-router";
+import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
@@ -29,12 +37,26 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const databaseStatus = useAppStore((state) => state.databaseStatus);
+  const [fontsLoaded, fontError] = useFonts({
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
+  });
+  // A font load failure must not brick the app: start anyway on system fonts.
+  const fontsSettled = fontsLoaded || !!fontError;
 
   useEffect(() => {
-    if (databaseStatus === "ready" || databaseStatus === "error") {
+    if (
+      fontsSettled &&
+      (databaseStatus === "ready" || databaseStatus === "error")
+    ) {
       SplashScreen.hideAsync();
     }
-  }, [databaseStatus]);
+  }, [fontsSettled, databaseStatus]);
+
+  if (!fontsSettled) return null;
 
   return (
     <ThemeProvider>

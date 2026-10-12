@@ -52,7 +52,7 @@ export function TimePicker({
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: error ? colors.expense : colors.border,
-            borderRadius: radius.md,
+            borderRadius: radius.sm,
             opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
           },
         ]}

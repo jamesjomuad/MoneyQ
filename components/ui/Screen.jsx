@@ -142,7 +142,7 @@ export function SectionHeader({
         <Text
           variant="label"
           tone="muted"
-          style={[{ fontWeight: '700' }, color ? { color } : null, fontSize ? { fontSize } : null]}
+          style={[{ fontFamily: 'Manrope_700Bold' }, color ? { color } : null, fontSize ? { fontSize } : null]}
         >
           {title.toUpperCase()}
         </Text>

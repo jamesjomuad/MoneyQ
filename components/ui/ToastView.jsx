@@ -55,11 +55,16 @@ export function ToastView() {
 
   return (
     <View
-      // Plain feedback floats above the UI without intercepting touches; a
-      // snackbar action must be pressable, so only then does the pill take
-      // touches (and just its own box).
-      pointerEvents={current.action ? 'box-none' : 'none'}
-      style={[styles.host, { bottom: insets.bottom + spacing.xl }]}
+      style={[
+        styles.host,
+        // Plain feedback floats above the UI without intercepting touches; a
+        // snackbar action must be pressable, so only then does the pill take
+        // touches (and just its own box).
+        {
+          pointerEvents: current.action ? 'box-none' : 'none',
+          bottom: insets.bottom + spacing.xl,
+        },
+      ]}
     >
       <Animated.View
         accessibilityLiveRegion="polite"
@@ -128,7 +133,7 @@ const styles = StyleSheet.create({
   pill: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    elevation: 4,
+    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
     flexDirection: 'row',
     gap: 8,
     maxHeight: 80,

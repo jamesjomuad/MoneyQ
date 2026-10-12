@@ -18,7 +18,7 @@ export function Chip({ label, emoji, active = false, onPress, style }) {
         {
           backgroundColor: active ? colors.primarySoft : colors.surface,
           borderColor: active ? colors.primary : colors.border,
-          borderRadius: radius.pill,
+          borderRadius: radius.md,
           paddingVertical: spacing.sm,
           paddingHorizontal: spacing.md,
           opacity: pressed ? 0.75 : 1,

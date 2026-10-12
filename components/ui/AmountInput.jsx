@@ -41,7 +41,7 @@ export function AmountInput({
           : {
               backgroundColor: colors.surface,
               borderColor: colors.border,
-              borderRadius: radius.lg,
+              borderRadius: radius.sm,
               borderWidth: StyleSheet.hairlineWidth,
             },
         { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
@@ -87,8 +87,8 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    fontFamily: 'Manrope_700Bold',
     fontSize: 30,
-    fontWeight: '700',
     letterSpacing: -0.5,
     padding: 0,
     textAlign: 'right',

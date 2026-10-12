@@ -56,7 +56,7 @@ export function DatePicker({
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: error ? colors.expense : pressed ? colors.primary : colors.border,
-            borderRadius: radius.md,
+            borderRadius: radius.sm,
             opacity: disabled ? 0.5 : 1,
           },
         ]}

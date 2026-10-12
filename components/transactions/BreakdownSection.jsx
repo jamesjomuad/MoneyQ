@@ -213,11 +213,7 @@ function BreakdownRow({
               opacity: 0.92,
               backgroundColor: colors.surfaceElevated,
               borderRadius: 8,
-              shadowColor: '#000',
-              shadowOpacity: 0.18,
-              shadowRadius: 8,
-              shadowOffset: { width: 0, height: 4 },
-              elevation: 6,
+              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.18)',
             }
           : null,
       ]}

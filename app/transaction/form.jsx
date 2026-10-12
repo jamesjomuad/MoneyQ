@@ -794,13 +794,8 @@ export default function TransactionFormScreen() {
           marginTop: spacing.md,
           padding: spacing.md,
           // Soft, diffuse drop shadow so the card floats above the page;
-          // the theme shadow token carries its own alpha, and elevation
-          // gives Android the same lift.
-          shadowColor: colors.shadow,
-          shadowOpacity: 0.5,
-          shadowRadius: 16,
-          shadowOffset: { width: 0, height: 6 },
-          elevation: 6,
+          // the theme shadow token carries its own alpha.
+          boxShadow: `0 6px 16px ${colors.shadow}`,
           ...(summaryPalette
             ? { backgroundColor: summaryPalette.folder, borderColor: summaryPalette.folderBorder }
             : null),

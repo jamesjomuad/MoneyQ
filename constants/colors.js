@@ -143,12 +143,23 @@ export const radius = {
   pill: 999,
 };
 
+// Manrope static weights bundled via @expo-google-fonts/manrope. The key
+// doubles as the family name registered by expo-font, and the weight lives in
+// the font file itself — no synthetic bold via fontWeight.
+export const fontFamilies = {
+  regular: 'Manrope_400Regular',
+  medium: 'Manrope_500Medium',
+  semibold: 'Manrope_600SemiBold',
+  bold: 'Manrope_700Bold',
+  extraBold: 'Manrope_800ExtraBold',
+};
+
 export const typography = {
-  display: { fontSize: 32, fontWeight: '700', letterSpacing: -0.6 },
-  amount: { fontSize: 26, fontWeight: '700', letterSpacing: -0.4 },
-  title: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
-  heading: { fontSize: 17, fontWeight: '600' },
-  body: { fontSize: 15, fontWeight: '400' },
-  label: { fontSize: 13, fontWeight: '600', letterSpacing: 0.2 },
-  caption: { fontSize: 12, fontWeight: '400' },
+  display: { fontFamily: fontFamilies.extraBold, fontSize: 32, letterSpacing: -0.6 },
+  amount: { fontFamily: fontFamilies.bold, fontSize: 26, letterSpacing: -0.4 },
+  title: { fontFamily: fontFamilies.bold, fontSize: 20, letterSpacing: -0.3 },
+  heading: { fontFamily: fontFamilies.semibold, fontSize: 17 },
+  body: { fontFamily: fontFamilies.regular, fontSize: 15 },
+  label: { fontFamily: fontFamilies.semibold, fontSize: 13, letterSpacing: 0.2 },
+  caption: { fontFamily: fontFamilies.regular, fontSize: 12 },
 };

@@ -22,7 +22,7 @@ export function TextField({ label, hint, error, style, inputStyle, ...rest }) {
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: error ? colors.expense : colors.border,
-            borderRadius: radius.md,
+            borderRadius: radius.sm,
             color: colors.text,
             paddingHorizontal: spacing.md,
             paddingVertical: spacing.md,
@@ -48,8 +48,8 @@ export function TextField({ label, hint, error, style, inputStyle, ...rest }) {
 const styles = StyleSheet.create({
   input: {
     borderWidth: StyleSheet.hairlineWidth,
+    fontFamily: 'Manrope_500Medium',
     fontSize: 15,
-    fontWeight: '400',
     width: '100%',
   },
 });

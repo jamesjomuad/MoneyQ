@@ -21,11 +21,9 @@ import { useTheme } from '../ui/ThemeProvider';
  * a subtle 1 px border + a soft shadow, all from theme tokens, so it reads
  * premium in light, dark and the MoneyQ navy palette.
  *
- * The shadow and the border live on two separate stacked layers. Android
- * derives an elevated view's shadow from its outline; when that same view also
- * has a 1 px border, the outline falls back to the unrounded border box and
- * the shadow renders as a straight line under the card. Keeping `elevation` on
- * a borderless surface pill behind the bordered card removes that artifact.
+ * The shadow and the border live on two separate stacked layers: a
+ * borderless surface pill carries the boxShadow, and the bordered card sits
+ * on top of it. This keeps the rounded shadow crisp on every platform.
  *
  * The center action keeps its original purpose (create budget) and stays
  * centered and elevated, docked over the capsule's top edge with a thin surface
@@ -79,10 +77,10 @@ function TabButton({ descriptor, route, focused, navigate }) {
     >
       <View style={styles.iconWrap}>
         <Animated.View
-          pointerEvents="none"
           style={[
             styles.indicator,
             {
+              pointerEvents: 'none',
               backgroundColor: colors.primarySoft,
               borderRadius: INDICATOR_H / 2,
             },
@@ -101,7 +99,7 @@ function TabButton({ descriptor, route, focused, navigate }) {
         numberOfLines={1}
         style={{
           fontSize: LABEL_SIZE,
-          fontWeight: focused ? '600' : '500',
+          fontFamily: focused ? 'Manrope_600SemiBold' : 'Manrope_500Medium',
           marginTop: 3,
         }}
       >
@@ -121,10 +119,10 @@ export function BottomTabBar({ state, descriptors, navigation }) {
 
   return (
     <View
-      pointerEvents="box-none"
       style={[
         styles.band,
         {
+          pointerEvents: 'box-none',
           backgroundColor: colors.background,
           // Reserve the action's overhang plus a little air above the capsule.
           paddingTop: FAB_OVERHANG + spacing.xs,
@@ -137,17 +135,15 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     >
       <View style={styles.cardWrap}>
         {/* Borderless surface pill that casts the shadow; the bordered card
-            sits on top of it so Android never sees border + elevation at once. */}
+            sits on top of it so the shadow keeps its rounded outline. */}
         <View
-          pointerEvents="none"
-          style={[
-            styles.cardShadow,
-            {
-              backgroundColor: colors.surface,
-              borderRadius: CARD_H / 2,
-              shadowColor: colors.shadow,
-            },
-          ]}
+          style={{
+            ...styles.cardShadow,
+            pointerEvents: 'none',
+            backgroundColor: colors.surface,
+            borderRadius: CARD_H / 2,
+            boxShadow: `0 4px 16px ${colors.shadow}`,
+          }}
         />
 
         <View
@@ -175,8 +171,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
           <View
             accessibilityElementsHidden
             importantForAccessibility="no"
-            pointerEvents="none"
-            style={{ width: FAB_SLOT }}
+            style={{ pointerEvents: 'none', width: FAB_SLOT }}
           />
 
           {routes.slice(middle).map((route, i) => {
@@ -212,24 +207,15 @@ export function BottomTabBar({ state, descriptors, navigation }) {
             ]}
           >
             <View
-              pointerEvents="none"
-              style={[
-                styles.fabRing,
-                {
-                  backgroundColor: colors.surface,
-                  borderRadius: FAB_OUTER / 2,
-                },
-              ]}
+              style={{ ...styles.fabRing, pointerEvents: 'none', backgroundColor: colors.surface, borderRadius: FAB_OUTER / 2 }}
             />
             <View
-              style={[
-                styles.fabCore,
-                {
-                  backgroundColor: colors.primary,
-                  borderRadius: FAB_GREEN / 2,
-                  shadowColor: colors.shadow,
-                },
-              ]}
+              style={{
+                ...styles.fabCore,
+                backgroundColor: colors.primary,
+                borderRadius: FAB_GREEN / 2,
+                boxShadow: `0 3px 8px ${colors.shadow}`,
+              }}
             >
               <Icon name="add" size={26} color={colors.onPrimary} />
             </View>
@@ -251,10 +237,6 @@ const styles = StyleSheet.create({
   },
   cardShadow: {
     ...StyleSheet.absoluteFillObject,
-    elevation: 6,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
   },
   card: {
     alignItems: 'center',
@@ -292,12 +274,8 @@ const styles = StyleSheet.create({
   },
   fabCore: {
     alignItems: 'center',
-    elevation: 6,
     height: FAB_GREEN,
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.28,
-    shadowRadius: 8,
     width: FAB_GREEN,
   },
 });

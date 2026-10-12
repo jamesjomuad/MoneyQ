@@ -38,7 +38,7 @@ export function FolderColorField({ value = null, onChange }) {
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: colors.border,
-            borderRadius: radius.md,
+            borderRadius: radius.sm,
             opacity: pressed ? 0.7 : 1,
           },
         ]}
