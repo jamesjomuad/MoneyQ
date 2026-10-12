@@ -5,6 +5,15 @@ All notable changes to MoneyQ. Dates are local calendar days; newest first.
 ## 2026-10-12
 
 ### Added
+- Export & Import: one JSON backup file with every budget, transaction,
+  breakdown item, tag, reminder and setting, saved through the system share
+  sheet or read back with the system file picker. Imports are fully validated
+  and previewed (counts + repairs) before anything is written. Two modes: a
+  Merge that adds new records and asks per conflict (Keep existing / Replace
+  / Skip, with a breakdown transaction and its items treated as one unit),
+  and a Full restore that saves a mandatory recovery backup of the current
+  data first and replaces everything atomically. Available from Settings on
+  Android; the browser preview reports it as unsupported.
 - Transaction breakdown: optional per-item entries with calculated totals,
   purchase dates, times and notes; unpaid expenses carry an optional payment
   due date shown on the Calendar and in Reports.
@@ -19,6 +28,12 @@ All notable changes to MoneyQ. Dates are local calendar days; newest first.
   optional `icon` prop on the shared Button.
 
 ### Changed
+- Fields, chips and segmented controls across the forms now share one
+  capsule shape; the sticky amount sits left-aligned on its folder-tinted
+  card and the create/save bar is pinned to the bottom of the screen.
+- The breakdown item sheet's "Add note" opens a proper top-aligned textarea,
+  and the budget page's Income / Expenses / Transactions stats are split by
+  centered separators that stay legible on tinted folder cards.
 - Breakdown lives in a reminders-style card that is always expanded, with a
   centered circular add button; deleting the last item deactivates the
   breakdown and the undo snackbar restores it.

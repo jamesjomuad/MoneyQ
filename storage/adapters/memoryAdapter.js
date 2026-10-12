@@ -16,6 +16,7 @@ import { LATEST_VERSION } from '../database/migrations';
 
 export function createMemoryAdapter({ seedDemo = false } = {}) {
   const store = {
+    accounts: [],
     budgets: [],
     tags: [],
     transactions: [],
@@ -65,14 +66,20 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       return LATEST_VERSION;
     },
 
-    // Transaction control mirrors the SQLite adapter's atomic parent+children
-    // write: begin takes a snapshot journal of the two tables a repository
-    // group touches, commit drops it, and rollback restores it, so a failed
-    // child write can never leave a half-updated breakdown in memory either.
+    // Transaction control mirrors the SQLite adapter's atomic writes: begin
+    // takes a snapshot journal of every table, commit drops it, and rollback
+    // restores it — so a failed repository group (and a failed backup
+    // restore, which touches every table) can never leave half-updated data
+    // in memory either.
     beginTransaction() {
       journal = {
+        accounts: store.accounts.map((row) => ({ ...row })),
+        budgets: store.budgets.map((row) => ({ ...row })),
+        tags: store.tags.map((row) => ({ ...row })),
         transactions: store.transactions.map((row) => ({ ...row })),
         subTransactions: store.subTransactions.map((row) => ({ ...row })),
+        reminders: store.reminders.map((row) => ({ ...row })),
+        settings: new Map(store.settings),
       };
       return Promise.resolve();
     },
@@ -84,8 +91,13 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
 
     rollbackTransaction() {
       if (!journal) return Promise.resolve();
+      store.accounts = journal.accounts;
+      store.budgets = journal.budgets;
+      store.tags = journal.tags;
       store.transactions = journal.transactions;
       store.subTransactions = journal.subTransactions;
+      store.reminders = journal.reminders;
+      store.settings = journal.settings;
       journal = null;
       return Promise.resolve();
     },
@@ -493,6 +505,125 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
 
     async getAllSettings() {
       return Object.fromEntries(store.settings);
+    },
+
+    // --- accounts ------------------------------------------------------
+
+    /** SQLite's `ORDER BY created_at ASC, id ASC`. */
+    async listAccounts() {
+      return [...store.accounts]
+        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))
+        .map(copy);
+    },
+
+    async insertAccount(row) {
+      // Keys laid out in migrated column order so a read serializes like SELECT *.
+      store.accounts.push({
+        id: row.id,
+        name: row.name,
+        type: row.type ?? 'cash',
+        initial_balance: row.initial_balance ?? 0,
+        archived: row.archived ?? 0,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+    },
+
+    // --- full-row replacements (backup merge) --------------------------
+
+    async replaceAccount(row) {
+      const existing = store.accounts.find((account) => account.id === row.id);
+      if (!existing) return 0;
+      Object.assign(existing, {
+        name: row.name,
+        type: row.type ?? 'cash',
+        initial_balance: row.initial_balance ?? 0,
+        archived: row.archived ?? 0,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+      return 1;
+    },
+
+    async replaceBudget(row) {
+      const existing = store.budgets.find((budget) => budget.id === row.id);
+      if (!existing) return 0;
+      Object.assign(existing, {
+        name: row.name,
+        start_date: row.start_date,
+        end_date: row.end_date,
+        color: row.color ?? null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+      return 1;
+    },
+
+    async replaceTag(row) {
+      const existing = store.tags.find((tag) => tag.id === row.id);
+      if (!existing) return 0;
+      Object.assign(existing, {
+        name: row.name,
+        emoji: row.emoji ?? null,
+        color: row.color ?? null,
+        is_default: row.is_default ?? 0,
+        archived: row.archived ?? 0,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+      return 1;
+    },
+
+    async replaceTransaction(row) {
+      const existing = store.transactions.find((transaction) => transaction.id === row.id);
+      if (!existing) return 0;
+      Object.assign(existing, {
+        budget_id: row.budget_id,
+        type: row.type,
+        amount: row.amount,
+        tag_id: row.tag_id ?? null,
+        account_id: row.account_id ?? null,
+        to_account_id: row.to_account_id ?? null,
+        description: row.description ?? null,
+        transaction_date: row.transaction_date,
+        payment_status: row.payment_status ?? null,
+        has_breakdown: row.has_breakdown ? 1 : 0,
+        payment_due_date: row.payment_due_date ?? null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+      return 1;
+    },
+
+    async replaceReminder(row) {
+      const existing = store.reminders.find((reminder) => reminder.id === row.id);
+      if (!existing) return 0;
+      Object.assign(existing, {
+        transaction_id: row.transaction_id ?? null,
+        enabled: row.enabled ?? 1,
+        status: row.status ?? 'active',
+        remind_date: row.remind_date,
+        remind_time: row.remind_time,
+        remind_at: row.remind_at,
+        notification_id: row.notification_id ?? null,
+        notes: row.notes ?? '',
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+      return 1;
+    },
+
+    // --- backup restore -------------------------------------------------
+
+    /** Empties every table, the demo seed included — mirrors DELETE FROM. */
+    async clearAllData() {
+      store.accounts = [];
+      store.budgets = [];
+      store.tags = [];
+      store.transactions = [];
+      store.subTransactions = [];
+      store.reminders = [];
+      store.settings.clear();
     },
   };
 }

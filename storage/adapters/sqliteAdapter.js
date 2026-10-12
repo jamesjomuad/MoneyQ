@@ -475,5 +475,142 @@ export function createSqliteAdapter(getDb) {
       const rows = await query('SELECT key, value FROM settings');
       return Object.fromEntries(rows.map((row) => [row.key, row.value]));
     },
+
+    // --- accounts ------------------------------------------------------
+
+    async listAccounts() {
+      return query('SELECT * FROM accounts ORDER BY created_at ASC, id ASC');
+    },
+
+    async insertAccount(row) {
+      await run(
+        `INSERT INTO accounts (id, name, type, initial_balance, archived, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        row.id,
+        row.name,
+        row.type ?? 'cash',
+        row.initial_balance ?? 0,
+        row.archived ?? 0,
+        row.created_at,
+        row.updated_at,
+      );
+    },
+
+    // --- full-row replacements (backup merge) --------------------------
+
+    async replaceAccount(row) {
+      const result = await run(
+        `UPDATE accounts
+            SET name = ?, type = ?, initial_balance = ?, archived = ?,
+                created_at = ?, updated_at = ?
+          WHERE id = ?`,
+        row.name,
+        row.type ?? 'cash',
+        row.initial_balance ?? 0,
+        row.archived ?? 0,
+        row.created_at,
+        row.updated_at,
+        row.id,
+      );
+      return result.changes ?? 0;
+    },
+
+    async replaceBudget(row) {
+      const result = await run(
+        `UPDATE budgets
+            SET name = ?, start_date = ?, end_date = ?, color = ?,
+                created_at = ?, updated_at = ?
+          WHERE id = ?`,
+        row.name,
+        row.start_date,
+        row.end_date,
+        row.color ?? null,
+        row.created_at,
+        row.updated_at,
+        row.id,
+      );
+      return result.changes ?? 0;
+    },
+
+    async replaceTag(row) {
+      const result = await run(
+        `UPDATE tags
+            SET name = ?, emoji = ?, color = ?, is_default = ?, archived = ?,
+                created_at = ?, updated_at = ?
+          WHERE id = ?`,
+        row.name,
+        row.emoji ?? null,
+        row.color ?? null,
+        row.is_default ?? 0,
+        row.archived ?? 0,
+        row.created_at,
+        row.updated_at,
+        row.id,
+      );
+      return result.changes ?? 0;
+    },
+
+    async replaceTransaction(row) {
+      const result = await run(
+        `UPDATE transactions
+            SET budget_id = ?, type = ?, amount = ?, tag_id = ?, account_id = ?,
+                to_account_id = ?, description = ?, transaction_date = ?,
+                payment_status = ?, has_breakdown = ?, payment_due_date = ?,
+                created_at = ?, updated_at = ?
+          WHERE id = ?`,
+        row.budget_id,
+        row.type,
+        row.amount,
+        row.tag_id ?? null,
+        row.account_id ?? null,
+        row.to_account_id ?? null,
+        row.description ?? null,
+        row.transaction_date,
+        row.payment_status ?? null,
+        row.has_breakdown ? 1 : 0,
+        row.payment_due_date ?? null,
+        row.created_at,
+        row.updated_at,
+        row.id,
+      );
+      return result.changes ?? 0;
+    },
+
+    async replaceReminder(row) {
+      const result = await run(
+        `UPDATE reminders
+            SET transaction_id = ?, enabled = ?, status = ?, remind_date = ?,
+                remind_time = ?, remind_at = ?, notification_id = ?, notes = ?,
+                created_at = ?, updated_at = ?
+          WHERE id = ?`,
+        row.transaction_id ?? null,
+        row.enabled ?? 1,
+        row.status ?? 'active',
+        row.remind_date,
+        row.remind_time,
+        row.remind_at,
+        row.notification_id ?? null,
+        row.notes ?? '',
+        row.created_at,
+        row.updated_at,
+        row.id,
+      );
+      return result.changes ?? 0;
+    },
+
+    // --- backup restore -------------------------------------------------
+
+    /** Empty every data table (children first); settings included. */
+    async clearAllData() {
+      await exec(
+        `DELETE FROM sub_transactions;
+         DELETE FROM transactions;
+         DELETE FROM reminders;
+         DELETE FROM budgets;
+         DELETE FROM tags;
+         DELETE FROM accounts;
+         DELETE FROM settings;`,
+      );
+    },
   };
 }

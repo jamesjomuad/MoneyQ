@@ -52,7 +52,8 @@
           "icon": "./assets/notification-icon.png",
           "color": "#0F6B4B"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "router": {},

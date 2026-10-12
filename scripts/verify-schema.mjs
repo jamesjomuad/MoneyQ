@@ -50,6 +50,19 @@ import {
   reminderValidationError,
   suggestReminderValues,
 } from '../utils/reminders.js';
+import {
+  BACKUP_FORMAT,
+  BACKUP_FORMAT_VERSION,
+  buildBackupFileName,
+  buildMergePlan,
+  compileMergeWrites,
+  parseBackupText,
+  projectMergeResult,
+  resolveGroup,
+  serializeSnapshot,
+  stringifyBackup,
+  validateBackup,
+} from '../utils/backup.js';
 
 let passed = 0;
 let failed = 0;
@@ -565,6 +578,13 @@ const orphan = await adapter.getFirstAsync(
 );
 check('deleting a tag keeps its transactions', orphan.amount === 100, String(orphan.amount));
 check('deleting a tag clears the reference', orphan.tag_id === null, String(orphan.tag_id));
+// Re-seed the default tag we just hard-deleted, so the parity scenario below
+// starts sqlite with the same six defaults a fresh memory adapter seeds.
+await adapter.runAsync(
+  `INSERT OR IGNORE INTO tags
+     (id, name, emoji, color, is_default, archived, created_at, updated_at)
+   VALUES ('default_work', 'Work', '💼', '#6B3FA0', 1, 0, '2026-10-06', '2026-10-06')`,
+);
 
 // A reminder optionally belongs to a transaction; several may share one.
 await adapter.runAsync(
@@ -603,6 +623,10 @@ const afterCascade = await adapter.getFirstAsync(
   `SELECT COUNT(*) AS total FROM transactions WHERE budget_id = 'b_oct'`,
 );
 check('deleting a budget cascades to its transactions', afterCascade.total === 0, String(afterCascade.total));
+// The cascade removed every transaction referencing the demo accounts, so the
+// leftovers can now go too — the parity scenario below must start both engines
+// with an identical (empty) accounts table.
+await adapter.runAsync(`DELETE FROM accounts`);
 const unlinkedReminders = await adapter.getAllAsync(
   `SELECT id, transaction_id FROM reminders ORDER BY id`,
 );
@@ -1044,6 +1068,166 @@ async function runScenario(store) {
   await store.setSetting('currency', 'PHP');
   snapshot.settings = await store.getAllSettings();
 
+  // --- accounts (no repository uses them; backups read/write them) -----
+  snapshot.accountsBefore = await store.listAccounts();
+  await store.insertAccount({
+    id: 'p_acct_cash',
+    name: 'Cash',
+    type: 'cash',
+    initial_balance: 25000,
+    archived: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertAccount({
+    id: 'p_acct_bank',
+    name: 'Bank',
+    type: 'bank',
+    initial_balance: 0,
+    archived: 1,
+    created_at: '2026-10-06T01:00:00.000Z',
+    updated_at: STAMP,
+  });
+  snapshot.accounts = await store.listAccounts();
+  await store.replaceAccount({
+    id: 'p_acct_bank',
+    name: 'Main Bank',
+    type: 'bank',
+    initial_balance: 150000,
+    archived: 0,
+    created_at: '2026-10-06T01:00:00.000Z',
+    updated_at: '2026-10-06T02:00:00.000Z',
+  });
+  snapshot.accountAfterReplace = await store.listAccounts();
+
+  // --- full-row replacements used by the backup merge path -------------
+  await store.insertBudget({
+    id: 'p_merge_budget',
+    name: 'Original name',
+    start_date: '2026-11-01',
+    end_date: '2026-11-30',
+    color: '#FF9800',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.replaceBudget({
+    id: 'p_merge_budget',
+    name: 'Replaced name',
+    start_date: '2026-11-02',
+    end_date: '2026-11-28',
+    color: null,
+    created_at: STAMP,
+    updated_at: '2026-10-06T02:00:00.000Z',
+  });
+  snapshot.budgetAfterReplace = await store.getBudget('p_merge_budget');
+
+  await store.insertTag({
+    id: 'p_merge_tag',
+    name: 'Original tag',
+    emoji: '🅾️',
+    color: '#123456',
+    is_default: 0,
+    archived: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.replaceTag({
+    id: 'p_merge_tag',
+    name: 'Replaced tag',
+    emoji: '🔁',
+    color: null,
+    is_default: 0,
+    archived: 1,
+    created_at: STAMP,
+    updated_at: '2026-10-06T02:00:00.000Z',
+  });
+  snapshot.tagAfterReplace = await store.getTag('p_merge_tag');
+
+  await store.insertTransaction({
+    id: 'p_merge_tx',
+    budget_id: 'p_merge_budget',
+    type: 'expense',
+    amount: 100,
+    tag_id: 'p_merge_tag',
+    description: 'Original',
+    transaction_date: '2026-11-05',
+    payment_status: 'paid',
+    has_breakdown: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.replaceTransaction({
+    id: 'p_merge_tx',
+    budget_id: 'p_merge_budget',
+    type: 'expense',
+    amount: 200,
+    tag_id: null,
+    description: 'Replaced',
+    transaction_date: '2026-11-06',
+    payment_status: 'unpaid',
+    has_breakdown: 0,
+    payment_due_date: '2026-11-20',
+    created_at: STAMP,
+    updated_at: '2026-10-06T02:00:00.000Z',
+  });
+  snapshot.transactionAfterReplace = await store.getTransaction('p_merge_tx');
+
+  await store.insertReminder({
+    id: 'p_merge_rem',
+    enabled: 1,
+    status: 'active',
+    remind_date: '2026-11-10',
+    remind_time: '08:00',
+    remind_at: '2026-11-10T08:00:00+08:00',
+    notification_id: 'os-1',
+    notes: 'original',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.replaceReminder({
+    id: 'p_merge_rem',
+    transaction_id: 'p_merge_tx',
+    enabled: 0,
+    status: 'completed',
+    remind_date: '2026-11-11',
+    remind_time: '09:30',
+    remind_at: '2026-11-11T09:30:00+08:00',
+    notification_id: null,
+    notes: 'replaced',
+    created_at: STAMP,
+    updated_at: '2026-10-06T02:00:00.000Z',
+  });
+  snapshot.reminderAfterReplace = await store.getReminder('p_merge_rem');
+
+  // --- a rolled-back wipe restores every table (failed-restore safety) --
+  await store.beginTransaction();
+  await store.clearAllData();
+  await store.rollbackTransaction();
+  snapshot.afterWipeRollback = {
+    accounts: await store.listAccounts(),
+    budget: await store.getBudget('p_merge_budget'),
+    tag: await store.getTag('p_merge_tag'),
+    transaction: await store.getTransaction('p_merge_tx'),
+    reminder: await store.getReminder('p_merge_rem'),
+    budgetCount: (await store.listBudgets()).length,
+    tagCount: (await store.listTags({ includeArchived: true })).length,
+    reminderCount: (await store.listReminders()).length,
+    transactions: await store.listTransactionsInRange('2026-11-01', '2026-11-30'),
+    settings: await store.getAllSettings(),
+  };
+
+  // --- a committed wipe empties everything ------------------------------
+  await store.clearAllData();
+  snapshot.afterFullWipe = {
+    accounts: await store.listAccounts(),
+    budgets: await store.listBudgets(),
+    tags: await store.listTags({ includeArchived: true }),
+    transactions: await store.listTransactionsInRange('2026-11-01', '2026-11-30'),
+    subTransactions: await store.listSubTransactionsInRange('0000-01-01', '9999-12-31'),
+    reminders: await store.listReminders(),
+    settings: await store.getAllSettings(),
+  };
+
   return stable(snapshot);
 }
 
@@ -1184,6 +1368,55 @@ check(
   'deleting a budget cascades through transactions to breakdown items',
   sqliteResult.subsAfterBudgetDelete.length === 0 &&
     memoryResult.subsAfterBudgetDelete.length === 0,
+);
+check(
+  'accounts round-trip through insert, list and replace identically',
+  sqliteResult.accountAfterReplace.length === 2 &&
+    sqliteResult.accountAfterReplace[1].name === 'Main Bank' &&
+    sqliteResult.accountAfterReplace[1].initial_balance === 150000 &&
+    memoryResult.accountAfterReplace[1].name === 'Main Bank' &&
+    JSON.stringify(sqliteResult.accountAfterReplace) ===
+      JSON.stringify(memoryResult.accountAfterReplace),
+  JSON.stringify(sqliteResult.accountAfterReplace),
+);
+check(
+  'full-row replace updates every stored column on both engines',
+  sqliteResult.budgetAfterReplace.name === 'Replaced name' &&
+    sqliteResult.budgetAfterReplace.color === null &&
+    sqliteResult.tagAfterReplace.archived === 1 &&
+    sqliteResult.transactionAfterReplace.payment_due_date === '2026-11-20' &&
+    sqliteResult.transactionAfterReplace.tag_id === null &&
+    sqliteResult.reminderAfterReplace.status === 'completed' &&
+    sqliteResult.reminderAfterReplace.notification_id === null &&
+    JSON.stringify(sqliteResult.budgetAfterReplace) ===
+      JSON.stringify(memoryResult.budgetAfterReplace) &&
+    JSON.stringify(sqliteResult.transactionAfterReplace) ===
+      JSON.stringify(memoryResult.transactionAfterReplace) &&
+    JSON.stringify(sqliteResult.reminderAfterReplace) ===
+      JSON.stringify(memoryResult.reminderAfterReplace),
+);
+check(
+  'a rolled-back wipe restores every table on both engines',
+  sqliteResult.afterWipeRollback.budget.name === 'Replaced name' &&
+    sqliteResult.afterWipeRollback.transaction.description === 'Replaced' &&
+    sqliteResult.afterWipeRollback.reminder.notes === 'replaced' &&
+    sqliteResult.afterWipeRollback.accounts.length === 2 &&
+    sqliteResult.afterWipeRollback.budgetCount > 0 &&
+    sqliteResult.afterWipeRollback.tagCount > 0 &&
+    sqliteResult.afterWipeRollback.transactions.length === 1 &&
+    sqliteResult.afterWipeRollback.settings.currency === 'PHP' &&
+    JSON.stringify(sqliteResult.afterWipeRollback) ===
+      JSON.stringify(memoryResult.afterWipeRollback),
+);
+check(
+  'a committed wipe empties every table on both engines',
+  sqliteResult.afterFullWipe.budgets.length === 0 &&
+    sqliteResult.afterFullWipe.tags.length === 0 &&
+    sqliteResult.afterFullWipe.accounts.length === 0 &&
+    sqliteResult.afterFullWipe.transactions.length === 0 &&
+    sqliteResult.afterFullWipe.reminders.length === 0 &&
+    Object.keys(sqliteResult.afterFullWipe.settings).length === 0 &&
+    JSON.stringify(sqliteResult.afterFullWipe) === JSON.stringify(memoryResult.afterFullWipe),
 );
 
 console.log('\n--- legacy milestone-1 upgrade ---');
@@ -1764,6 +1997,695 @@ check(
 
 const unnamedCopy = buildReminderNotification({ notes: undefined });
 check('a missing notes value still yields readable copy', unnamedCopy.body === 'You have a scheduled reminder.', unnamedCopy.body);
+
+console.log('\n--- export & import backup ---');
+
+// A small but complete snapshot exercising every entity a backup carries.
+const BACKUP_STAMP = '2026-10-05T12:00:00.000Z';
+const fixtureSnapshot = {
+  accounts: [
+    {
+      id: 'acct_a',
+      name: 'Cash',
+      type: 'cash',
+      initial_balance: 50000,
+      archived: 0,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+    {
+      id: 'acct_b',
+      name: 'Bank',
+      type: 'bank',
+      initial_balance: 2500000,
+      archived: 0,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+  ],
+  budgets: [
+    {
+      id: 'bkt_1',
+      name: 'October',
+      start_date: '2026-10-01',
+      end_date: '2026-10-31',
+      color: '#FF9800',
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+  ],
+  tags: [
+    {
+      id: 'tag_a',
+      name: 'Groceries',
+      emoji: '🛒',
+      color: '#A96600',
+      is_default: 0,
+      archived: 0,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+    {
+      id: 'tag_b',
+      name: 'Rent',
+      emoji: '🏠',
+      color: '#0F6B4B',
+      is_default: 0,
+      archived: 0,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+  ],
+  transactions: [
+    {
+      id: 'tx_1',
+      budget_id: 'bkt_1',
+      type: 'expense',
+      amount: 10000,
+      tag_id: 'tag_a',
+      account_id: null,
+      to_account_id: null,
+      description: 'Weekly groceries',
+      transaction_date: '2026-10-05',
+      payment_status: 'paid',
+      has_breakdown: 1,
+      payment_due_date: null,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+    {
+      id: 'tx_2',
+      budget_id: 'bkt_1',
+      type: 'expense',
+      amount: 12345,
+      tag_id: 'tag_b',
+      account_id: null,
+      to_account_id: null,
+      description: 'Electric bill',
+      transaction_date: '2026-10-06',
+      payment_status: 'unpaid',
+      has_breakdown: 0,
+      payment_due_date: '2026-11-01',
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+    {
+      id: 'tx_3',
+      budget_id: 'bkt_1',
+      type: 'income',
+      amount: 4500000,
+      tag_id: 'tag_b',
+      account_id: null,
+      to_account_id: null,
+      description: 'Salary',
+      transaction_date: '2026-10-07',
+      payment_status: null,
+      has_breakdown: 0,
+      payment_due_date: null,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+    {
+      id: 'tx_4',
+      budget_id: 'bkt_1',
+      type: 'transfer',
+      amount: 100000,
+      tag_id: null,
+      account_id: 'acct_a',
+      to_account_id: 'acct_b',
+      description: 'Banked the cash',
+      transaction_date: '2026-10-08',
+      payment_status: null,
+      has_breakdown: 0,
+      payment_due_date: null,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+  ],
+  subTransactions: [
+    {
+      id: 'sub_1',
+      transaction_id: 'tx_1',
+      description: 'Rice',
+      amount: 6000,
+      position: 0,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+      purchase_date: '2026-10-05',
+      purchase_time: '08:30',
+      notes: null,
+    },
+    {
+      id: 'sub_2',
+      transaction_id: 'tx_1',
+      description: 'Fish',
+      amount: 4000,
+      position: 1,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+      purchase_date: '2026-10-05',
+      purchase_time: '09:00',
+      notes: 'wet market',
+    },
+  ],
+  reminders: [
+    {
+      id: 'rem_1',
+      transaction_id: 'tx_2',
+      enabled: 1,
+      status: 'active',
+      remind_date: '2026-11-01',
+      remind_time: '09:00',
+      remind_at: '2020-01-01T00:00:00Z',
+      notification_id: 'os-old',
+      notes: 'Pay the bill',
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+  ],
+  settings: {
+    currency: 'PHP',
+    theme: 'dark',
+    pinned_budgets: JSON.stringify(['bkt_1', 'ghost']),
+  },
+};
+
+const backupEnvelope = serializeSnapshot(fixtureSnapshot, {
+  appVersion: '1.2.3',
+  createdAt: '2026-10-12T00:00:00.000Z',
+});
+check('a backup envelope declares its format and version', backupEnvelope.format === BACKUP_FORMAT && backupEnvelope.formatVersion === BACKUP_FORMAT_VERSION);
+check(
+  'the envelope carries app identity and creation time',
+  backupEnvelope.app.name === 'MoneyQ' &&
+    backupEnvelope.app.version === '1.2.3' &&
+    backupEnvelope.createdAt === '2026-10-12T00:00:00.000Z',
+);
+check(
+  'derived budget fields never enter the backup',
+  backupEnvelope.data.budgets.every((row) => !('spent' in row) && !('income' in row)),
+);
+
+const roundTrip = parseBackupText(stringifyBackup(backupEnvelope));
+check(
+  'a written backup parses and validates back to itself',
+  roundTrip.ok === true && roundTrip.issues === undefined,
+  JSON.stringify(roundTrip.issues ?? roundTrip.warnings),
+);
+check(
+  'the round trip reports preview counts',
+  roundTrip.ok &&
+    roundTrip.counts.budgets === 1 &&
+    roundTrip.counts.transactions === 4 &&
+    roundTrip.counts.breakdownTransactions === 1 &&
+    roundTrip.counts.breakdownItems === 2 &&
+    roundTrip.counts.reminders === 1 &&
+    roundTrip.counts.activeReminders === 1 &&
+    roundTrip.counts.settingsKeys === 3,
+  JSON.stringify(roundTrip.counts),
+);
+check(
+  'the round trip preserves the envelope metadata for the preview',
+  roundTrip.ok && roundTrip.createdAt === '2026-10-12T00:00:00.000Z' && roundTrip.appVersion === '1.2.3',
+);
+check(
+  'pinned budgets are filtered to existing ones during validation',
+  roundTrip.ok && roundTrip.data.settings.pinned_budgets === JSON.stringify(['bkt_1']),
+  roundTrip.data?.settings?.pinned_budgets,
+);
+check(
+  'orphan pins produce a warning',
+  roundTrip.warnings.some((w) => w.includes('unknown budget')),
+  JSON.stringify(roundTrip.warnings),
+);
+check(
+  'backup file names follow the dated convention',
+  buildBackupFileName('2026-10-12') === 'MoneyQ-Backup-2026-10-12.json' &&
+    buildBackupFileName('2026-10-12', '-Recovery') === 'MoneyQ-Backup-Recovery-2026-10-12.json',
+);
+
+// ---- rejection of anything that is not a usable backup -------------------
+const rejectEmpty = parseBackupText('   ');
+check('an empty file is rejected', rejectEmpty.ok === false && rejectEmpty.issues[0] === 'The file is empty.');
+const rejectJson = parseBackupText('this is { not json');
+check('a non-JSON file is rejected with a clear reason', rejectJson.ok === false && rejectJson.issues[0].includes('not valid JSON'));
+const rejectFormat = validateBackup({ ...backupEnvelope, format: 'somebody-elses-file' });
+check(
+  'a foreign format id is rejected and quotes what was found',
+  rejectFormat.ok === false && rejectFormat.issues[0].includes('somebody-elses-file'),
+);
+const rejectFuture = validateBackup({ ...backupEnvelope, formatVersion: 99 });
+check(
+  'a future backup version is rejected with an upgrade hint',
+  rejectFuture.ok === false &&
+    rejectFuture.issues[0].includes('newer version of MoneyQ') &&
+    rejectFuture.issues[0].includes('v99'),
+  JSON.stringify(rejectFuture.issues),
+);
+const rejectVersionJunk = validateBackup({ ...backupEnvelope, formatVersion: 'x' });
+check('a non-numeric version is rejected', rejectVersionJunk.ok === false && rejectVersionJunk.issues[0].includes('unreadable'));
+const rejectNoData = validateBackup({ format: BACKUP_FORMAT, formatVersion: 1 });
+check('a backup without a data section is rejected', rejectNoData.ok === false && rejectNoData.issues[0].includes('no data section'));
+
+function dataClone(mutate) {
+  const clone = structuredClone(backupEnvelope);
+  mutate(clone.data);
+  return validateBackup(clone, { nowStamp: '2026-10-06T00:00:00.000Z' });
+}
+const dupId = dataClone((d) => d.budgets.push({ ...d.budgets[0] }));
+check('duplicate ids are rejected', dupId.ok === false && dupId.issues.some((i) => i.includes('duplicate id')));
+const badRef = dataClone((d) => (d.transactions[0].budget_id = 'nope'));
+check(
+  'a transaction referencing a missing budget is rejected',
+  badRef.ok === false && badRef.issues.some((i) => i.includes('references budget "nope"')),
+  JSON.stringify(badRef.issues),
+);
+const negAmount = dataClone((d) => (d.transactions[1].amount = -5));
+check('negative amounts are rejected', negAmount.ok === false && negAmount.issues.some((i) => i.includes('invalid amount')));
+const zeroAmount = dataClone((d) => (d.transactions[1].amount = 0));
+check('a zero amount on a plain transaction is rejected', zeroAmount.ok === false && zeroAmount.issues.some((i) => i.includes('invalid amount')));
+const badTotal = dataClone((d) => (d.subTransactions[1].amount = 1000));
+check(
+  'a breakdown whose items do not sum to the parent is rejected by name',
+  badTotal.ok === false &&
+    badTotal.issues.some((i) => i.includes('Weekly groceries') && i.includes('total 7000')),
+  JSON.stringify(badTotal.issues),
+);
+const oneAccountTransfer = dataClone((d) => (d.transactions[3].to_account_id = d.transactions[3].account_id));
+check(
+  'a transfer to the same account is rejected',
+  oneAccountTransfer.ok === false && oneAccountTransfer.issues.some((i) => i.includes('transfer')),
+);
+const transferNoAccounts = dataClone((d) => {
+  d.transactions[3].account_id = null;
+  d.transactions[3].to_account_id = null;
+});
+check(
+  'a transfer without two accounts is rejected',
+  transferNoAccounts.ok === false &&
+    transferNoAccounts.issues.some((i) => i.includes('transfer without two different known accounts')),
+);
+const badReminderRef = dataClone((d) => (d.reminders[0].transaction_id = 'tx_missing'));
+check(
+  'a reminder referencing a missing transaction is rejected',
+  badReminderRef.ok === false && badReminderRef.issues.some((i) => i.includes('not in the backup')),
+);
+const badDate = dataClone((d) => (d.budgets[0].start_date = 'Oct 1'));
+check('a non-ISO calendar date is rejected', badDate.ok === false && badDate.issues.some((i) => i.includes('invalid start date')));
+const dupTagNames = dataClone((d) => d.tags.push({ ...d.tags[0], id: 'tag_c' }));
+check('two tags sharing one name are rejected', dupTagNames.ok === false && dupTagNames.issues.some((i) => i.includes('share the name')));
+
+// ---- legacy backups without breakdown items ------------------------------
+const legacy = structuredClone(backupEnvelope);
+delete legacy.data.subTransactions;
+legacy.data.transactions.forEach((tx) => (tx.has_breakdown = tx.id === 'tx_1' ? 1 : tx.has_breakdown));
+const legacyResult = validateBackup(legacy);
+check(
+  'a legacy backup without the breakdown section still imports',
+  legacyResult.ok === true && legacyResult.warnings.some((w) => w.includes('breakdown items')),
+  JSON.stringify(legacyResult.issues ?? legacyResult.warnings),
+);
+check(
+  'a breakdown flag with no items is cleared instead of failing',
+  legacyResult.ok === true &&
+    legacyResult.data.transactions.find((t) => t.id === 'tx_1').has_breakdown === 0 &&
+    legacyResult.warnings.some((w) => w.includes('flag was cleared')),
+);
+const noSettings = structuredClone(backupEnvelope);
+delete noSettings.data.settings;
+const noSettingsResult = validateBackup(noSettings);
+check(
+  'a backup with no settings section imports with a warning',
+  noSettingsResult.ok === true && noSettingsResult.warnings.some((w) => w.includes('no settings section')),
+);
+
+// ---- gentle coercion of repairable problems --------------------------------
+const repaired = dataClone((d) => {
+  d.budgets[0].color = 'not-a-colour';
+  d.budgets[0].created_at = 'yesterday-ish';
+  d.transactions[1].payment_status = null;
+  d.transactions[2].payment_status = 'unpaid';
+  delete d.reminders[0].remind_at;
+  d.reminders[0].notification_id = 'stale-from-old-phone';
+  d.settings.currency = 'ZZZ';
+  d.settings.theme = 'hotdog';
+  d.settings.pinned_budgets = 'not json at all';
+});
+check(
+  'an invalid colour falls back to the theme default',
+  repaired.ok === true && repaired.data.budgets[0].color === null,
+  JSON.stringify(repaired.issues ?? repaired.warnings),
+);
+check(
+  'an unreadable timestamp is replaced with the validation stamp',
+  repaired.ok === true && repaired.data.budgets[0].created_at === '2026-10-06T00:00:00.000Z',
+);
+check(
+  'a missing status on an expense defaults to paid',
+  repaired.ok === true && repaired.data.transactions[1].payment_status === 'paid',
+);
+check(
+  'a status on an income is cleared',
+  repaired.ok === true && repaired.data.transactions[2].payment_status === null,
+);
+check(
+  'remind_at is rebuilt from the local date and time on this device',
+  repaired.ok === true &&
+    repaired.data.reminders[0].remind_at === buildRemindAt('2026-11-01', '09:00'),
+);
+check(
+  'notification ids from another install are cleared for resync',
+  repaired.ok === true && repaired.data.reminders[0].notification_id === null,
+);
+check(
+  'unknown currency, theme and unreadable pins are dropped with warnings',
+  repaired.ok === true &&
+    !('currency' in repaired.data.settings) &&
+    !('theme' in repaired.data.settings) &&
+    !('pinned_budgets' in repaired.data.settings) &&
+    repaired.warnings.filter((w) => w.includes('dropped') || w.includes('unreadable')).length >= 3,
+  JSON.stringify(repaired.warnings),
+);
+
+// ---- merge planning ---------------------------------------------------------
+const currentData = structuredClone(fixtureSnapshot);
+currentData.budgets[0].name = 'October (my edits)';
+// Local edits that keep the breakdown total consistent (5500 + 4500 = 10000)
+// but differ from the backup's items (6000 + 4000).
+currentData.subTransactions[0].amount = 5500;
+currentData.subTransactions[1].amount = 4500;
+currentData.subTransactions[1].description = 'Milk';
+currentData.transactions = currentData.transactions.filter((t) => t.id !== 'tx_3' && t.id !== 'tx_4');
+currentData.reminders = [];
+currentData.settings = { currency: 'PHP', theme: 'dark' };
+
+const mergePlan = buildMergePlan(roundTrip.data, currentData);
+const conflictKeys = mergePlan.groups.filter((g) => g.state === 'conflict').map((g) => g.key);
+check(
+  'the merge spots changed rows as conflicts with a safe default',
+  conflictKeys.includes('budgets:bkt_1') &&
+    conflictKeys.includes('transactions:tx_1') &&
+    mergePlan.groups.find((g) => g.key === 'budgets:bkt_1').resolution === 'keep',
+  JSON.stringify(conflictKeys),
+);
+check(
+  'identical rows are recognised and never written',
+  mergePlan.groups.some((g) => g.key === 'tags:tag_a' && g.state === 'identical') &&
+    mergePlan.groups.some((g) => g.key === 'accounts:acct_a' && g.state === 'identical') &&
+    mergePlan.groups.some((g) => g.key === 'settings:currency' && g.state === 'identical'),
+);
+check(
+  'rows only in the backup are planned as new',
+  mergePlan.groups.some((g) => g.key === 'transactions:tx_3' && g.state === 'new') &&
+    mergePlan.groups.some((g) => g.key === 'reminders:rem_1' && g.state === 'new'),
+);
+const txGroup = mergePlan.groups.find((g) => g.key === 'transactions:tx_1');
+check(
+  'a transaction and its breakdown items form ONE conflict group',
+  txGroup.state === 'conflict' && txGroup.items.length === 2 && txGroup.existingItems.length === 2,
+);
+const decidedPlan = resolveGroup(
+  resolveGroup(mergePlan, 'budgets:bkt_1', 'replace'),
+  'transactions:tx_1',
+  'replace',
+);
+check(
+  'resolving a conflict switches the plan without touching other groups',
+  decidedPlan.groups.find((g) => g.key === 'budgets:bkt_1').resolution === 'replace' &&
+    decidedPlan.groups.find((g) => g.key === 'settings:currency').resolution === null,
+);
+check(
+  'an undecided conflict keeps existing data by default',
+  mergePlan.groups
+    .filter((g) => g.state === 'conflict')
+    .every((g) => g.resolution === 'keep'),
+);
+
+const mergeWrites = compileMergeWrites(decidedPlan);
+const opNames = mergeWrites.map((w) => w.op);
+check(
+  'the merge writes parents before the rows that reference them',
+  opNames.indexOf('replaceBudget') !== -1 &&
+    opNames.indexOf('replaceBudget') < opNames.findIndex((op) => op.includes('Transaction')),
+  JSON.stringify(opNames),
+);
+check(
+  'replacing a breakdown transaction swaps its items without deleting the parent',
+  opNames.includes('replaceTransaction') &&
+    opNames.includes('clearSubTransactions') &&
+    opNames.filter((op) => op === 'insertSubTransaction').length === 2 &&
+    !opNames.some((op) => op === 'deleteTransaction'),
+  JSON.stringify(opNames),
+);
+check(
+  'identical rows produce no writes at all',
+  !opNames.includes('insertTag') && !opNames.includes('replaceTag') && !opNames.includes('insertAccount'),
+  JSON.stringify(opNames),
+);
+
+const projection = projectMergeResult(currentData, mergeWrites);
+check(
+  'the projected merge result validates cleanly',
+  projection.issues.length === 0,
+  JSON.stringify(projection.issues),
+);
+check(
+  'the projection applies replaces and adds news without losing anything',
+  projection.data.budgets.find((b) => b.id === 'bkt_1').name === 'October' &&
+    projection.data.transactions.length === 4 &&
+    computeBreakdownTotal(
+      projection.data.subTransactions.filter((i) => i.transaction_id === 'tx_1'),
+    ) === 10000,
+);
+const keepPlan = mergePlan; // conflicts stay 'keep'
+const keepWrites = compileMergeWrites(keepPlan);
+const keepProjection = projectMergeResult(currentData, keepWrites);
+check(
+  'keeping all conflicts only adds the new rows',
+  keepProjection.issues.length === 0 &&
+    keepProjection.data.budgets.find((b) => b.id === 'bkt_1').name === 'October (my edits)' &&
+    keepProjection.data.transactions.length === 4 &&
+    keepWrites.every((w) => w.op.startsWith('insert') || w.op === 'setSetting'),
+  JSON.stringify(keepWrites.map((w) => w.op)),
+);
+const poisoned = projectMergeResult(currentData, [
+  { op: 'insertTransaction', row: { ...fixtureSnapshot.transactions[0], id: 'tx_ghost', budget_id: 'nowhere' } },
+]);
+check(
+  'a merge that would create invalid data is refused before any write',
+  poisoned.issues.length > 0 && poisoned.issues.some((i) => i.includes('nowhere')),
+  JSON.stringify(poisoned.issues),
+);
+
+// ---- restore + merge execution parity across engines -----------------------
+async function restoreVia(store, data) {
+  await store.beginTransaction();
+  try {
+    await store.clearAllData();
+    for (const row of data.accounts) await store.insertAccount(row);
+    for (const row of data.budgets) await store.insertBudget(row);
+    for (const row of data.tags) await store.insertTag(row);
+    for (const row of data.transactions) await store.insertTransaction(row);
+    for (const row of data.subTransactions) await store.insertSubTransaction(row);
+    for (const row of data.reminders) await store.insertReminder(row);
+    for (const [key, value] of Object.entries(data.settings)) await store.setSetting(key, value);
+    await store.commitTransaction();
+  } catch (error) {
+    await store.rollbackTransaction();
+    throw error;
+  }
+}
+
+async function applyWrites(store, writes) {
+  await store.beginTransaction();
+  try {
+    for (const write of writes) {
+      switch (write.op) {
+        case 'insertAccount':
+          await store.insertAccount(write.row);
+          break;
+        case 'replaceAccount':
+          await store.replaceAccount(write.row);
+          break;
+        case 'insertBudget':
+          await store.insertBudget(write.row);
+          break;
+        case 'replaceBudget':
+          await store.replaceBudget(write.row);
+          break;
+        case 'insertTag':
+          await store.insertTag(write.row);
+          break;
+        case 'replaceTag':
+          await store.replaceTag(write.row);
+          break;
+        case 'insertTransaction':
+          await store.insertTransaction(write.row);
+          break;
+        case 'replaceTransaction':
+          await store.replaceTransaction(write.row);
+          break;
+        case 'clearSubTransactions':
+          await store.deleteSubTransactionsForParent(write.transactionId);
+          break;
+        case 'insertSubTransaction':
+          await store.insertSubTransaction(write.row);
+          break;
+        case 'insertReminder':
+          await store.insertReminder(write.row);
+          break;
+        case 'replaceReminder':
+          await store.replaceReminder(write.row);
+          break;
+        case 'setSetting':
+          await store.setSetting(write.key, write.value);
+          break;
+        default:
+          throw new Error(`Unknown write op "${write.op}"`);
+      }
+    }
+    await store.commitTransaction();
+  } catch (error) {
+    await store.rollbackTransaction();
+    throw error;
+  }
+}
+
+async function readEverything(store) {
+  const budgets = await store.listBudgets();
+  const transactions = [];
+  const subTransactions = [];
+  for (const budget of budgets) {
+    transactions.push(...(await store.listTransactionsByBudget(budget.id)));
+    subTransactions.push(...(await store.listSubTransactionsByBudget(budget.id)));
+  }
+  return stable({
+    accounts: await store.listAccounts(),
+    budgets,
+    tags: await store.listTags({ includeArchived: true }),
+    transactions,
+    subTransactions,
+    reminders: await store.listReminders(),
+    settings: await store.getAllSettings(),
+  });
+}
+
+// `adapter` holds the migrated sqlite tables, emptied by the parity wipe above.
+const restoreSqlite = createSqliteAdapter(async () => adapter);
+const restoreMemory = createMemoryAdapter();
+const restoredData = roundTrip.data;
+await restoreVia(restoreSqlite, restoredData);
+await restoreVia(restoreMemory, restoredData);
+const restoredSqliteJson = JSON.stringify(await readEverything(restoreSqlite));
+const restoredMemoryJson = JSON.stringify(await readEverything(restoreMemory));
+check(
+  'a full restore lands identically on both engines',
+  restoredSqliteJson === restoredMemoryJson,
+  restoredSqliteJson === restoredMemoryJson ? '' : `\n--- sqlite ---\n${restoredSqliteJson}\n--- memory ---\n${restoredMemoryJson}`,
+);
+{
+  const after = await readEverything(restoreSqlite);
+  check(
+    'the restore brings back every entity',
+    after.budgets.length === 1 &&
+      after.budgets[0].name === 'October' &&
+      after.tags.length === 2 &&
+      after.transactions.length === 4 &&
+      after.subTransactions.length === 2 &&
+      after.reminders.length === 1 &&
+      after.accounts.length === 2,
+    JSON.stringify({
+      budgets: after.budgets.length,
+      tags: after.tags.length,
+      transactions: after.transactions.length,
+      subs: after.subTransactions.length,
+      reminders: after.reminders.length,
+      accounts: after.accounts.length,
+    }),
+  );
+  check(
+    'settings survive a restore exactly as validated',
+    after.settings.currency === 'PHP' &&
+      after.settings.theme === 'dark' &&
+      after.settings.pinned_budgets === JSON.stringify(['bkt_1']),
+    JSON.stringify(after.settings),
+  );
+  check(
+    'a restored reminder keeps its schedule fields',
+    after.reminders[0].enabled === 1 &&
+      after.reminders[0].status === 'active' &&
+      after.reminders[0].remind_at === buildRemindAt('2026-11-01', '09:00') &&
+      after.reminders[0].notification_id === null,
+    JSON.stringify(after.reminders[0]),
+  );
+  check(
+    'the restored budget keeps its derived totals correct',
+    after.budgets[0].income === 4500000 && after.budgets[0].spent === 22345,
+    JSON.stringify({ income: after.budgets[0].income, spent: after.budgets[0].spent }),
+  );
+}
+
+// Now replay a merge onto the restored data: current state == restored, the
+// incoming backup carries edits (rename the budget, change one item) plus a
+// brand-new transaction.
+const incomingMerge = structuredClone(restoredData);
+incomingMerge.budgets[0].name = 'October — from the file';
+incomingMerge.subTransactions[0].amount = 5500;
+incomingMerge.subTransactions[1].amount = 4500;
+incomingMerge.transactions = incomingMerge.transactions.filter((t) => t.id !== 'tx_4');
+const mergePlan2 = buildMergePlan(incomingMerge, {
+  ...restoredData,
+  transactions: restoredData.transactions.filter((t) => t.id !== 'tx_4'),
+});
+const conflictKeys2 = mergePlan2.groups.filter((g) => g.state === 'conflict').map((g) => g.key);
+check(
+  'a merge against restored data sees only real differences as conflicts',
+  conflictKeys2.includes('budgets:bkt_1') && conflictKeys2.includes('transactions:tx_1'),
+  JSON.stringify(conflictKeys2),
+);
+const decidedMerge2 = resolveGroup(resolveGroup(mergePlan2, 'budgets:bkt_1', 'replace'), 'transactions:tx_1', 'replace');
+const mergeWrites2 = compileMergeWrites(decidedMerge2);
+const projected2 = projectMergeResult(
+  { ...restoredData, transactions: restoredData.transactions.filter((t) => t.id !== 'tx_4') },
+  mergeWrites2,
+);
+check(
+  'the second merge projects validly',
+  projected2.issues.length === 0,
+  JSON.stringify(projected2.issues),
+);
+// Rebuild the "current" state the projection assumed on both engines.
+await restoreVia(restoreSqlite, { ...restoredData, transactions: restoredData.transactions.filter((t) => t.id !== 'tx_4') });
+await restoreVia(restoreMemory, { ...restoredData, transactions: restoredData.transactions.filter((t) => t.id !== 'tx_4') });
+await applyWrites(restoreSqlite, mergeWrites2);
+await applyWrites(restoreMemory, mergeWrites2);
+const mergedSqlite = await readEverything(restoreSqlite);
+const mergedMemory = await readEverything(restoreMemory);
+check(
+  'an applied merge produces the same database on both engines',
+  JSON.stringify(mergedSqlite) === JSON.stringify(mergedMemory),
+  JSON.stringify(mergedSqlite) === JSON.stringify(mergedMemory)
+    ? ''
+    : `\n--- sqlite ---\n${JSON.stringify(mergedSqlite)}\n--- memory ---\n${JSON.stringify(mergedMemory)}`,
+);
+check(
+  'the merged database shows replaced rows and preserved links',
+  mergedSqlite.budgets[0].name === 'October — from the file' &&
+    mergedSqlite.reminders.length === 1 &&
+    mergedSqlite.reminders[0].transaction_id === 'tx_2' &&
+    computeBreakdownTotal(mergedSqlite.subTransactions) === 10000,
+  JSON.stringify({
+    name: mergedSqlite.budgets[0].name,
+    reminders: mergedSqlite.reminders.length,
+    total: computeBreakdownTotal(mergedSqlite.subTransactions),
+  }),
+);
+check(
+  'the projected merge matches what was actually written',
+  JSON.stringify(stable(projected2.data.settings)) === JSON.stringify(stable(mergedSqlite.settings)),
+);
+
+console.log('\n--- sqlite serialization regression ---');
 
 // Regression guard for the budget-detail crash: expo-sqlite's async calls run
 // on a thread pool and only lock per statement, so overlapping queries on the

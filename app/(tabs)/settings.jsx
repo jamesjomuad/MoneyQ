@@ -186,6 +186,28 @@ export default function SettingsScreen() {
 
       <View style={{ height: spacing.xl }} />
 
+      <SectionHeader title="Export & Import" />
+      <Card padded={false}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/backup")}
+          style={({ pressed }) => [
+            styles.option,
+            { opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <View style={styles.flex}>
+            <Text variant="body">Backup & restore</Text>
+            <Text variant="caption" tone="faint">
+              Save a JSON copy of everything, or import one
+            </Text>
+          </View>
+          <Icon name="chevronRight" size={16} color={colors.textFaint} />
+        </Pressable>
+      </Card>
+
+      <View style={{ height: spacing.xl }} />
+
       <SectionHeader title="Notifications" />
       <Card>
         <View style={styles.notificationRow}>
