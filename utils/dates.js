@@ -197,6 +197,12 @@ export function formatTime(hhmm) {
   return `${hour12}:${match[2]} ${suffix}`;
 }
 
+/** Current local wall-clock time as the app's 24-hour 'HH:MM'. */
+export function nowTime(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /** 'Oct 1 – Oct 31, 2026', falling back to two full dates across a year break. */
 export function formatDateRange(startIso, endIso) {
   const start = parseIsoDate(startIso);

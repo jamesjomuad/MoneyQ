@@ -237,8 +237,9 @@ export function createSqliteAdapter(getDb) {
       await run(
         `INSERT INTO transactions
            (id, budget_id, type, amount, tag_id, account_id, to_account_id, description,
-            transaction_date, payment_status, has_breakdown, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            transaction_date, payment_status, has_breakdown, payment_due_date,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.budget_id,
         row.type,
@@ -250,6 +251,7 @@ export function createSqliteAdapter(getDb) {
         row.transaction_date,
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
+        row.payment_due_date ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -259,7 +261,8 @@ export function createSqliteAdapter(getDb) {
       const result = await run(
         `UPDATE transactions
             SET type = ?, amount = ?, tag_id = ?, description = ?,
-                transaction_date = ?, payment_status = ?, has_breakdown = ?, updated_at = ?
+                transaction_date = ?, payment_status = ?, has_breakdown = ?,
+                payment_due_date = ?, updated_at = ?
           WHERE id = ?`,
         row.type,
         row.amount,
@@ -268,6 +271,7 @@ export function createSqliteAdapter(getDb) {
         row.transaction_date,
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
+        row.payment_due_date ?? null,
         row.updated_at,
         row.id,
       );
@@ -304,13 +308,17 @@ export function createSqliteAdapter(getDb) {
     async insertSubTransaction(row) {
       await run(
         `INSERT INTO sub_transactions
-           (id, transaction_id, description, amount, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (id, transaction_id, description, amount, position,
+            purchase_date, purchase_time, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.transaction_id,
         row.description,
         row.amount,
         row.position,
+        row.purchase_date ?? null,
+        row.purchase_time ?? null,
+        row.notes ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -320,6 +328,38 @@ export function createSqliteAdapter(getDb) {
     async deleteSubTransactionsForParent(transactionId) {
       const result = await run('DELETE FROM sub_transactions WHERE transaction_id = ?', transactionId);
       return result.changes ?? 0;
+    },
+
+    /**
+     * Purchase events for one date range (Calendar): items dated inside the
+     * range, joined with the minimum parent context needed to render and to
+     * navigate (id, type, tag, description, budget). Only items that actually
+     * carry a purchase date become events. Never a financial row.
+     */
+    async listSubTransactionsInRange(startIso, endIso) {
+      return query(
+        `SELECT s.*, t.type AS parent_type, t.tag_id AS parent_tag_id,
+                t.description AS parent_description, t.budget_id AS parent_budget_id,
+                t.transaction_date AS parent_transaction_date,
+                t.payment_due_date AS parent_payment_due_date
+          FROM sub_transactions s
+          JOIN transactions t ON t.id = s.transaction_id
+          WHERE s.purchase_date >= ? AND s.purchase_date <= ?
+          ORDER BY s.purchase_date ASC, s.purchase_time ASC, s.position ASC, s.id ASC`,
+        startIso,
+        endIso,
+      );
+    },
+
+    /** Parents scheduled to be due inside a date range (Calendar payment events). */
+    async listTransactionsByDueDateRange(startIso, endIso) {
+      return query(
+        `SELECT * FROM transactions
+          WHERE payment_due_date >= ? AND payment_due_date <= ?
+          ORDER BY payment_due_date ASC, created_at DESC`,
+        startIso,
+        endIso,
+      );
     },
 
     // --- reminders -----------------------------------------------------

@@ -5,7 +5,7 @@ import {
   useNavigation,
 } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { DatePicker } from '../../components/dates/DatePicker';
 import { AmountInput } from '../../components/ui/AmountInput';
@@ -24,6 +24,7 @@ import { useRemindersStore } from '../../stores/remindersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
 import { BreakdownSection } from '../../components/transactions/BreakdownSection';
+import { SubTransactionDetailSheet } from '../../components/transactions/SubTransactionDetailSheet';
 import { SubTransactionSheet } from '../../components/transactions/SubTransactionSheet';
 import { computeBreakdownTotal } from '../../utils/breakdown';
 import { formatCurrency, fromMinor, getCurrency, toMinor } from '../../utils/currency';
@@ -67,7 +68,13 @@ function defaultNewTransactionDate(budget) {
  */
 function breakdownSnapshot(active, items) {
   if (!active) return null;
-  return (items ?? []).map((item) => [item.description.trim(), item.amount]);
+  return (items ?? []).map((item) => [
+    item.description.trim(),
+    item.amount,
+    item.purchase_date ?? null,
+    item.purchase_time ?? null,
+    item.notes ?? null,
+  ]);
 }
 
 /**
@@ -92,6 +99,7 @@ function formSnapshot(values) {
       : values.amountMinor,
     tagId: values.tagId || null,
     date: values.date,
+    dueDate: values.dueDate || null,
     description: values.description?.trim() ? values.description.trim() : null,
     breakdown: breakdownSnapshot(values.breakdownActive, values.items),
   });
@@ -105,6 +113,7 @@ function snapshotOfRow(row) {
     amountMinor: row.amount,
     tagId: row.tag_id,
     date: row.transaction_date,
+    dueDate: row.payment_due_date ?? null,
     description: row.description,
     breakdownActive: row.has_breakdown === 1,
     items: row.subTransactions ?? [],
@@ -181,6 +190,7 @@ function buildPayload(f, currency) {
     description: f.description.trim() || null,
     date: parseFlexibleDate(f.date),
     paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
+    paymentDueDate: f.dueDate || null,
     ...(f.breakdownActive
       ? {
           hasBreakdown: true,
@@ -188,6 +198,9 @@ function buildPayload(f, currency) {
             id: item.id,
             description: item.description,
             amount: item.amount,
+            purchase_date: item.purchase_date ?? null,
+            purchase_time: item.purchase_time ?? null,
+            notes: item.notes ?? null,
           })),
         }
       : {}),
@@ -250,6 +263,7 @@ export default function TransactionFormScreen() {
   const budgetId = typeof params.budgetId === 'string' ? params.budgetId : '';
   const preselectedTagId = typeof params.tagId === 'string' ? params.tagId : '';
   const transactionId = typeof params.transactionId === 'string' ? params.transactionId : '';
+  const highlightSubId = typeof params.subId === 'string' ? params.subId : '';
   const editing = transactionId
     ? entries.find((entry) => entry.id === transactionId) ?? null
     : null;
@@ -258,6 +272,7 @@ export default function TransactionFormScreen() {
   const [paymentStatus, setPaymentStatus] = useState('paid');
   const [amount, setAmount] = useState('');
   const [tagId, setTagId] = useState(preselectedTagId);
+  const [dueDate, setDueDate] = useState('');
   const [date, setDate] = useState(() =>
     storeBudgetId === budgetId && budget?.id === budgetId
       ? defaultNewTransactionDate(budget)
@@ -277,8 +292,9 @@ export default function TransactionFormScreen() {
   const [breakdownActive, setBreakdownActive] = useState(false);
   const [items, setItems] = useState([]);
   const [itemSheet, setItemSheet] = useState(null); // { item | null }
-  const [undoSlot, setUndoSlot] = useState(null); // { item, index }
+  const [itemDetail, setItemDetail] = useState(null); // item being viewed
   const [breakdownOpen, setBreakdownOpen] = useState(true);
+  const undoRef = useRef(null); // latest undo closure, read by the snackbar
 
   // Auto-save state (edit mode only): one save at a time, at most one
   // scheduled departure, and the freshest saved-row snapshot so a listener
@@ -339,6 +355,7 @@ export default function TransactionFormScreen() {
     setAmount(String(fromMinor(editing.amount, currency)));
     setTagId(editing.tag_id ?? '');
     setDate(editing.transaction_date);
+    setDueDate(editing.payment_due_date ?? '');
     setDescription(editing.description ?? '');
     setBreakdownActive(editing.has_breakdown === 1);
     setItems(
@@ -346,11 +363,23 @@ export default function TransactionFormScreen() {
         id: item.id,
         description: item.description,
         amount: item.amount,
+        purchase_date: item.purchase_date ?? null,
+        purchase_time: item.purchase_time ?? null,
+        notes: item.notes ?? null,
       })),
     );
     // Details convention: the breakdown section opens collapsed; the list
-    // header still shows the item count and the calculated total.
+    // header still shows the item count and the calculated total. A Calendar
+    // purchase event names its item: open the parent with the breakdown
+    // expanded and that item's details on screen.
     setBreakdownOpen(false);
+    if (
+      highlightSubId &&
+      (editing.subTransactions ?? []).some((item) => item.id === highlightSubId)
+    ) {
+      setBreakdownOpen(true);
+      setItemDetail(editing.subTransactions.find((item) => item.id === highlightSubId));
+    }
   }
 
   const breakdownTotal = useMemo(
@@ -358,14 +387,11 @@ export default function TransactionFormScreen() {
     [items],
   );
 
-  // Deletion is immediate but reversible for a moment: the undo pill expires
-  // on its own, and any other breakdown change clears it so an Undo can
-  // never resurrect an item next to a newer edit that already replaced it.
-  useEffect(() => {
-    if (!undoSlot) return undefined;
-    const timer = setTimeout(() => setUndoSlot(null), 6000);
-    return () => clearTimeout(timer);
-  }, [undoSlot]);
+  // Deletion is immediate but reversible for a moment, announced through the
+  // app-wide bottom snackbar (the same toast pill, now with an action). The
+  // in-memory undo record holds the exact item and index; the snackbar calls
+  // through a ref so it can never act on a stale closure. Other breakdown
+  // changes clear the slot, and an undo id-guard skips a double restore.
 
   function askActivateBreakdown() {
     Alert.alert(
@@ -388,17 +414,17 @@ export default function TransactionFormScreen() {
     );
   }
 
-  function handleSaveItem(draft) {
-    setUndoSlot(null);
-    if (draft.id) {
-      setItems((list) =>
-        list.map((item) =>
-          item.id === draft.id ? { ...item, description: draft.description, amount: draft.amount } : item,
-        ),
-      );
-    } else {
-      setItems((list) => [...list, { id: createId('subtx'), description: draft.description, amount: draft.amount }]);
-    }
+  function handleAddItem(draft) {
+    // The sheet stays open after a successful add so items can be entered
+    // one after another; only Done / dismissal closes it. A newer edit
+    // invalidates any pending Undo.
+    undoRef.current = null;
+    setItems((list) => [...list, { ...draft, id: createId('subtx') }]);
+  }
+
+  function handleApplyItem(draft) {
+    undoRef.current = null;
+    setItems((list) => list.map((item) => (item.id === draft.id ? { ...item, ...draft } : item)));
     setItemSheet(null);
   }
 
@@ -408,22 +434,26 @@ export default function TransactionFormScreen() {
     setItems((list) => list.filter((item) => item.id !== deleted.id));
     // Restore position on the same tick's index: the item leaves with its
     // slot remembered, and reinserting it there puts the order back exactly.
-    setUndoSlot({ item: deleted, index });
-  }
-
-  function handleUndoDelete() {
-    if (!undoSlot) return;
-    setItems((list) => {
-      if (list.some((item) => item.id === undoSlot.item.id)) return list;
-      const next = [...list];
-      next.splice(Math.min(undoSlot.index, next.length), 0, undoSlot.item);
-      return next;
+    const slot = { item: deleted, index };
+    undoRef.current = () => {
+      setItems((list) => {
+        if (list.some((item) => item.id === slot.item.id)) return list;
+        const next = [...list];
+        next.splice(Math.min(slot.index, next.length), 0, slot.item);
+        return next;
+      });
+    };
+    showToast('Item deleted', 'warning', {
+      label: 'Undo',
+      onPress: () => {
+        const run = undoRef.current;
+        if (run) run();
+      },
     });
-    setUndoSlot(null);
   }
 
   function handleReorder(from, to) {
-    setUndoSlot(null);
+    undoRef.current = null;
     setItems((list) => {
       if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) {
         return list;
@@ -485,6 +515,7 @@ export default function TransactionFormScreen() {
       amount,
       tagId,
       date,
+      dueDate,
       description,
       breakdownActive,
       items,
@@ -495,6 +526,7 @@ export default function TransactionFormScreen() {
       amountMinor: toMinor(amount, currency),
       tagId,
       date,
+      dueDate,
       description,
       breakdownActive,
       items,
@@ -600,6 +632,7 @@ export default function TransactionFormScreen() {
     amount,
     tagId,
     date,
+    dueDate,
     description,
     breakdownActive,
     items,
@@ -625,6 +658,7 @@ export default function TransactionFormScreen() {
       amount,
       tagId,
       date,
+      dueDate,
       description,
       breakdownActive,
       items,
@@ -794,11 +828,8 @@ export default function TransactionFormScreen() {
                 items={items}
                 currency={currency}
                 onAddItem={() => setItemSheet({ item: null })}
-                onEditItem={(item) => setItemSheet({ item })}
-                onDeleteItem={handleDeleteItem}
+                onOpenItem={(item) => setItemDetail(item)}
                 onReorder={handleReorder}
-                undo={undoSlot}
-                onUndo={handleUndoDelete}
               />
             ) : null}
             {errors.breakdown ? (
@@ -894,6 +925,34 @@ export default function TransactionFormScreen() {
 
         <View style={{ height: spacing.md }} />
 
+        <SectionHeader title="Payment Due Date" />
+        <DatePicker
+          label="Due date (optional)"
+          title="Payment Due Date"
+          value={dueDate}
+          onChange={setDueDate}
+          hint={
+            dueDate
+              ? undefined
+              : 'Shown as an all-day payment event on the Calendar, separate from the folder period and item purchase dates.'
+          }
+        />
+        {dueDate ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Clear payment due date"
+            onPress={() => setDueDate('')}
+            hitSlop={6}
+            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Text variant="label" tone="primary">
+              Clear due date
+            </Text>
+          </Pressable>
+        ) : null}
+
+        <View style={{ height: spacing.md }} />
+
         <SectionHeader title="Description" />
         <TextField
           value={description}
@@ -939,8 +998,28 @@ export default function TransactionFormScreen() {
         <SubTransactionSheet
           item={itemSheet.item}
           currency={currency}
-          onSave={handleSaveItem}
+          otherTotal={computeBreakdownTotal(
+            itemSheet.item
+              ? items.filter((entry) => entry.id !== itemSheet.item.id)
+              : items,
+          )}
+          onAddItem={handleAddItem}
+          onApplyItem={handleApplyItem}
           onClose={() => setItemSheet(null)}
+        />
+      ) : null}
+
+      {itemDetail ? (
+        <SubTransactionDetailSheet
+          item={itemDetail}
+          currency={currency}
+          index={items.findIndex((entry) => entry.id === itemDetail.id)}
+          count={items.length}
+          onEdit={(item) => setItemSheet({ item })}
+          onDelete={handleDeleteItem}
+          onMoveUp={(from) => handleReorder(from, from - 1)}
+          onMoveDown={(from) => handleReorder(from, from + 1)}
+          onClose={() => setItemDetail(null)}
         />
       ) : null}
     </View>

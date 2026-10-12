@@ -16,8 +16,9 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useTagsStore } from "../../stores/tagsStore";
 import { computeTotals } from "../../utils/calculations";
 import { formatCurrency } from "../../utils/currency";
-import { formatDate, formatTime } from "../../utils/dates";
+import { formatDate, formatShortDate, formatTime, todayIso } from "../../utils/dates";
 import { REMINDER_STATUS_LABELS, deriveReminderStatus } from "../../utils/reminders";
+import { PAYMENT_EVENT_LABELS, derivePaymentEventStatus } from "../../utils/paymentStatus";
 
 export default function CalendarScreen() {
   const { colors, spacing } = useTheme();
@@ -29,6 +30,8 @@ export default function CalendarScreen() {
   const selectedDate = useCalendarStore((state) => state.selectedDate);
   const transactions = useCalendarStore((state) => state.transactions);
   const monthReminders = useCalendarStore((state) => state.reminders);
+  const purchases = useCalendarStore((state) => state.purchases);
+  const paymentParents = useCalendarStore((state) => state.paymentParents);
   const isLoading = useCalendarStore((state) => state.isLoading);
   const load = useCalendarStore((state) => state.load);
   const setMonth = useCalendarStore((state) => state.setMonth);
@@ -55,9 +58,16 @@ export default function CalendarScreen() {
     loadDay(selectedDate);
   }, [loadDay, selectedDate]);
 
+  // Dots mark every kind of visible activity: financial rows, breakdown
+  // purchases, and scheduled payments alike.
   const activityDates = useMemo(
-    () => new Set(transactions.map((entry) => entry.transaction_date)),
-    [transactions],
+    () =>
+      new Set([
+        ...transactions.map((entry) => entry.transaction_date),
+        ...purchases.map((item) => item.purchase_date),
+        ...paymentParents.map((entry) => entry.payment_due_date),
+      ]),
+    [transactions, purchases, paymentParents],
   );
   const reminderDates = useMemo(
     () => new Set(monthReminders.map((reminder) => reminder.remind_date)),
@@ -67,6 +77,14 @@ export default function CalendarScreen() {
   const dayTransactions = useMemo(
     () => transactions.filter((entry) => entry.transaction_date === selectedDate),
     [transactions, selectedDate],
+  );
+  const dayPurchases = useMemo(
+    () => purchases.filter((item) => item.purchase_date === selectedDate),
+    [purchases, selectedDate],
+  );
+  const dayPayments = useMemo(
+    () => paymentParents.filter((entry) => entry.payment_due_date === selectedDate),
+    [paymentParents, selectedDate],
   );
   // Results are cached per date; a date that was never fetched renders empty
   // until its first load lands.
@@ -158,6 +176,135 @@ export default function CalendarScreen() {
             ))}
           </Card>
         </>
+      ) : null}
+
+      {dayPurchases.length > 0 ? (
+        <Card padded={false} style={{ marginBottom: spacing.md }}>
+          <View style={[styles.eventHeader, { borderBottomColor: colors.border }]}>
+            <Text variant="label" tone="muted">
+              Purchases
+            </Text>
+            <Text variant="caption" tone="faint">
+              breakdown items · not counted again
+            </Text>
+          </View>
+          {dayPurchases.map((item, index) => (
+            <Pressable
+              key={item.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Open parent of purchase ${item.description}`}
+              onPress={() =>
+                router.push({
+                  pathname: "/transaction/form",
+                  params: {
+                    budgetId: item.parent_budget_id,
+                    transactionId: item.transaction_id,
+                    subId: item.id,
+                  },
+                })
+              }
+              style={({ pressed }) => [
+                styles.eventRow,
+                index > 0 && {
+                  marginTop: spacing.sm,
+                  borderTopColor: colors.border,
+                  borderTopWidth: StyleSheet.hairlineWidth,
+                  paddingTop: spacing.sm,
+                },
+                { opacity: pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Icon name="shopping" size={18} color={colors.textFaint} />
+              <View style={styles.reminderCopy}>
+                <Text variant="body" numberOfLines={1}>
+                  {item.description}
+                </Text>
+                <Text variant="caption" tone="muted" numberOfLines={1}>
+                  {item.purchase_time ? `${formatTime(item.purchase_time)} · ` : ''}
+                  {item.parent_description ? `in ${item.parent_description}` : 'breakdown item'}
+                </Text>
+              </View>
+              <Text
+                variant="body"
+                style={{
+                  color: item.amount < 0 ? colors.expense : colors.income,
+                  fontVariant: ['tabular-nums'],
+                }}
+              >
+                {formatCurrency(item.amount, { currency, showSign: true })}
+              </Text>
+            </Pressable>
+          ))}
+        </Card>
+      ) : null}
+
+      {dayPayments.length > 0 ? (
+        <Card padded={false} style={{ marginBottom: spacing.md }}>
+          <View style={[styles.eventHeader, { borderBottomColor: colors.border }]}>
+            <Text variant="label" tone="muted">
+              Payments due
+            </Text>
+            <Text variant="caption" tone="faint">
+              all-day · parent schedule
+            </Text>
+          </View>
+          {dayPayments.map((entry, index) => {
+            const status = derivePaymentEventStatus(entry, todayIso());
+            return (
+              <Pressable
+                key={entry.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Open transaction due today: ${entry.description || entry.type}`}
+                onPress={() =>
+                  router.push({
+                    pathname: "/transaction/form",
+                    params: { budgetId: entry.budget_id, transactionId: entry.id },
+                  })
+                }
+                style={({ pressed }) => [
+                  styles.eventRow,
+                  index > 0 && {
+                    marginTop: spacing.sm,
+                    borderTopColor: colors.border,
+                    borderTopWidth: StyleSheet.hairlineWidth,
+                    paddingTop: spacing.sm,
+                  },
+                  { opacity: pressed ? 0.6 : 1 },
+                ]}
+              >
+                <Icon name="calendar" size={18} color={colors.warning} />
+                <View style={styles.reminderCopy}>
+                  <Text variant="body" numberOfLines={1}>
+                    {entry.description || formatShortDate(entry.payment_due_date)}
+                  </Text>
+                  {entry.has_breakdown === 1 ? (
+                    <Text variant="caption" tone="muted">
+                      payment commitment
+                    </Text>
+                  ) : null}
+                </View>
+                {status ? (
+                  <Text
+                    variant="caption"
+                    style={{
+                      color:
+                        status === 'overdue'
+                          ? colors.expense
+                          : status === 'paid'
+                            ? colors.income
+                            : colors.textFaint,
+                    }}
+                  >
+                    {PAYMENT_EVENT_LABELS[status]}
+                  </Text>
+                ) : null}
+                <Text variant="body" style={{ fontVariant: ['tabular-nums'] }}>
+                  {formatCurrency(entry.amount, { currency })}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </Card>
       ) : null}
 
       <SectionHeader
@@ -270,6 +417,21 @@ const styles = StyleSheet.create({
   },
   summaryAmount: {
     fontVariant: ["tabular-nums"],
+  },
+  eventHeader: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 6,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+  },
+  eventRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   reminderRow: {
     alignItems: "center",

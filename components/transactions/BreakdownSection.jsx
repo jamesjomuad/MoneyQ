@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { formatCurrency } from '../../utils/currency';
+import { formatShortDate, formatTime } from '../../utils/dates';
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
@@ -12,25 +13,18 @@ const ROW_HEIGHT = 56;
 /**
  * Ordered list of breakdown items inside the transaction form.
  *
- * Every row carries a dedicated drag handle: the responder lives on the
- * handle only, so tapping edit/delete never fights the drag. Move-up and
- * move-down buttons give the same ordering without dragging. Deleting is
- * immediate and shows a temporary "Item deleted · Undo" bar; reordering only
- * changes positions — the parent total is the sum, so it can never move.
- * Drag feedback is a raised, accented row that follows the finger in
- * half-steps of ROW_HEIGHT.
+ * Rows are deliberately quiet: a dedicated drag handle, one truncated
+ * description with its purchase date/time beneath, and the signed amount —
+ * nothing else. Tapping a row opens its detail sheet (full description,
+ * notes, move/delete), so edit and delete never fight the drag, and the
+ * accessible reorder alternative lives there too. The calculated total sits
+ * at the bottom of the section, after the list and the Add item action.
+ * Deletion feedback is the app-wide bottom snackbar with Undo, raised by the
+ * form; reordering only changes positions — the parent total is the sum, so
+ * it can never move.
  */
-export function BreakdownSection({
-  items,
-  currency,
-  onAddItem,
-  onEditItem,
-  onDeleteItem,
-  onReorder,
-  undo,
-  onUndo,
-}) {
-  const { colors, radius, spacing } = useTheme();
+export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReorder }) {
+  const { colors, spacing } = useTheme();
   const [drag, setDrag] = useState(null); // { id, originalIndex, dy }
   // Gesture bookkeeping only; never read while rendering a branch.
   const dragRef = useRef(null);
@@ -62,42 +56,15 @@ export function BreakdownSection({
     setDrag(null);
   }
 
+  const total = items.reduce((sum, item) => sum + item.amount, 0);
+
   return (
     <View style={{ marginTop: spacing.sm }}>
-      {undo ? (
-        <View
-          style={[
-            styles.undoBar,
-            {
-              backgroundColor: colors.surfaceMuted,
-              borderRadius: radius.md,
-              marginBottom: spacing.sm,
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.sm,
-            },
-          ]}
-        >
-          <Text variant="caption" tone="muted" style={{ flex: 1 }} numberOfLines={1}>
-            Item deleted
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Undo item deletion"
-            onPress={onUndo}
-            hitSlop={8}
-            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text variant="label" tone="primary">
-              Undo
-            </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
       {items.length === 0 ? (
         <Text variant="caption" tone="faint" style={{ paddingVertical: spacing.sm }}>
-          No items yet. The total stays at zero until you add one — negative
-          items are fine as discounts or adjustments.
+          No items yet. The total stays at zero until you add one — an
+          Adjustment can be larger than a single purchase, but never larger
+          than the running total.
         </Text>
       ) : (
         items.map((item, index) => (
@@ -111,10 +78,7 @@ export function BreakdownSection({
             onGrant={grant}
             onMove={move}
             onEnd={end}
-            onEdit={() => onEditItem(item)}
-            onDelete={() => onDeleteItem(item)}
-            onMoveUp={() => onReorder(index, index - 1)}
-            onMoveDown={() => onReorder(index, index + 1)}
+            onOpen={() => onOpenItem(item)}
           />
         ))
       )}
@@ -128,7 +92,7 @@ export function BreakdownSection({
           styles.addAction,
           {
             borderColor: colors.border,
-            borderRadius: radius.md,
+            borderRadius: 8,
             marginTop: spacing.sm,
             opacity: pressed ? 0.7 : 1,
           },
@@ -139,28 +103,35 @@ export function BreakdownSection({
           Add item
         </Text>
       </Pressable>
+
+      <View
+        style={[
+          styles.totalRow,
+          {
+            borderTopColor: colors.border,
+            marginTop: spacing.sm,
+            paddingTop: spacing.sm,
+          },
+        ]}
+      >
+        <Text variant="label">Total</Text>
+        <Text variant="body" style={{ fontVariant: ['tabular-nums'] }}>
+          {formatCurrency(total, { currency })}
+        </Text>
+      </View>
     </View>
   );
 }
 
-function BreakdownRow({
-  item,
-  index,
-  count,
-  currency,
-  drag,
-  onGrant,
-  onMove,
-  onEnd,
-  onEdit,
-  onDelete,
-  onMoveUp,
-  onMoveDown,
-}) {
+function BreakdownRow({ item, index, count, currency, drag, onGrant, onMove, onEnd, onOpen }) {
   const { colors, radius, spacing } = useTheme();
 
   const isDragging = drag?.id === item.id;
   const dy = isDragging ? drag.dy - (index - drag.originalIndex) * ROW_HEIGHT : 0;
+
+  const when = item.purchase_date
+    ? `${formatShortDate(item.purchase_date)}${item.purchase_time ? ` · ${formatTime(item.purchase_time)}` : ''}`
+    : 'No purchase date';
 
   return (
     <View
@@ -194,71 +165,39 @@ function BreakdownRow({
         onResponderMove={(event) => onMove(item.id, event.nativeEvent.pageY)}
         onResponderRelease={onEnd}
         onResponderTerminate={onEnd}
-        accessibilityLabel={`Reorder ${item.description}`}
-        accessibilityHint="Drag to reorder, or use the move buttons"
+        accessibilityLabel={`Reorder ${item.description}. Position ${index + 1} of ${count}`}
+        accessibilityHint="Drag to reorder. Or open the item and use Move up or Move down."
         style={styles.handle}
       >
         <Icon name="drag" size={16} color={isDragging ? colors.primary : colors.textFaint} />
       </View>
 
-      <View style={styles.moveColumn}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Move ${item.description} up`}
-          accessibilityState={{ disabled: index === 0 }}
-          disabled={index === 0}
-          onPress={onMoveUp}
-          hitSlop={6}
-          style={({ pressed }) => [{ opacity: index === 0 ? 0.25 : pressed ? 0.6 : 0.9 }]}
-        >
-          <Icon name="chevronUp" size={14} color={colors.textMuted} />
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Move ${item.description} down`}
-          accessibilityState={{ disabled: index === count - 1 }}
-          disabled={index === count - 1}
-          onPress={onMoveDown}
-          hitSlop={6}
-          style={({ pressed }) => [{ opacity: index === count - 1 ? 0.25 : pressed ? 0.6 : 0.9 }]}
-        >
-          <Icon name="chevronDown" size={14} color={colors.textMuted} />
-        </Pressable>
-      </View>
-
-      <View style={styles.copy}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${item.description}`}
+        accessibilityHint="Shows the full item with edit and delete actions"
+        onPress={onOpen}
+        style={({ pressed }) => [styles.copy, { opacity: pressed ? 0.7 : 1 }]}
+      >
         <Text variant="body" numberOfLines={1}>
           {item.description}
         </Text>
-      </View>
+        <Text variant="caption" tone="muted" numberOfLines={1}>
+          {when}
+          {item.notes ? ' · note' : ''}
+        </Text>
+      </Pressable>
 
       <Text
         variant="body"
-        tone={item.amount < 0 ? 'expense' : 'default'}
-        style={[styles.amount, { color: item.amount > 0 ? colors.income : undefined }]}
+        style={{
+          color: item.amount < 0 ? colors.expense : colors.income,
+          fontVariant: ['tabular-nums'],
+          marginLeft: 6,
+        }}
       >
         {formatCurrency(item.amount, { currency, showSign: item.amount > 0 })}
       </Text>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Edit ${item.description}`}
-        onPress={onEdit}
-        hitSlop={10}
-        style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}
-      >
-        <Icon name="pencil" size={16} color={colors.textMuted} />
-      </Pressable>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Delete ${item.description}`}
-        onPress={onDelete}
-        hitSlop={10}
-        style={({ pressed }) => [styles.iconButton, { opacity: pressed ? 0.6 : 1 }]}
-      >
-        <Icon name="trash" size={16} color={colors.textFaint} />
-      </Pressable>
     </View>
   );
 }
@@ -275,30 +214,17 @@ const styles = StyleSheet.create({
     minHeight: ROW_HEIGHT,
     minWidth: 28,
   },
-  moveColumn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: ROW_HEIGHT,
-    minWidth: 20,
-  },
   copy: {
     flex: 1,
     marginLeft: 6,
     minWidth: 0,
+    paddingVertical: 6,
   },
-  amount: {
-    fontVariant: ['tabular-nums'],
-    marginLeft: 6,
-  },
-  iconButton: {
+  totalRow: {
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 32,
-    minWidth: 28,
-  },
-  undoBar: {
-    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   addAction: {
     alignItems: 'center',

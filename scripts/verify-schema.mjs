@@ -32,9 +32,13 @@ import {
 import {
   breakdownValidationError,
   computeBreakdownTotal,
+  isHhMm,
+  isIsoCalendarDate,
   normalizeBreakdownItems,
   prepareBreakdownRows,
 } from '../utils/breakdown.js';
+import { derivePaymentEventStatus } from '../utils/paymentStatus.js';
+import { toPurchaseRows } from '../utils/reports.js';
 import {
   buildRemindAt,
   buildReminderNotification,
@@ -104,12 +108,14 @@ const paymentMigration = migrations.find((entry) => entry.version === 5);
 const notesMigration = migrations.find((entry) => entry.version === 6);
 const standaloneMigration = migrations.find((entry) => entry.version === 7);
 const subTransactionsMigration = migrations.find((entry) => entry.version === 8);
+const datesMigration = migrations.find((entry) => entry.version === 9);
 for (const entry of migrations) {
   if (
     entry === paymentMigration ||
     entry === notesMigration ||
     entry === standaloneMigration ||
-    entry === subTransactionsMigration
+    entry === subTransactionsMigration ||
+    entry === datesMigration
   ) {
     continue;
   }
@@ -148,6 +154,7 @@ check(
 );
 await standaloneMigration.up(adapter);
 await subTransactionsMigration.up(adapter);
+await datesMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -225,6 +232,21 @@ check(
   ),
   subColumns.join(','),
 );
+const subDateColumns = columnsOf('sub_transactions');
+check(
+  'breakdown items gained purchase date, time, and notes',
+  ['purchase_date', 'purchase_time', 'notes'].every((column) => subDateColumns.includes(column)),
+  subDateColumns.join(','),
+);
+check(
+  'transactions gained an optional payment due date',
+  transactionColumns.includes('payment_due_date') ||
+    db
+      .prepare(`PRAGMA table_info(transactions)`)
+      .all()
+      .some((column) => column.name === 'payment_due_date'),
+);
+
 const subIndexes = db.prepare(`PRAGMA index_list(sub_transactions)`).all();
 check(
   'breakdown reads by parent and description search are indexed',
@@ -299,7 +321,7 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 8, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 9, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -891,6 +913,9 @@ async function runScenario(store) {
     position: 0,
     created_at: STAMP,
     updated_at: STAMP,
+    purchase_date: '2026-10-08',
+    purchase_time: '09:15',
+    notes: 'Wet market, cash.',
   });
   await store.insertSubTransaction({
     id: 'p_sub_discount',
@@ -900,6 +925,9 @@ async function runScenario(store) {
     position: 1,
     created_at: STAMP,
     updated_at: STAMP,
+    purchase_date: '2026-10-09',
+    purchase_time: null,
+    notes: null,
   });
   snapshot.subsByParent = await store.listSubTransactionsByParent('p_expense');
   snapshot.subsByBudget = await store.listSubTransactionsByBudget('p_budget');
@@ -914,6 +942,9 @@ async function runScenario(store) {
     position: 0,
     created_at: STAMP,
     updated_at: STAMP,
+    purchase_date: '2026-10-09',
+    purchase_time: null,
+    notes: null,
   });
   await store.insertSubTransaction({
     id: 'p_sub_rice',
@@ -923,8 +954,43 @@ async function runScenario(store) {
     position: 1,
     created_at: STAMP,
     updated_at: STAMP,
+    purchase_date: '2026-10-08',
+    purchase_time: '09:15',
+    notes: 'Wet market, cash.',
   });
   snapshot.subsReordered = await store.listSubTransactionsByParent('p_expense');
+
+  // Purchase dates and payment due dates round-trip identically: dated items
+  // come back joined with parent context in date→time→position order, undated
+  // items stay out of the events, and a due date selects its parent alone.
+  snapshot.purchaseEvents = await store.listSubTransactionsInRange('2026-10-08', '2026-10-08');
+  snapshot.purchaseEventsWide = await store.listSubTransactionsInRange('2026-10-01', '2026-10-31');
+
+  await store.insertTransaction({
+    id: 'p_due',
+    budget_id: 'p_budget',
+    type: 'expense',
+    amount: 420_000,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Card bill',
+    transaction_date: '2026-10-05',
+    payment_status: 'unpaid',
+    has_breakdown: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+    payment_due_date: '2026-10-20',
+  });
+  snapshot.dueEvents = await store.listTransactionsByDueDateRange('2026-10-19', '2026-10-21');
+  snapshot.dueCleared = await store.updateTransaction({
+    ...(await store.getTransaction('p_due')),
+    payment_due_date: null,
+    updated_at: STAMP,
+  });
+  snapshot.dueEventsAfterClear = await store.listTransactionsByDueDateRange('2026-10-19', '2026-10-21');
+  snapshot.dueParentAfterClear = await store.getTransaction('p_due');
+  await store.deleteTransaction('p_due');
 
   // A zero-total breakdown parent must store and read back identically.
   await store.insertTransaction({
@@ -992,7 +1058,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 8);
+check('both adapters report the same schema version', LATEST_VERSION === 9);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -1091,6 +1157,30 @@ check(
     memoryResult.subsAfterParentDelete.length === 0,
 );
 check(
+  'purchase events round-trip identically: dated items only, joined to parents',
+  sqliteResult.purchaseEvents.length === 1 &&
+    sqliteResult.purchaseEvents[0].id === 'p_sub_rice' &&
+    sqliteResult.purchaseEvents[0].parent_type === 'expense' &&
+    sqliteResult.purchaseEvents[0].notes === 'Wet market, cash.' &&
+    JSON.stringify(sqliteResult.purchaseEvents) === JSON.stringify(memoryResult.purchaseEvents) &&
+    JSON.stringify(sqliteResult.purchaseEventsWide) ===
+      JSON.stringify(memoryResult.purchaseEventsWide),
+  JSON.stringify(sqliteResult.purchaseEvents),
+);
+check(
+  'a payment due date selects its parent and clearing removes only the event',
+  sqliteResult.dueEvents.length === 1 &&
+    sqliteResult.dueEvents[0].id === 'p_due' &&
+    memoryResult.dueEvents.length === 1 &&
+    JSON.stringify(memoryResult.dueEvents[0]) === JSON.stringify(sqliteResult.dueEvents[0]) &&
+    sqliteResult.dueCleared === 1 &&
+    sqliteResult.dueEventsAfterClear.length === 0 &&
+    memoryResult.dueEventsAfterClear.length === 0 &&
+    sqliteResult.dueParentAfterClear.payment_due_date === null &&
+    memoryResult.dueParentAfterClear.payment_due_date === null,
+  JSON.stringify(sqliteResult.dueEvents),
+);
+check(
   'deleting a budget cascades through transactions to breakdown items',
   sqliteResult.subsAfterBudgetDelete.length === 0 &&
     memoryResult.subsAfterBudgetDelete.length === 0,
@@ -1134,7 +1224,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has seven pending migrations', pending.length === 7, String(pending.length));
+check('legacy database has eight pending migrations', pending.length === 8, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -1357,6 +1447,146 @@ check(
   'items keep existing ids and mint fresh ones for duplicates',
   preparedRows[0].id === 's1' && preparedRows[1].id === 'subtx_minted',
   JSON.stringify(preparedRows.map((row) => row.id)),
+);
+
+check(
+  'a malformed purchase date is rejected by the same rules the repository uses',
+  breakdownValidationError(
+    normalizeBreakdownItems([{ description: 'Rice', amount: 100, purchase_date: '2026-02-30' }]),
+  ) === 'Breakdown purchase dates must be real calendar dates (YYYY-MM-DD).',
+);
+check(
+  'a malformed purchase time is rejected outright',
+  breakdownValidationError(
+    normalizeBreakdownItems([{ description: 'Rice', amount: 100, purchase_time: '25:00' }]),
+  ) === 'Breakdown purchase times must be 24-hour HH:mm.',
+);
+check(
+  'notes are trimmed and an empty note clears to null',
+  normalizeBreakdownItems([
+    { description: 'Rice', amount: 100, notes: '  keep me  ' },
+    { description: 'Oil', amount: 50, notes: '   ' },
+  ]).map((item) => String(item.notes)).join('|') === 'keep me|null',
+);
+const datedRows = prepareBreakdownRows(
+  [
+    {
+      id: 's9',
+      description: 'Rice',
+      amount: 100,
+      purchase_date: '2026-10-08',
+      purchase_time: '09:15',
+      notes: 'note',
+    },
+  ],
+  { createId: (prefix) => `${prefix}_x`, timestamp: STAMP },
+);
+check(
+  'storage rows carry purchase date, time, and notes',
+  datedRows[0].purchase_date === '2026-10-08' &&
+    datedRows[0].purchase_time === '09:15' &&
+    datedRows[0].notes === 'note',
+  JSON.stringify(datedRows),
+);
+check(
+  'isIsoCalendarDate accepts real days only',
+  isIsoCalendarDate('2026-02-28') && !isIsoCalendarDate('2026-02-30') && !isIsoCalendarDate('nope'),
+);
+check(
+  'isHhMm accepts 24-hour times only',
+  isHhMm('09:15') && isHhMm('23:59') && !isHhMm('9:15') && !isHhMm('24:00'),
+);
+check(
+  'the payment lifecycle reads status first, then the due date',
+  derivePaymentEventStatus(
+    { type: 'expense', payment_status: 'paid', payment_due_date: '2026-10-01' },
+    '2026-10-12',
+  ) === 'paid' &&
+    derivePaymentEventStatus(
+      { type: 'expense', payment_status: 'unpaid', payment_due_date: '2026-10-01' },
+      '2026-10-12',
+    ) === 'overdue' &&
+    derivePaymentEventStatus(
+      { type: 'expense', payment_status: 'unpaid', payment_due_date: '2026-10-12' },
+      '2026-10-12',
+    ) === 'dueToday' &&
+    derivePaymentEventStatus(
+      { type: 'expense', payment_status: 'unpaid', payment_due_date: '2026-11-01' },
+      '2026-10-12',
+    ) === 'upcoming' &&
+    derivePaymentEventStatus({ type: 'expense', payment_status: 'unpaid' }, '2026-10-12') === null,
+);
+check(
+  'the purchase perspective replaces breakdown parents with their dated items',
+  (() => {
+    const parents = [
+      { id: 'plain', type: 'expense', amount: 500, transaction_date: '2026-10-05', has_breakdown: 0 },
+      {
+        id: 'parent',
+        type: 'expense',
+        amount: 900,
+        transaction_date: '2026-10-06',
+        tag_id: 't1',
+        has_breakdown: 1,
+        subTransactions: [
+          { id: 'a', amount: 1000, description: 'Rice', purchase_date: '2026-10-08' },
+          { id: 'b', amount: -100, description: 'Refund', purchase_date: null },
+        ],
+      },
+    ];
+    const events = [
+      {
+        id: 'a',
+        transaction_id: 'parent',
+        description: 'Rice',
+        amount: 1000,
+        purchase_date: '2026-10-08',
+        parent_type: 'expense',
+        parent_tag_id: 't1',
+        parent_budget_id: 'bud',
+      },
+    ];
+    const rows = toPurchaseRows(parents, events);
+    return (
+      rows.length === 3 &&
+      rows.some((row) => row.id === 'plain') &&
+      !rows.some((row) => row.id === 'parent') &&
+      rows.some(
+        (row) =>
+          row.id === 'purchase_a' &&
+          row.transaction_date === '2026-10-08' &&
+          row.amount === 1000 &&
+          row.tag_id === 't1',
+      ) &&
+      rows.some(
+        (row) =>
+          row.id === 'purchase_b' && row.transaction_date === '2026-10-06' && row.amount === -100,
+      ) &&
+      computeTotals(rows).expense === 1400
+    );
+  })(),
+);
+check(
+  'the purchase perspective counts every cent exactly once',
+  computeTotals(
+    toPurchaseRows(
+      [
+        {
+          id: 'parent',
+          type: 'expense',
+          amount: 180_000,
+          transaction_date: '2026-10-05',
+          has_breakdown: 1,
+          subTransactions: [],
+        },
+      ],
+      [
+        { id: 'i1', transaction_id: 'parent', description: 'G', amount: 125_000, purchase_date: '2026-10-08', parent_type: 'expense' },
+        { id: 'i2', transaction_id: 'parent', description: 'F', amount: 80_000, purchase_date: '2026-10-09', parent_type: 'expense' },
+        { id: 'i3', transaction_id: 'parent', description: 'R', amount: -25_000, purchase_date: '2026-10-10', parent_type: 'expense' },
+      ],
+    ),
+  ).expense === 180_000,
 );
 
 console.log('\n--- date handling ---');

@@ -15,13 +15,48 @@ export function computeBreakdownTotal(items) {
   return (items ?? []).reduce((total, item) => total + item.amount, 0);
 }
 
-/** Trim descriptions and drop nothing else; the repository stores what this returns. */
+/**
+ * Trim descriptions and notes and canonicalize the optional purchase
+ * date/time; the repository stores what this returns. Empty strings become
+ * null so a cleared note is really cleared everywhere.
+ */
 export function normalizeBreakdownItems(items) {
   return (items ?? []).map((item) => ({
     id: item.id,
     description: String(item.description ?? '').trim(),
     amount: item.amount,
+    purchase_date: normalizeItemDate(item.purchase_date),
+    purchase_time: normalizeItemTime(item.purchase_time),
+    notes: String(item.notes ?? '').trim() || null,
   }));
+}
+
+/** 'YYYY-MM-DD' that names a real local day; anything else is not a date. */
+export function isIsoCalendarDate(value) {
+  const raw = String(value ?? '');
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return (
+    date.getFullYear() === Number(match[1]) &&
+    date.getMonth() === Number(match[2]) - 1 &&
+    date.getDate() === Number(match[3])
+  );
+}
+
+/** 24-hour 'HH:mm' — the same shape the app's time fields already store. */
+export function isHhMm(value) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value ?? ''));
+}
+
+function normalizeItemDate(value) {
+  const text = String(value ?? '').trim();
+  return text ? text : null;
+}
+
+function normalizeItemTime(value) {
+  const text = String(value ?? '').trim();
+  return text ? text : null;
 }
 
 /**
@@ -36,6 +71,12 @@ export function breakdownValidationError(items) {
     if (!item.description) return 'Every breakdown item needs a description.';
     if (!Number.isInteger(item.amount)) {
       return 'Breakdown amounts must be whole minor units.';
+    }
+    if (item.purchase_date != null && !isIsoCalendarDate(item.purchase_date)) {
+      return 'Breakdown purchase dates must be real calendar dates (YYYY-MM-DD).';
+    }
+    if (item.purchase_time != null && !isHhMm(item.purchase_time)) {
+      return 'Breakdown purchase times must be 24-hour HH:mm.';
     }
   }
   if (computeBreakdownTotal(items) < 0) {
@@ -56,6 +97,9 @@ export function prepareBreakdownRows(items, { createId, timestamp }) {
     description: item.description,
     amount: item.amount,
     position: index,
+    purchase_date: item.purchase_date ?? null,
+    purchase_time: item.purchase_time ?? null,
+    notes: item.notes ?? null,
     created_at: timestamp,
     updated_at: timestamp,
   }));

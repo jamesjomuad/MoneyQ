@@ -4,6 +4,7 @@ import { defaultPaymentStatus, effectivePaymentStatus } from '../../utils/paymen
 import {
   breakdownValidationError,
   computeBreakdownTotal,
+  isIsoCalendarDate,
   normalizeBreakdownItems,
   prepareBreakdownRows,
 } from '../../utils/breakdown';
@@ -39,6 +40,37 @@ export async function getSubTransactionsForBudget(budgetId) {
 /** One transaction's items in persisted order. */
 export async function getSubTransactions(transactionId) {
   return storage.listSubTransactionsByParent(transactionId);
+}
+
+/**
+ * Purchase events for a date range: breakdown items whose own purchase_date
+ * falls inside the bounds, joined with just enough parent context (type,
+ * tag, budget, description) for the Calendar and the purchase-date reports.
+ * These are never financial transactions — they are views of the parent's
+ * already-counted amount.
+ */
+export async function getBreakdownItemsInRange(startIso, endIso) {
+  return storage.listSubTransactionsInRange(startIso, endIso);
+}
+
+/** Parents due inside a date range — the Calendar's payment events. */
+export async function getTransactionsByDueDateRange(startIso, endIso) {
+  return storage.listTransactionsByDueDateRange(startIso, endIso);
+}
+
+/**
+ * Payment due date rule: optional, date-only, and a real calendar day — the
+ * repository never infers it from the budget end date and never stores a
+ * time. Clearing (null, '' or undefined-to-null) removes the scheduled
+ * payment event without touching the parent or its breakdown.
+ */
+function resolvePaymentDueDate(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const text = String(value).trim();
+  if (!isIsoCalendarDate(text)) {
+    throw new Error('Payment due date must be a real calendar date (YYYY-MM-DD).');
+  }
+  return text;
 }
 
 const SEARCH_RESULT_LIMIT = 30;
@@ -136,6 +168,9 @@ async function writeTransactionWithBreakdown({ id, existing, row, items, rewrite
           description: item.description,
           amount: item.amount,
           position: item.position,
+          purchase_date: item.purchase_date ?? null,
+          purchase_time: item.purchase_time ?? null,
+          notes: item.notes ?? null,
           created_at: item.created_at,
           updated_at: item.updated_at,
         });
@@ -210,6 +245,7 @@ export async function createTransaction(input) {
       transaction_date: input.date ?? '',
       payment_status: resolveNewPaymentStatus(type, input.paymentStatus),
       has_breakdown: breakdown.hasBreakdown ? 1 : 0,
+      payment_due_date: resolvePaymentDueDate(input.paymentDueDate),
       created_at: timestamp,
       updated_at: timestamp,
     },
@@ -228,6 +264,10 @@ export async function updateTransaction(id, input) {
   const description =
     input.description === undefined ? existing.description : input.description;
   const date = input.date === undefined ? existing.transaction_date : input.date;
+  const paymentDueDate =
+    input.paymentDueDate === undefined
+      ? existing.payment_due_date ?? null
+      : resolvePaymentDueDate(input.paymentDueDate);
 
   const breakdown = await resolveBreakdown(type, existing, input);
 
@@ -259,6 +299,7 @@ export async function updateTransaction(id, input) {
       transaction_date: date,
       payment_status: resolveUpdatedPaymentStatus(type, existing, input),
       has_breakdown: breakdown.hasBreakdown ? 1 : 0,
+      payment_due_date: paymentDueDate,
       updated_at: timestamp,
     },
     // A metadata-only save (no breakdown mentioned) must not rewrite — or

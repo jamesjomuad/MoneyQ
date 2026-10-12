@@ -36,3 +36,32 @@ export const PAYMENT_OPTIONS = [
   { value: 'unpaid', label: 'Unpaid' },
   { value: 'paid', label: 'Paid' },
 ];
+
+/**
+ * Payment events for the Calendar. A parent with a `payment_due_date` shows
+ * one all-day event; its lifecycle label comes from the existing payment
+ * status and the due date alone — never from the budget period or a child's
+ * purchase date. Paid wins over everything: a paid commitment is 'Paid'
+ * whether it settled early, on the day, or late.
+ */
+export const PAYMENT_EVENT_LABELS = {
+  upcoming: 'Upcoming',
+  dueToday: 'Due today',
+  overdue: 'Overdue',
+  paid: 'Paid',
+};
+
+/**
+ * 'YYYY-MM-DD' comparison against a local today — ISO dates sort as strings,
+ * and both sides are built by the same local-date rule, so no time zones are
+ * involved. Returns null when the row has no due date or is not a financial
+ * event the Calendar should surface.
+ */
+export function derivePaymentEventStatus(row, todayIso) {
+  const due = row?.payment_due_date;
+  if (!due) return null;
+  if (row.type === 'expense' && effectivePaymentStatus(row) === 'paid') return 'paid';
+  if (due < todayIso) return 'overdue';
+  if (due === todayIso) return 'dueToday';
+  return 'upcoming';
+}

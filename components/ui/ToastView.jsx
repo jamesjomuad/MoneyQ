@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from './Text';
@@ -8,6 +8,7 @@ import { useToastStore } from '../../stores/toastStore';
 
 const TONE_KEYS = { success: 'success', warning: 'warning', error: 'expense' };
 const VISIBLE_MS = 2400;
+const ACTION_VISIBLE_MS = 6000;
 
 /**
  * Single app-wide toast, mounted by the root layout so it stays visible
@@ -30,6 +31,7 @@ export function ToastView() {
       useNativeDriver: true,
     }).start();
 
+    const visibleMs = current.visibleMs ?? (current.action ? ACTION_VISIBLE_MS : VISIBLE_MS);
     const timer = setTimeout(() => {
       Animated.timing(opacity, {
         toValue: 0,
@@ -39,7 +41,7 @@ export function ToastView() {
       }).start(({ finished }) => {
         if (finished) dismiss(current.id);
       });
-    }, VISIBLE_MS);
+    }, visibleMs);
 
     return () => {
       clearTimeout(timer);
@@ -52,7 +54,10 @@ export function ToastView() {
 
   return (
     <View
-      pointerEvents="none"
+      // Plain feedback floats above the UI without intercepting touches; a
+      // snackbar action must be pressable, so only then does the pill take
+      // touches (and just its own box).
+      pointerEvents={current.action ? 'box-none' : 'none'}
       style={[styles.host, { bottom: insets.bottom + spacing.xl }]}
     >
       <Animated.View
@@ -71,12 +76,36 @@ export function ToastView() {
         <Text variant="label" style={{ color: colors.text }}>
           {current.message}
         </Text>
+        {current.action ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={current.action.label}
+            onPress={() => {
+              const id = current.id;
+              current.action.onPress();
+              dismiss(id);
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.action,
+              { opacity: pressed ? 0.6 : 1, marginLeft: spacing.sm },
+            ]}
+          >
+            <Text variant="label" tone="primary">
+              {current.action.label}
+            </Text>
+          </Pressable>
+        ) : null}
       </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  action: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   host: {
     alignItems: 'center',
     bottom: 0,

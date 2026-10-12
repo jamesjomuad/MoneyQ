@@ -254,11 +254,25 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       return copy(store.transactions.find((transaction) => transaction.id === id) ?? null);
     },
 
+    // Keys are laid out in the exact column order of the migrated table
+    // (added-by-ALTER columns last) so a row read back here serializes
+    // identically to `SELECT *` in SQLite — the parity check depends on it.
     async insertTransaction(row) {
       store.transactions.push({
-        ...row,
+        id: row.id,
+        budget_id: row.budget_id,
+        type: row.type,
+        amount: row.amount,
+        tag_id: row.tag_id ?? null,
+        account_id: row.account_id ?? null,
+        to_account_id: row.to_account_id ?? null,
+        description: row.description ?? null,
+        transaction_date: row.transaction_date,
         payment_status: row.payment_status ?? null,
         has_breakdown: row.has_breakdown ? 1 : 0,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        payment_due_date: row.payment_due_date ?? null,
       });
     },
 
@@ -272,6 +286,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       existing.transaction_date = row.transaction_date;
       existing.payment_status = row.payment_status ?? null;
       existing.has_breakdown = row.has_breakdown ? 1 : 0;
+      existing.payment_due_date = row.payment_due_date ?? null;
       existing.updated_at = row.updated_at;
       return 1;
     },
@@ -316,7 +331,68 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async insertSubTransaction(row) {
-      store.subTransactions.push({ ...row });
+      store.subTransactions.push({
+        id: row.id,
+        transaction_id: row.transaction_id,
+        description: row.description,
+        amount: row.amount,
+        position: row.position,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        purchase_date: row.purchase_date ?? null,
+        purchase_time: row.purchase_time ?? null,
+        notes: row.notes ?? null,
+      });
+    },
+
+    /**
+     * Purchase events for one date range (Calendar): dated items joined with
+     * the parent context the SQLite adapter's query returns, with the same
+     * ordering — date, then time, then persisted position, then id.
+     */
+    async listSubTransactionsInRange(startIso, endIso) {
+      const parentById = new Map(store.transactions.map((t) => [t.id, t]));
+      return store.subTransactions
+        .filter((item) =>
+          item.purchase_date != null &&
+          item.purchase_date >= startIso &&
+          item.purchase_date <= endIso,
+        )
+        .sort(
+          (a, b) =>
+            String(a.purchase_date).localeCompare(String(b.purchase_date)) ||
+            String(a.purchase_time ?? '').localeCompare(String(b.purchase_time ?? '')) ||
+            a.position - b.position ||
+            a.id.localeCompare(b.id),
+        )
+        .map((item) => {
+          const parent = parentById.get(item.transaction_id);
+          return copy({
+            ...item,
+            parent_type: parent?.type ?? null,
+            parent_tag_id: parent?.tag_id ?? null,
+            parent_description: parent?.description ?? null,
+            parent_budget_id: parent?.budget_id ?? null,
+            parent_transaction_date: parent?.transaction_date ?? null,
+            parent_payment_due_date: parent?.payment_due_date ?? null,
+          });
+        });
+    },
+
+    async listTransactionsByDueDateRange(startIso, endIso) {
+      return store.transactions
+        .filter(
+          (transaction) =>
+            transaction.payment_due_date != null &&
+            transaction.payment_due_date >= startIso &&
+            transaction.payment_due_date <= endIso,
+        )
+        .sort(
+          (a, b) =>
+            String(a.payment_due_date).localeCompare(String(b.payment_due_date)) ||
+            String(b.created_at).localeCompare(String(a.created_at)),
+        )
+        .map(copy);
     },
 
     async deleteSubTransactionsForParent(transactionId) {
@@ -492,6 +568,9 @@ function seedDemoData(store, timestamp) {
         description: 'Rice 5kg',
         amount: 100_000,
         position: 0,
+        purchase_date: today,
+        purchase_time: '09:15',
+        notes: null,
         created_at: timestamp,
         updated_at: timestamp,
       },
@@ -501,6 +580,9 @@ function seedDemoData(store, timestamp) {
         description: 'Fresh fruit',
         amount: 50_000,
         position: 1,
+        purchase_date: today,
+        purchase_time: '09:40',
+        notes: null,
         created_at: timestamp,
         updated_at: timestamp,
       },
@@ -510,10 +592,14 @@ function seedDemoData(store, timestamp) {
         description: 'Loyalty discount',
         amount: -5_000,
         position: 2,
+        purchase_date: yesterday(),
+        purchase_time: null,
+        notes: 'Card promo, applied to the next receipt.',
         created_at: timestamp,
         updated_at: timestamp,
       },
     );
+    groceries.payment_due_date = today;
   }
 
   // A plain expense with a reminder, so the browser harness shows the reminder

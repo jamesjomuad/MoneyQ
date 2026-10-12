@@ -1,10 +1,22 @@
 import { create } from 'zustand';
 
 import { getTags } from '../storage/repositories/tagRepository';
-import { getTransactionsInRange } from '../storage/repositories/transactionRepository';
+import {
+  getBreakdownItemsInRange,
+  getSubTransactions,
+  getTransactionsInRange,
+} from '../storage/repositories/transactionRepository';
 import { computeTotals } from '../utils/calculations';
 import { toIsoDate } from '../utils/dates';
-import { buildBarGroups, buildTagSlices, buildTrendBuckets, periodRange, trendForFilter, trendRange } from '../utils/reports';
+import {
+  buildBarGroups,
+  buildTagSlices,
+  buildTrendBuckets,
+  periodRange,
+  toPurchaseRows,
+  trendForFilter,
+  trendRange,
+} from '../utils/reports';
 
 function computeTrend(view, range, rows) {
   const buckets = buildTrendBuckets(view, range, rows);
@@ -48,10 +60,25 @@ export const useReportsStore = create((set, get) => ({
 
     try {
       const period = periodRange(filter, get().custom);
-      const [rows, tags] = await Promise.all([
+      const [rows, tags, events] = await Promise.all([
         getTransactionsInRange(period.start, period.end),
         getTags(),
+        getBreakdownItemsInRange(period.start, period.end),
       ]);
+
+      // Date-grouped views read the purchase perspective: a breakdown parent
+      // is replaced by its own items in their own purchase periods, so the
+      // same money is never counted twice. Parents without a breakdown pass
+      // through, and undated legacy items fall back to the parent's date.
+      // The transaction count stays parent-only, as everywhere else.
+      const hydrated = await Promise.all(
+        rows.map(async (row) =>
+          row.has_breakdown === 1
+            ? { ...row, subTransactions: await getSubTransactions(row.id) }
+            : row,
+        ),
+      );
+      const purchaseRows = toPurchaseRows(hydrated, events);
 
       const anchor = trendForFilter(filter, period);
       const range = anchor.range ?? trendRange(anchor.view, anchor.offset);
@@ -59,11 +86,11 @@ export const useReportsStore = create((set, get) => ({
         period,
         transactions: rows,
         tags,
-        summary: computeTotals(rows),
-        barGroups: buildBarGroups(rows, filter, period),
-        tagSlices: buildTagSlices(rows, tags),
+        summary: { ...computeTotals(purchaseRows), transactionCount: rows.length },
+        barGroups: buildBarGroups(purchaseRows, filter, period),
+        tagSlices: buildTagSlices(purchaseRows, tags),
         trendView: anchor.view,
-        trend: computeTrend(anchor.view, range, rows),
+        trend: computeTrend(anchor.view, range, purchaseRows),
         isLoading: false,
       });
     } catch (error) {

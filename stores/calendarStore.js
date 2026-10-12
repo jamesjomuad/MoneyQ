@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 
 import { getReminders } from '../storage/repositories/reminderRepository';
-import { getTransactionsInRange } from '../storage/repositories/transactionRepository';
+import {
+  getBreakdownItemsInRange,
+  getTransactionsByDueDateRange,
+  getTransactionsInRange,
+} from '../storage/repositories/transactionRepository';
 import { currentMonthKey, isWithin, monthRange, todayIso } from '../utils/dates';
 
 /**
@@ -20,6 +24,11 @@ export const useCalendarStore = create((set, get) => ({
   monthKey: currentMonthKey(),
   selectedDate: todayIso(),
   transactions: [],
+  // Breakdown items with a purchase_date inside the visible month — purchase
+  // events, never financial rows. `paymentsByDate` holds parents whose
+  // payment_due_date lands in the month: all-day payment events.
+  purchases: [],
+  paymentParents: [],
   reminders: [],
   isLoading: true,
   error: null,
@@ -29,9 +38,11 @@ export const useCalendarStore = create((set, get) => ({
 
     try {
       const { start, end } = monthRange(monthKey);
-      const [rows, allReminders] = await Promise.all([
+      const [rows, allReminders, purchases, paymentParents] = await Promise.all([
         getTransactionsInRange(start, end),
         getReminders(),
+        getBreakdownItemsInRange(start, end),
+        getTransactionsByDueDateRange(start, end),
       ]);
 
       // A transaction can own several reminders; hydrate with the oldest,
@@ -61,7 +72,7 @@ export const useCalendarStore = create((set, get) => ({
             ? todayIso()
             : start;
 
-      set({ transactions, reminders, selectedDate, isLoading: false });
+      set({ transactions, reminders, purchases, paymentParents, selectedDate, isLoading: false });
     } catch (error) {
       set({ error, isLoading: false });
     }

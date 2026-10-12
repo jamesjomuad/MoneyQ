@@ -81,6 +81,59 @@ function monthKeysBetween(startIso, endIso) {
 }
 
 /**
+ * Purchase-date perspective (spec 13): a report grouping activity by WHEN
+ * purchases happened must use each breakdown item's signed amount in its own
+ * purchase-date period, never the parent's full amount on its payment date.
+ * Parents without a breakdown pass through untouched, so both perspectives
+ * cover the same money exactly once. Dated children come straight from the
+ * range query; children written before purchase dates existed fall back to
+ * the parent's own date, keeping their amount inside the same period the
+ * payment view already counts.
+ */
+export function toPurchaseRows(transactions, events) {
+  const parents = new Map(transactions.map((row) => [row.id, row]));
+  const rows = transactions
+    .filter((row) => row.has_breakdown !== 1)
+    .map((row) => ({ ...row }));
+  const seen = new Set();
+
+  for (const item of events ?? []) {
+    if (item.purchase_date == null || seen.has(item.id)) continue;
+    seen.add(item.id);
+    const parent = parents.get(item.transaction_id) ?? null;
+    const parentType = item.parent_type ?? parent?.type ?? 'expense';
+    rows.push({
+      id: `purchase_${item.id}`,
+      transaction_date: item.purchase_date,
+      type: parentType,
+      amount: item.amount,
+      tag_id: item.parent_tag_id ?? parent?.tag_id ?? null,
+      budget_id: item.parent_budget_id ?? parent?.budget_id ?? null,
+      description: item.description,
+      payment_status: parent?.payment_status ?? null,
+      is_purchase_event: true,
+    });
+  }
+
+  for (const row of transactions) {
+    if (row.has_breakdown !== 1) continue;
+    for (const item of row.subTransactions ?? []) {
+      if (item.purchase_date != null || seen.has(item.id)) continue;
+      seen.add(item.id);
+      rows.push({
+        ...row,
+        id: `purchase_${item.id}`,
+        amount: item.amount,
+        description: item.description ?? row.description,
+        is_purchase_event: true,
+      });
+    }
+  }
+
+  return rows;
+}
+
+/**
  * Groups for the income-vs-expense bars. 'thisYear' becomes one grouped
  * pair of bars per month (through the current month); every other filter
  * collapses to a single pair. Transfers never count, because
