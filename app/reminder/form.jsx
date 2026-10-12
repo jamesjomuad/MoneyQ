@@ -375,6 +375,7 @@ export default function ReminderFormScreen() {
       <View>
         <Button
           label={saving ? 'Saving…' : 'Save reminder'}
+          icon={saving ? undefined : 'check'}
           onPress={handleSave}
           disabled={saving}
           style={{ marginBottom: spacing.md }}
@@ -383,13 +384,14 @@ export default function ReminderFormScreen() {
         {editing && status === 'active' ? (
           <Button
             label="Mark as completed"
+            icon="paid"
             variant="secondary"
             onPress={handleComplete}
             style={{ marginBottom: spacing.md }}
           />
         ) : null}
 
-        {editing ? <Button label="Delete reminder" variant="danger" onPress={handleDelete} /> : null}
+        {editing ? <Button label="Delete reminder" icon="trash" variant="danger" onPress={handleDelete} /> : null}
       </View>
 
       {permission?.supported === false || permission?.granted === false ? (

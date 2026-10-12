@@ -217,9 +217,12 @@ export default function SettingsScreen() {
                 { opacity: pressed ? 0.7 : 1 },
               ]}
             >
-              <Text variant="label" tone="primary">
-                Open device settings
-              </Text>
+              <View style={styles.settingsLinkRow}>
+                <Icon name="settings" size={14} color={colors.primary} />
+                <Text variant="label" tone="primary">
+                  Open device settings
+                </Text>
+              </View>
             </Pressable>
           </View>
         ) : null}
@@ -274,6 +277,11 @@ const styles = StyleSheet.create({
   },
   settingsLink: {
     paddingVertical: 6,
+  },
+  settingsLinkRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
   option: {
     alignItems: "center",

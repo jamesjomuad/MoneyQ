@@ -182,8 +182,8 @@ function FolderColorSheet({ value, onChange, onClose }) {
           ) : null}
 
           <View style={[styles.actions, { paddingHorizontal: spacing.lg, marginTop: spacing.md }]}>
-            <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.flex} />
-            <Button label="Use color" onPress={commit} style={styles.flex} />
+            <Button label="Cancel" icon="close" variant="secondary" onPress={onClose} style={styles.flex} />
+            <Button label="Use color" icon="check" onPress={commit} style={styles.flex} />
           </View>
         </View>
       </View>

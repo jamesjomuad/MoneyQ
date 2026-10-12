@@ -214,6 +214,7 @@ function DatabaseErrorView({ message, onRetry }) {
       ) : null}
       <Button
         label="Try again"
+        icon="refresh"
         onPress={onRetry}
         style={{ marginTop: spacing.lg }}
       />

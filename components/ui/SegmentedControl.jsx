@@ -1,9 +1,10 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { Icon } from './Icon';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
-/** options: [{ value, label }] */
+/** options: [{ value, label, icon? }] — `icon` is an Icon name shown before the label. */
 export function SegmentedControl({ options, value, onChange, style, dense = false }) {
   const { colors, radius, spacing } = useTheme();
 
@@ -35,6 +36,13 @@ export function SegmentedControl({ options, value, onChange, style, dense = fals
               },
             ]}
           >
+            {option.icon ? (
+              <Icon
+                name={option.icon}
+                size={dense ? 14 : 16}
+                color={active ? colors.primary : colors.textMuted}
+              />
+            ) : null}
             <Text variant="label" tone={active ? 'primary' : 'muted'}>
               {option.label}
             </Text>
@@ -52,6 +60,8 @@ const styles = StyleSheet.create({
   option: {
     alignItems: 'center',
     flex: 1,
+    flexDirection: 'row',
+    gap: 6,
     borderWidth: StyleSheet.hairlineWidth,
     justifyContent: 'center',
     minHeight: 44,

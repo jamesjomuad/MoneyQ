@@ -364,6 +364,7 @@ export default function BudgetFormScreen() {
           <View style={{ height: spacing.sm }} />
           <Button
             label={saving ? "Saving…" : "Create budget"}
+            icon={saving ? undefined : "add"}
             onPress={handleSave}
             disabled={saving}
           />
@@ -373,6 +374,7 @@ export default function BudgetFormScreen() {
       {editing ? (
         <Button
           label="Delete budget"
+          icon="trash"
           variant="danger"
           onPress={handleDelete}
           disabled={saving}

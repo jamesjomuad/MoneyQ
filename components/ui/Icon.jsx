@@ -37,6 +37,12 @@ const ICONS = {
   other: { ios: 'ellipsis.circle', android: 'category', web: 'category' },
   empty: { ios: 'tray', android: 'inbox', web: 'inbox' },
   database: { ios: 'cylinder', android: 'storage', web: 'storage' },
+  expense: { ios: 'arrow.down', android: 'arrow_downward', web: 'arrow_downward' },
+  income: { ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' },
+  transfer: { ios: 'arrow.left.arrow.right', android: 'swap_horiz', web: 'swap_horiz' },
+  paid: { ios: 'checkmark.circle', android: 'check_circle', web: 'check_circle' },
+  undo: { ios: 'arrow.uturn.backward', android: 'undo', web: 'undo' },
+  refresh: { ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' },
   pin: { ios: 'pin', android: 'push_pin', web: 'push_pin' },
   pinFilled: { ios: 'pin.fill', android: 'push_pin', web: 'push_pin' },
 };

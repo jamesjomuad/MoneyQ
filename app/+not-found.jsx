@@ -12,7 +12,7 @@ export default function NotFoundScreen() {
         This screen does not exist
       </Text>
       <Link href="/" asChild>
-        <Button label="Back to Home" style={{ marginTop: 24 }} />
+        <Button label="Back to Home" icon="home" style={{ marginTop: 24 }} />
       </Link>
     </Screen>
   );

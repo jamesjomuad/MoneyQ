@@ -114,6 +114,7 @@ export function SubTransactionDetailSheet({
           <View style={{ marginTop: spacing.lg }}>
             <Button
               label="Edit"
+              icon="pencil"
               onPress={() => {
                 onClose();
                 onEdit(item);
@@ -124,6 +125,7 @@ export function SubTransactionDetailSheet({
           <View style={[styles.rowPair, { marginTop: spacing.sm }]}>
             <Button
               label="Move up"
+              icon="chevronUp"
               variant="secondary"
               disabled={atFirst}
               onPress={() => onMoveUp(index)}
@@ -131,6 +133,7 @@ export function SubTransactionDetailSheet({
             />
             <Button
               label="Move down"
+              icon="chevronDown"
               variant="secondary"
               disabled={atLast}
               onPress={() => onMoveDown(index)}
@@ -141,6 +144,7 @@ export function SubTransactionDetailSheet({
           <View style={{ marginTop: spacing.sm }}>
             <Button
               label="Delete"
+              icon="trash"
               variant="danger"
               onPress={() => {
                 onClose();

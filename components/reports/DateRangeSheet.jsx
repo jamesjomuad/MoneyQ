@@ -111,8 +111,8 @@ export function DateRangeSheet({ initial, onApply, onClose }) {
           </View>
 
           <View style={[styles.footer, { gap: spacing.sm }]}>
-            <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.footerButton} />
-            <Button label="Apply" onPress={apply} style={styles.footerButton} />
+            <Button label="Cancel" icon="close" variant="secondary" onPress={onClose} style={styles.footerButton} />
+            <Button label="Apply" icon="check" onPress={apply} style={styles.footerButton} />
           </View>
         </View>
       </View>

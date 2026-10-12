@@ -450,11 +450,12 @@ export function CalendarSheet({
           <View style={[styles.footer, { paddingHorizontal: spacing.lg }]}>
             <Button
               label={view === 'days' ? 'Cancel' : 'Back to calendar'}
+              icon={view === 'days' ? 'close' : 'chevronLeft'}
               variant="secondary"
               onPress={() => (view === 'days' ? onClose?.() : setView('days'))}
               style={styles.footerButton}
             />
-            <Button label="Done" onPress={commit} style={styles.footerButton} />
+            <Button label="Done" icon="check" onPress={commit} style={styles.footerButton} />
           </View>
         </View>
       </View>

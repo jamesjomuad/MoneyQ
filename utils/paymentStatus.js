@@ -33,8 +33,8 @@ export function effectivePaymentStatus(row) {
 }
 
 export const PAYMENT_OPTIONS = [
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'paid', label: 'Paid' },
+  { value: 'unpaid', label: 'Unpaid', icon: 'clock' },
+  { value: 'paid', label: 'Paid', icon: 'paid' },
 ];
 
 /**

@@ -47,8 +47,8 @@ import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStat
 import { showToast } from '../../stores/toastStore';
 
 const TYPE_OPTIONS = [
-  { value: 'expense', label: 'Expense' },
-  { value: 'income', label: 'Income' },
+  { value: 'expense', label: 'Expense', icon: 'expense' },
+  { value: 'income', label: 'Income', icon: 'income' },
 ];
 
 const DATE_CHIPS = [
@@ -467,6 +467,7 @@ export default function TransactionFormScreen() {
     };
     showToast('Item deleted', 'warning', {
       label: 'Undo',
+      icon: 'undo',
       onPress: () => {
         const run = undoRef.current;
         if (run) run();
@@ -494,7 +495,11 @@ export default function TransactionFormScreen() {
     }
     return [
       ...TYPE_OPTIONS,
-      { value: editing.type, label: editing.type === 'transfer' ? 'Transfer' : editing.type },
+      {
+        value: editing.type,
+        label: editing.type === 'transfer' ? 'Transfer' : editing.type,
+        icon: editing.type === 'transfer' ? 'transfer' : undefined,
+      },
     ];
   }, [editing]);
 
@@ -742,7 +747,7 @@ export default function TransactionFormScreen() {
           title="No budget selected"
           description="Open a budget first, then add a transaction from inside it."
         >
-          <Button label="Back to Home" onPress={() => router.replace('/')} />
+          <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
         </EmptyState>
       </View>
     );
@@ -767,7 +772,7 @@ export default function TransactionFormScreen() {
           title="Transaction not found"
           description="This entry may have been deleted. Go back and pick another one."
         >
-          <Button label="Back" onPress={() => router.back()} />
+          <Button label="Back" icon="chevronLeft" onPress={() => router.back()} />
         </EmptyState>
       </View>
     );
@@ -951,7 +956,7 @@ export default function TransactionFormScreen() {
             title="No tags available"
             description="Tags group transactions by what you spent on. Add one to continue."
           >
-            <Button label="Manage tags" onPress={() => router.push('/tags')} />
+            <Button label="Manage tags" icon="tag" onPress={() => router.push('/tags')} />
           </EmptyState>
         ) : (
           <>
@@ -985,7 +990,7 @@ export default function TransactionFormScreen() {
                 {errors.tag}
               </Text>
             ) : null}
-            <SecondaryLink label="Add or rename tags" onPress={() => router.push('/tags')} />
+            <SecondaryLink label="Add or rename tags" icon="pencil" onPress={() => router.push('/tags')} />
           </>
         )}
 
@@ -1090,6 +1095,7 @@ export default function TransactionFormScreen() {
         >
           <Button
             label={saving ? 'Saving…' : 'Add transaction'}
+            icon={saving ? undefined : 'add'}
             onPress={handleSave}
             disabled={saving}
           />
@@ -1128,11 +1134,11 @@ export default function TransactionFormScreen() {
   );
 }
 
-function SecondaryLink({ label, onPress }) {
+function SecondaryLink({ label, onPress, icon }) {
   const { spacing } = useTheme();
   return (
     <View style={{ marginTop: spacing.xs }}>
-      <Button label={label} variant="secondary" onPress={onPress} />
+      <Button label={label} icon={icon} variant="secondary" onPress={onPress} />
     </View>
   );
 }

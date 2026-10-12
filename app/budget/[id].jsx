@@ -101,8 +101,8 @@ export default function BudgetDetailScreen() {
           description="MoneyQ couldn’t read this folder from local storage. Your data is still on this device — try again."
         >
           <View style={{ alignItems: 'center', gap: spacing.sm }}>
-            <Button label="Try again" onPress={() => load(budgetId)} />
-            <Button label="Back to Home" onPress={() => router.replace('/')} />
+            <Button label="Try again" icon="refresh" onPress={() => load(budgetId)} />
+            <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
           </View>
         </EmptyState>
       </View>
@@ -118,7 +118,7 @@ export default function BudgetDetailScreen() {
           title="Budget not found"
           description={error?.message ?? 'This budget may have been deleted.'}
         >
-          <Button label="Back to Home" onPress={() => router.replace('/')} />
+          <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
         </EmptyState>
       </View>
     );
@@ -333,7 +333,7 @@ export default function BudgetDetailScreen() {
               title="No tags used yet"
               description="Tags appear here once an income or expense in this budget references one."
             >
-              <Button label="Manage tags" onPress={() => router.push('/tags')} />
+              <Button label="Manage tags" icon="tag" onPress={() => router.push('/tags')} />
             </EmptyState>
           ) : (
             <ScrollView
@@ -385,7 +385,7 @@ export default function BudgetDetailScreen() {
                   : 'Add income or expenses to this budget and they will show up here, grouped by day.'
               }
             >
-              <Button label="Add transaction" onPress={() => router.push({ pathname: '/transaction/form', params: { budgetId: budget.id } })} />
+              <Button label="Add transaction" icon="add" onPress={() => router.push({ pathname: '/transaction/form', params: { budgetId: budget.id } })} />
             </EmptyState>
           ) : (
             groups.map((group) => (

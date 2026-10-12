@@ -1,15 +1,16 @@
 import { Pressable, StyleSheet } from 'react-native';
 
+import { Icon } from './Icon';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
-export function Button({ label, onPress, variant = 'primary', disabled = false, style }) {
+export function Button({ label, onPress, variant = 'primary', disabled = false, style, icon }) {
   const { colors, radius, spacing } = useTheme();
 
   const variants = {
-    primary: { background: colors.primary, border: colors.primary, text: 'onPrimary' },
-    secondary: { background: 'transparent', border: colors.border, text: 'default' },
-    danger: { background: colors.expenseSoft, border: colors.expenseSoft, text: 'expense' },
+    primary: { background: colors.primary, border: colors.primary, text: 'onPrimary', ink: colors.onPrimary },
+    secondary: { background: 'transparent', border: colors.border, text: 'default', ink: colors.text },
+    danger: { background: colors.expenseSoft, border: colors.expenseSoft, text: 'expense', ink: colors.expense },
   };
 
   const selected = variants[variant] ?? variants.primary;
@@ -36,6 +37,9 @@ export function Button({ label, onPress, variant = 'primary', disabled = false, 
         style,
       ]}
     >
+      {icon ? (
+        <Icon name={icon} size={16} color={disabled ? colors.textMuted : selected.ink} />
+      ) : null}
       <Text variant="label" tone={disabled ? 'muted' : selected.text}>
         {label}
       </Text>
@@ -47,6 +51,8 @@ const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 8,
     justifyContent: 'center',
   },
 });

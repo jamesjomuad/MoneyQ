@@ -111,8 +111,8 @@ export function TimeSheet({ title = 'Pick a time', value, onChange, onClose }) {
           </View>
 
           <View style={[styles.footer, { paddingHorizontal: spacing.lg }]}>
-            <Button label="Cancel" variant="secondary" onPress={onClose} style={styles.footerButton} />
-            <Button label="Done" onPress={commit} style={styles.footerButton} />
+            <Button label="Cancel" icon="close" variant="secondary" onPress={onClose} style={styles.footerButton} />
+            <Button label="Done" icon="check" onPress={commit} style={styles.footerButton} />
           </View>
         </View>
       </View>

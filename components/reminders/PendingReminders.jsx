@@ -124,6 +124,7 @@ export function PendingReminders({ value, onChange, permission, onOpenSettings }
                 <View style={{ marginTop: spacing.xs }}>
                   <Button
                     label="Open device settings"
+                    icon="settings"
                     variant="secondary"
                     onPress={onOpenSettings}
                   />
@@ -133,10 +134,11 @@ export function PendingReminders({ value, onChange, permission, onOpenSettings }
           ) : null}
           <Button
             label={editorId === 'new' ? 'Add reminder' : 'Save reminder'}
+            icon={editorId === 'new' ? 'add' : 'check'}
             onPress={commit}
             style={{ marginBottom: spacing.md }}
           />
-          <Button label="Cancel" variant="secondary" onPress={closeEditor} />
+          <Button label="Cancel" icon="close" variant="secondary" onPress={closeEditor} />
         </Card>
       </>
     );

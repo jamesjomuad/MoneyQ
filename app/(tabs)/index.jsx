@@ -194,6 +194,7 @@ export default function HomeScreen() {
           >
             <Button
               label="Create your first budget"
+              icon="add"
               onPress={() => router.push("/budget/form")}
             />
           </EmptyState>
@@ -282,7 +283,7 @@ export default function HomeScreen() {
                 title="No results found"
                 description={`Nothing matches "${term}". Try a different folder name, transaction description, or tag.`}
               >
-                <Button label="Clear search" onPress={() => setQuery("")} />
+                <Button label="Clear search" icon="close" onPress={() => setQuery("")} />
               </EmptyState>
             ) : null}
 

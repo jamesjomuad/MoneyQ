@@ -100,11 +100,12 @@ export function TagForm({ initial, submitting = false, onSave, onCancel }) {
       <View style={[styles.actions, { marginTop: spacing.lg }]}>
         <Button
           label={submitting ? 'Saving…' : 'Save tag'}
+          icon={submitting ? undefined : 'check'}
           onPress={handleSave}
           disabled={submitting}
           style={{ flex: 1 }}
         />
-        <Button label="Cancel" variant="secondary" onPress={onCancel} style={{ flex: 1 }} />
+        <Button label="Cancel" icon="close" variant="secondary" onPress={onCancel} style={{ flex: 1 }} />
       </View>
     </Card>
   );

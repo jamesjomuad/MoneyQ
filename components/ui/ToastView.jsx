@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icon } from './Icon';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 import { useToastStore } from '../../stores/toastStore';
@@ -91,9 +92,14 @@ export function ToastView() {
               { opacity: pressed ? 0.6 : 1, marginLeft: spacing.sm },
             ]}
           >
-            <Text variant="label" tone="primary">
-              {current.action.label}
-            </Text>
+            <View style={styles.actionContent}>
+              {current.action.icon ? (
+                <Icon name={current.action.icon} size={14} color={colors.primary} />
+              ) : null}
+              <Text variant="label" tone="primary">
+                {current.action.label}
+              </Text>
+            </View>
           </Pressable>
         ) : null}
       </Animated.View>
@@ -105,6 +111,11 @@ const styles = StyleSheet.create({
   action: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  actionContent: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
   },
   host: {
     alignItems: 'center',

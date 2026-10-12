@@ -271,16 +271,17 @@ export function SubTransactionSheet({ item, currency, otherTotal = 0, onAddItem,
 
           <View style={[styles.footer, { marginTop: spacing.md }]}>
             {isEdit ? (
-              <Button label="Done" onPress={handleDone} style={styles.footerButton} />
+              <Button label="Done" icon="check" onPress={handleDone} style={styles.footerButton} />
             ) : (
               <>
                 <Button
                   label="Done"
+                  icon="check"
                   variant="secondary"
                   onPress={handleDone}
                   style={styles.footerButton}
                 />
-                <Button label="Add item" onPress={handleAddItem} style={styles.footerButton} />
+                <Button label="Add item" icon="add" onPress={handleAddItem} style={styles.footerButton} />
               </>
             )}
           </View>
