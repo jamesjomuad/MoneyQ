@@ -304,6 +304,9 @@ export default function TransactionFormScreen() {
   const [hydratedFrom, setHydratedFrom] = useState(null);
   const insets = useSafeAreaInsets();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Sticky card height: measured so the overlaid scroll body starts its
+  // content exactly below the card and its shadow falloff.
+  const [cardHeight, setCardHeight] = useState(0);
 
   // The sticky action bar rides the keyboard: with the Android window in pan
   // mode it would otherwise sit behind the keyboard, so it lifts by exactly
@@ -782,147 +785,13 @@ export default function TransactionFormScreen() {
     <View style={styles.fill}>
       <Stack.Screen options={{ title: transactionId ? 'Edit Transaction' : 'Add Transaction' }} />
 
-      {/* Amount stays pinned above the scroll body: it is the number every
-          other field on this screen explains, so it never scrolls away. The
-          card is the sticky element itself — no wrapper band around it. */}
-      <Card
-        style={{
-          // marginBottom clears the full shadow falloff (~offset + blur) so
-          // the opaque scroll body never clips the bottom edge of the lift.
-          marginBottom: spacing.xl,
-          marginHorizontal: spacing.lg,
-          marginTop: spacing.md,
-          padding: spacing.md,
-          // Soft, diffuse drop shadow so the card floats above the page;
-          // the theme shadow token carries its own alpha.
-          boxShadow: `0 6px 16px ${colors.shadow}`,
-          ...(summaryPalette
-            ? { backgroundColor: summaryPalette.folder, borderColor: summaryPalette.folderBorder }
-            : null),
-        }}
-      >
-        <View style={{ alignSelf: 'center' }}>
-          <SectionHeader title="Amount" color={summaryInk} />
-        </View>
-        {breakdownActive ? (
-          <>
-            <AmountInput
-              symbol={getCurrency(currency).symbol}
-              value={String(fromMinor(breakdownTotal, currency))}
-              editable={false}
-              decimalPlaces={getCurrency(currency).minorUnits}
-              bare
-              centered
-              large
-              ink={summaryInk ?? undefined}
-            />
-            <Text
-              variant="caption"
-              tone="faint"
-              textAlign="center"
-              style={{
-                marginTop: spacing.xs,
-                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
-              }}
-            >
-              Calculated from items · {items.length} item{items.length === 1 ? '' : 's'} ·{' '}
-              {formatCurrency(breakdownTotal, { currency })}
-            </Text>
-          </>
-        ) : (
-          <>
-            <AmountInput
-              symbol={getCurrency(currency).symbol}
-              value={amount}
-              onChangeText={setAmount}
-              decimalPlaces={getCurrency(currency).minorUnits}
-              autoFocus={!transactionId}
-              bare
-              centered
-              large
-              ink={summaryInk ?? undefined}
-            />
-            {errors.amount ? (
-              <Text
-                variant="caption"
-                tone="expense"
-                textAlign="center"
-                style={{ marginTop: spacing.xs, ...(summaryInk ? { color: summaryInk } : null) }}
-              >
-                {errors.amount}
-              </Text>
-            ) : null}
-            <Text
-              variant="caption"
-              tone="faint"
-              textAlign="center"
-              style={{
-                marginTop: spacing.xs,
-                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
-              }}
-            >
-              {formatCurrency(toMinor(amount, currency), { currency })}
-            </Text>
-          </>
-        )}
-
-        {/* Type and Status are core one-tap choices: kept dense beside the
-            amount so they never scroll away from the fields they govern
-            (due date follows payment status). */}
-        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
-          <View style={{ flex: 1 }}>
-            <SectionHeader title="Type" color={summaryInk} />
-            <SegmentedControl options={typeOptions} value={type} onChange={setType} dense />
-          </View>
-          <View style={{ flex: 1 }}>
-            <SectionHeader title="Status" color={summaryInk} />
-            <SegmentedControl
-              options={PAYMENT_OPTIONS}
-              value={paymentStatus}
-              onChange={setPaymentStatus}
-              dense
-            />
-          </View>
-        </View>
-
-        {/* Budget association as a compact detail line: it never scrolls
-            away, so the folder the entry belongs to is always visible. */}
-        <View
-          style={{
-            alignItems: 'center',
-            borderTopWidth: summaryPalette ? 0 : StyleSheet.hairlineWidth,
-            borderColor: colors.border,
-            flexDirection: 'row',
-            gap: spacing.sm,
-            marginTop: spacing.md,
-            paddingTop: spacing.sm,
+      <View style={StyleSheet.absoluteFill}>
+        <Screen
+          contentContainerStyle={{
+            paddingTop: spacing.md + cardHeight + spacing.xl,
+            paddingBottom: 48 + keyboardHeight,
           }}
         >
-          <Icon
-            name="folder"
-            size={14}
-            color={summaryInk ?? (budget?.color || colors.primary)}
-          />
-          <Text
-            variant="label"
-            numberOfLines={1}
-            style={{ flex: 1, ...(summaryInk ? { color: summaryInk } : null) }}
-          >
-            {budget?.name ?? 'This budget'}
-          </Text>
-          {budget?.start_date ? (
-            <Text
-              variant="caption"
-              tone="faint"
-              style={summaryInk ? { color: summaryInk, opacity: 0.85 } : undefined}
-            >
-              {formatDateRange(budget.start_date, budget.end_date)}
-            </Text>
-          ) : null}
-        </View>
-      </Card>
-
-      <Screen contentContainerStyle={{ paddingBottom: 48 + keyboardHeight }}>
         <SectionHeader title="Description" />
         <TextField
           value={description}
@@ -1097,7 +966,147 @@ export default function TransactionFormScreen() {
             Changes save automatically when you leave this screen.
           </Text>
         ) : null}
-      </Screen>
+        </Screen>
+      </View>
+
+      {/* The scroll body fills the whole scene behind the sticky amount card,
+          so rows slide cleanly under its opaque surface instead of being cut
+          off at a straight edge below it. The card paints on top (it follows
+          the ScrollView in JSX) and paddingTop clears its measured height. */}
+      <Card
+        onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}
+        style={{
+          marginHorizontal: spacing.lg,
+          marginTop: spacing.md,
+          padding: spacing.md,
+          // Soft, diffuse drop shadow so the card floats above the page;
+          // the theme shadow token carries its own alpha.
+          boxShadow: `0 6px 16px ${colors.shadow}`,
+          ...(summaryPalette
+            ? { backgroundColor: summaryPalette.folder, borderColor: summaryPalette.folderBorder }
+            : null),
+        }}
+      >
+        <View style={{ alignSelf: 'center' }}>
+          <SectionHeader title="Amount" color={summaryInk} />
+        </View>
+        {breakdownActive ? (
+          <>
+            <AmountInput
+              symbol={getCurrency(currency).symbol}
+              value={String(fromMinor(breakdownTotal, currency))}
+              editable={false}
+              decimalPlaces={getCurrency(currency).minorUnits}
+              bare
+              centered
+              large
+              ink={summaryInk ?? undefined}
+            />
+            <Text
+              variant="caption"
+              tone="faint"
+              textAlign="center"
+              style={{
+                marginTop: spacing.xs,
+                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
+              }}
+            >
+              Calculated from items · {items.length} item{items.length === 1 ? '' : 's'} ·{' '}
+              {formatCurrency(breakdownTotal, { currency })}
+            </Text>
+          </>
+        ) : (
+          <>
+            <AmountInput
+              symbol={getCurrency(currency).symbol}
+              value={amount}
+              onChangeText={setAmount}
+              decimalPlaces={getCurrency(currency).minorUnits}
+              autoFocus={!transactionId}
+              bare
+              centered
+              large
+              ink={summaryInk ?? undefined}
+            />
+            {errors.amount ? (
+              <Text
+                variant="caption"
+                tone="expense"
+                textAlign="center"
+                style={{ marginTop: spacing.xs, ...(summaryInk ? { color: summaryInk } : null) }}
+              >
+                {errors.amount}
+              </Text>
+            ) : null}
+            <Text
+              variant="caption"
+              tone="faint"
+              textAlign="center"
+              style={{
+                marginTop: spacing.xs,
+                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
+              }}
+            >
+              {formatCurrency(toMinor(amount, currency), { currency })}
+            </Text>
+          </>
+        )}
+
+        {/* Type and Status are core one-tap choices: kept dense beside the
+            amount so they never scroll away from the fields they govern
+            (due date follows payment status). */}
+        <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <SectionHeader title="Type" color={summaryInk} />
+            <SegmentedControl options={typeOptions} value={type} onChange={setType} dense />
+          </View>
+          <View style={{ flex: 1 }}>
+            <SectionHeader title="Status" color={summaryInk} />
+            <SegmentedControl
+              options={PAYMENT_OPTIONS}
+              value={paymentStatus}
+              onChange={setPaymentStatus}
+              dense
+            />
+          </View>
+        </View>
+
+        {/* Budget association as a compact detail line: it never scrolls
+            away, so the folder the entry belongs to is always visible. */}
+        <View
+          style={{
+            alignItems: 'center',
+            borderTopWidth: summaryPalette ? 0 : StyleSheet.hairlineWidth,
+            borderColor: colors.border,
+            flexDirection: 'row',
+            gap: spacing.sm,
+            marginTop: spacing.md,
+            paddingTop: spacing.sm,
+          }}
+        >
+          <Icon
+            name="folder"
+            size={14}
+            color={summaryInk ?? (budget?.color || colors.primary)}
+          />
+          <Text
+            variant="label"
+            numberOfLines={1}
+            style={{ flex: 1, ...(summaryInk ? { color: summaryInk } : null) }}
+          >
+            {budget?.name ?? 'This budget'}
+          </Text>
+          {budget?.start_date ? (
+            <Text
+              variant="caption"
+              tone="faint"
+              style={summaryInk ? { color: summaryInk, opacity: 0.85 } : undefined}
+            >
+              {formatDateRange(budget.start_date, budget.end_date)}
+            </Text>
+          ) : null}
+        </View>
+      </Card>
 
       {transactionId ? null : (
         <View

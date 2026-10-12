@@ -2,11 +2,12 @@ import { StyleSheet, View } from 'react-native';
 
 import { useTheme } from './ThemeProvider';
 
-export function Card({ children, style, padded = true }) {
+export function Card({ children, style, padded = true, onLayout }) {
   const { colors, radius, spacing } = useTheme();
 
   return (
     <View
+      onLayout={onLayout}
       style={[
         {
           backgroundColor: colors.surface,
