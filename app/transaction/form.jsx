@@ -1090,7 +1090,7 @@ export default function TransactionFormScreen() {
           }}
         >
           <Icon
-            name="folder"
+            name="wallet"
             size={14}
             color={summaryInk ?? (budget?.color || colors.primary)}
           />

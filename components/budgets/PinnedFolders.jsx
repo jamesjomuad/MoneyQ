@@ -68,7 +68,7 @@ export function PinnedFolders({ budgets, onPressFolder }) {
                 pressed && { opacity: 0.82 },
               ]}
             >
-              <Icon name="folder" size={16} color={folder.folderInk} />
+              <Icon name="wallet" size={16} color={folder.folderInk} />
               <Text
                 variant="label"
                 numberOfLines={1}

@@ -48,7 +48,7 @@ export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, curre
           </View>
         ) : null}
         <View style={styles.headerRow}>
-          <Icon name="folder" size={20} color={folder.folderInk} />
+          <Icon name="wallet" size={20} color={folder.folderInk} />
           <Text variant="heading" numberOfLines={1} style={[styles.title, { color: folder.folderInk }]}>
             {budget.name}
           </Text>
