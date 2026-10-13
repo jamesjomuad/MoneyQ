@@ -7,7 +7,6 @@
  * feature unsupported rather than pulling expo-file-system into the bundle.
  */
 
-import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
@@ -64,14 +63,23 @@ export async function saveBackup(json, fileName) {
   return { name: safeName, size: file.size };
 }
 
-/** System file picker → backup text, or null when the user cancels. */
+/**
+ * System file picker → backup text, or null when the user cancels.
+ *
+ * Uses expo-file-system's own picker instead of expo-document-picker: on
+ * Android it opens ACTION_OPEN_DOCUMENT and immediately takes a persistable
+ * READ grant on the picked content:// URI (FilePickerContract.kt), and the
+ * File it hands back is bound to that URI — `text()` reads it through the
+ * content resolver without relying on the document picker's cache-copy
+ * contract, which is not always honored for expo-file-system's path
+ * permission checks (the "Missing 'READ' permission" import failure).
+ */
 export async function pickBackup() {
-  const result = await DocumentPicker.getDocumentAsync({
-    type: 'application/json',
-    copyToCacheDirectory: true,
+  const { result, canceled } = await File.pickFileAsync({
+    mimeTypes: ['application/json'],
+    multipleFiles: false,
   });
-  if (result.canceled || !result.assets || result.assets.length === 0) return null;
-  const asset = result.assets[0];
-  const text = await new File(asset.uri).text();
-  return { name: asset.name || 'backup.json', text };
+  if (canceled || !result) return null;
+  const text = await result.text();
+  return { name: result.name || 'backup.json', text };
 }
