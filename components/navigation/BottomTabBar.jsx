@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -25,9 +25,11 @@ import { useTheme } from '../ui/ThemeProvider';
  * borderless surface pill carries the boxShadow, and the bordered card sits
  * on top of it. This keeps the rounded shadow crisp on every platform.
  *
- * The center action keeps its original purpose (create budget) and stays
- * centered and elevated, docked over the capsule's top edge with a thin surface
- * ring, so it reads deliberately integrated rather than floating loose.
+ * The center action is a create menu: tapping it expands two labeled pills —
+ * New Folder and New Budget — up from the raised circle, and tapping it again,
+ * the backdrop, or Android's back button collapses the menu first. Both
+ * actions reuse the existing /folder/form and /budget/form routes; the menu
+ * always restores to its collapsed state before navigating.
  */
 
 const CARD_H = 74; // capsule height (excludes the safe-area spacing below it)
@@ -42,6 +44,8 @@ const FAB_RING = 3; // surface ring that separates it from the card
 const FAB_OUTER = FAB_GREEN + FAB_RING * 2; // total touch diameter
 const FAB_OVERHANG = 26; // how far the action rises above the card's top edge
 const FAB_SLOT = FAB_OUTER + 16; // center slot: action + clearance from tabs
+
+const MENU_H = 48; // create-menu pill height (comfortable Android touch target)
 
 /**
  * One tab: icon inside a soft pill, short label below. Only the indicator pill
@@ -109,13 +113,101 @@ function TabButton({ descriptor, route, focused, navigate }) {
   );
 }
 
+/**
+ * One expanded create action: a floating pill with icon + label that rises
+ * into place as the menu opens. `open` is the shared 0→1 value driving the
+ * whole menu, so every item animates from the same clock with a small
+ * per-index travel offset for a staggered, polished feel.
+ */
+function CreateMenuItem({ animatedOpen, colors, index, icon, label, onPress, radius }) {
+  const itemStyle = useAnimatedStyle(() => ({
+    opacity: animatedOpen.value,
+    transform: [
+      { translateY: (1 - animatedOpen.value) * (10 + index * 8) },
+      { scale: 0.9 + 0.1 * animatedOpen.value },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.menuItemWrap,
+        {
+          backgroundColor: colors.surfaceElevated,
+          borderColor: colors.border,
+          borderRadius: radius.pill,
+          boxShadow: `0 4px 14px ${colors.shadow}`,
+        },
+        itemStyle,
+      ]}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        onPress={onPress}
+        style={({ pressed }) => [styles.menuItem, { opacity: pressed ? 0.7 : 1 }]}
+      >
+        <Icon name={icon} size={20} color={colors.primary} />
+        <Text variant="body" style={styles.menuLabel}>
+          {label}
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export function BottomTabBar({ state, descriptors, navigation }) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
+  const reduced = useReducedMotion();
 
   const routes = state.routes;
   const middle = Math.ceil(routes.length / 2);
-  const navigate = navigation.navigate;
+
+  const [expanded, setExpanded] = useState(false);
+  const open = useSharedValue(0);
+  const pushingRef = useRef(false);
+
+  // The shared 0→1 value follows `expanded` through one effect (same pattern
+  // as TabButton's focus pill), so no callback ever mutates a hook value.
+  useEffect(() => {
+    open.value = withTiming(expanded ? 1 : 0, { duration: reduced ? 0 : 220 });
+  }, [expanded, reduced, open]);
+
+  // Android hardware back: while the menu is open, the first press only
+  // collapses it — the app never navigates away by surprise.
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setExpanded(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [expanded]);
+
+  // Any tab change dismisses the menu first, so it never lingers over a new
+  // screen.
+  const navigate = (name) => {
+    setExpanded(false);
+    navigation.navigate(name);
+  };
+
+  // Collapse, then push the form exactly once even on a double tap.
+  const pushForm = (pathname) => {
+    if (pushingRef.current) return;
+    pushingRef.current = true;
+    setExpanded(false);
+    router.push({ pathname });
+    setTimeout(() => {
+      pushingRef.current = false;
+    }, 700);
+  };
+
+  // Distance from the band's bottom edge to the card's top, and to the crest
+  // of the raised circle — the menu stacks above the latter and stays clear
+  // of the Android navigation inset below the capsule.
+  const cardTop = Math.max(insets.bottom, spacing.md) + CARD_H;
+  const menuBottom = cardTop + FAB_OVERHANG + spacing.sm;
 
   return (
     <View
@@ -133,6 +225,18 @@ export function BottomTabBar({ state, descriptors, navigation }) {
         },
       ]}
     >
+      {expanded ? (
+        // Tap-catcher rendered BEFORE the card, so it swallows taps anywhere
+        // on the scene above the bar while the capsule (and the center
+        // toggle) stay reachable on top of it.
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss create menu"
+          onPress={() => setExpanded(false)}
+          style={[styles.backdrop, { bottom: cardTop }]}
+        />
+      ) : null}
+
       <View style={styles.cardWrap}>
         {/* Borderless surface pill that casts the shadow; the bordered card
             sits on top of it so the shadow keeps its rounded outline. */}
@@ -188,12 +292,14 @@ export function BottomTabBar({ state, descriptors, navigation }) {
           })}
 
           {/* Docked over the card's top edge. The surface ring keeps the green
-              circle visually separate without notching or distorting the pill. */}
+              circle visually separate without notching or distorting the pill.
+              It toggles the create menu and shows a close glyph while open. */}
           <Pressable
-            accessibilityLabel="Create budget"
+            accessibilityLabel={expanded ? 'Close create menu' : 'Create new folder or budget'}
             accessibilityRole="button"
+            accessibilityState={{ expanded }}
             hitSlop={8}
-            onPress={() => router.push('/budget/form')}
+            onPress={() => setExpanded(!expanded)}
             style={({ pressed }) => [
               styles.fab,
               {
@@ -217,10 +323,37 @@ export function BottomTabBar({ state, descriptors, navigation }) {
                 boxShadow: `0 3px 8px ${colors.shadow}`,
               }}
             >
-              <Icon name="add" size={26} color={colors.onPrimary} />
+              <Icon name={expanded ? 'close' : 'add'} size={26} color={colors.onPrimary} />
             </View>
           </Pressable>
         </View>
+      </View>
+
+      {/* The create menu: compact column of labeled pills rising from the
+          center button. Hidden (not mounted-away) so it can animate both
+          ways; only interactive while the menu is actually open. */}
+      <View
+        pointerEvents={expanded ? 'auto' : 'none'}
+        style={[styles.menu, { bottom: menuBottom, gap: spacing.sm }]}
+      >
+        <CreateMenuItem
+          animatedOpen={open}
+          colors={colors}
+          icon="folderPlus"
+          index={0}
+          label="New Folder"
+          onPress={() => pushForm('/folder/form')}
+          radius={radius}
+        />
+        <CreateMenuItem
+          animatedOpen={open}
+          colors={colors}
+          icon="wallet"
+          index={1}
+          label="New Budget"
+          onPress={() => pushForm('/budget/form')}
+          radius={radius}
+        />
       </View>
     </View>
   );
@@ -229,6 +362,12 @@ export function BottomTabBar({ state, descriptors, navigation }) {
 const styles = StyleSheet.create({
   band: {
     width: '100%',
+  },
+  backdrop: {
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: -10000,
   },
   cardWrap: {
     height: CARD_H,
@@ -277,5 +416,27 @@ const styles = StyleSheet.create({
     height: FAB_GREEN,
     justifyContent: 'center',
     width: FAB_GREEN,
+  },
+  menu: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    flexDirection: 'column',
+    position: 'absolute',
+  },
+  menuItemWrap: {
+    borderWidth: 1,
+    height: MENU_H,
+  },
+  menuItem: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexGrow: 1,
+    gap: 10,
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  menuLabel: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

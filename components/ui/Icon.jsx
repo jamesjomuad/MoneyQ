@@ -12,6 +12,7 @@ const ICONS = {
   settings: { ios: 'gearshape', android: 'settings', web: 'settings' },
   add: { ios: 'plus', android: 'add', web: 'add' },
   folder: { ios: 'folder', android: 'folder', web: 'folder' },
+  folderPlus: { ios: 'folder.badge.plus', android: 'create_new_folder', web: 'create_new_folder' },
   tag: { ios: 'tag', android: 'label', web: 'label' },
   chevronLeft: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' },
   chevronRight: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' },
