@@ -1,8 +1,8 @@
-# MoneyQ
+# Budgetarian
 
-A mobile-first, offline personal budgeting app built with Expo and React Native. MoneyQ organises your money into **budgets as period containers** (for example, “October 2026”) and tracks income and expenses inside them, grouped by a shared **tag** library — with no backend, no account, and no data ever leaving the device.
+A mobile-first, offline personal budgeting app built with Expo and React Native. Budgetarian organises your money into **budgets as period containers** (for example, “October 2026”) and tracks income and expenses inside them, grouped by a shared **tag** library — with no backend, no account, and no data ever leaving the device.
 
-MoneyQ is an evolving project under active development.
+Budgetarian is an evolving project under active development.
 
 ## Screenshots
 
@@ -172,7 +172,7 @@ npx eas-cli@latest update
 
 Docs: https://docs.expo.dev/eas/index.md
 
-A full MoneyQ-specific walkthrough — verification gates, APK/AAB build profiles, local builds, changing the app icon — lives in [docs/building.md](docs/building.md).
+A full Budgetarian-specific walkthrough — verification gates, APK/AAB build profiles, local builds, changing the app icon — lives in [docs/building.md](docs/building.md).
 
 ## Project Structure
 
@@ -202,7 +202,7 @@ MoneyQ/
 
 There are **no environment variables or secrets**. App-level configuration lives in:
 
-- `app.json` — Expo config: app name/slug `MoneyQ`, scheme `moneyq`, portrait orientation, splash icon, Android adaptive icon, static web output.
+- `app.json` — Expo config: app name `Budgetarian` (slug `MoneyQ`), scheme `moneyq`, portrait orientation, splash icon, Android adaptive icon, static web output.
 - `package.json` — scripts and dependencies.
 
 `eslint.config.js` configures `eslint-config-expo`.

@@ -396,7 +396,7 @@ export default function ReminderFormScreen() {
 
       {permission?.supported === false || permission?.granted === false ? (
         <Text variant="caption" tone="muted" style={{ marginTop: spacing.md }}>
-          Notifications are turned off for MoneyQ, so this reminder cannot fire
+          Notifications are turned off for Budgetarian, so this reminder cannot fire
           yet. You can still save it.
         </Text>
       ) : null}
@@ -416,7 +416,7 @@ function announceOutcome(outcome) {
   if (outcome?.status === 'blocked') {
     Alert.alert(
       'Notifications are off',
-      'Your reminder is saved, but MoneyQ cannot show it until notifications are allowed for this app.',
+      'Your reminder is saved, but Budgetarian cannot show it until notifications are allowed for this app.',
     );
     return;
   }
@@ -427,7 +427,7 @@ function announceOutcome(outcome) {
   if (outcome?.status === 'failed') {
     Alert.alert(
       'Reminder saved',
-      'MoneyQ could not schedule the notification and will try again the next time it opens.',
+      'Budgetarian could not schedule the notification and will try again the next time it opens.',
     );
     return;
   }

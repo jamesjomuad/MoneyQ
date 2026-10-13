@@ -68,7 +68,7 @@ export default function RootLayout() {
 }
 
 /**
- * MoneyQ
+ * Budgetarian
  *
  * Copyright © 2026 James Jomuad
  * The storage engine is initialised before any screen renders, so no screen
@@ -226,7 +226,7 @@ function DatabaseErrorView({ message, onRetry }) {
     <Screen contentContainerStyle={styles.errorContent}>
       <Text variant="title">Could not open local storage</Text>
       <Text variant="body" tone="muted" style={{ marginTop: spacing.sm }}>
-        MoneyQ keeps all of your data on this device, so it cannot start until
+        Budgetarian keeps all of your data on this device, so it cannot start until
         local storage is available.
       </Text>
       {message ? (

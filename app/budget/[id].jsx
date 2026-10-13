@@ -42,7 +42,7 @@ function mixHex(a, b, t) {
 /**
  * Spend gauge color: green when nothing is spent, orange at half of income,
  * red at or above income. Anchored on theme tokens so every palette (light,
- * dark, MoneyQ) stays consistent.
+ * dark, Budgetarian) stays consistent.
  */
 function spendColor(colors, percent) {
   const p = Math.min(1, Math.max(0, percent / 100));
@@ -115,7 +115,7 @@ export default function BudgetDetailScreen() {
         <EmptyState
           icon="folder"
           title="Couldn’t load this budget"
-          description="MoneyQ couldn’t read this folder from local storage. Your data is still on this device — try again."
+          description="Budgetarian couldn’t read this folder from local storage. Your data is still on this device — try again."
         >
           <View style={{ alignItems: 'center', gap: spacing.sm }}>
             <Button label="Try again" icon="refresh" onPress={() => load(budgetId)} />

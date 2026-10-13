@@ -60,7 +60,7 @@ export default function SettingsScreen() {
         // The OS will not show the prompt again; only settings can help now.
         Alert.alert(
           "Notifications are off",
-          "Allow notifications for MoneyQ in your device settings to receive reminders.",
+          "Allow notifications for Budgetarian in your device settings to receive reminders.",
           [
             { text: "Open Settings", onPress: openDeviceSettings },
             { text: "Not now", style: "cancel" },
@@ -263,7 +263,7 @@ export default function SettingsScreen() {
         <Text variant="body" tone="muted">
           {isPreview
             ? "This build runs in a browser against in-memory sample data, so nothing you do here is saved. The Android app uses the on-device SQLite database instead."
-            : "MoneyQ stores everything locally on this device. It works fully offline and does not send your financial data anywhere."}
+            : "Budgetarian stores everything locally on this device. It works fully offline and does not send your financial data anywhere."}
         </Text>
         <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
           Copyright © 2026 James Jomuad
@@ -283,7 +283,7 @@ function describePermission(permission) {
   if (permission.granted)
     return "Allowed — reminders fire at their scheduled time";
   if (permission.canAskAgain === false) {
-    return "Blocked — notifications are disabled for MoneyQ";
+    return "Blocked — notifications are disabled for Budgetarian";
   }
   return "Off — allow notifications to receive reminders";
 }

@@ -13,7 +13,7 @@ function isId(value) {
 }
 
 /**
- * Turns a tapped MoneyQ notification into a route.
+ * Turns a tapped Budgetarian notification into a route.
  *
  *   linked notification → data.transactionId + data.budgetId → transaction form
  *   standalone reminder → data.reminderId only          → reminder form

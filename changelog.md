@@ -1,6 +1,17 @@
 # Changelog
 
-All notable changes to MoneyQ. Dates are local calendar days; newest first.
+All notable changes to Budgetarian. Dates are local calendar days; newest first.
+
+## 2026-10-13
+
+### Changed
+- App renamed from MoneyQ to **Budgetarian**: the Expo display name, the
+  branded theme label, on-device copy, backup file names
+  (`Budgetarian-Backup-<date>.json`) and backup messages now say Budgetarian.
+  Technical identifiers are deliberately unchanged for data and store
+  compatibility: the `moneyq` deep-link scheme, `com.moneyq.app` package,
+  Expo slug, backup `format: "moneyq-backup"`, and the stored `moneyq` theme
+  key — existing installs, databases and backups keep working untouched.
 
 ## 2026-10-12
 

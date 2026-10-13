@@ -4,7 +4,7 @@
  * Native entry point: Metro resolves `./notificationService` to this file on
  * Android/iOS and to `notificationService.web.js` in the browser, so
  * `expo-notifications` never enters the web bundle. Everything here is a thin
- * wrapper over the library: no MoneyQ rules, no transaction knowledge, no
+ * wrapper over the library: no Budgetarian rules, no transaction knowledge, no
  * stored state.
  *
  * Standalone and development builds support local notifications here. Expo Go

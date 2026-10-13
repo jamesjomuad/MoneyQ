@@ -19,7 +19,7 @@ import { useTheme } from '../ui/ThemeProvider';
  * A pill-shaped capsule sits inside a padded band, so it floats clear of the
  * screen edges and never covers scrollable content. The card uses surface +
  * a subtle 1 px border + a soft shadow, all from theme tokens, so it reads
- * premium in light, dark and the MoneyQ navy palette.
+ * premium in light, dark and the Budgetarian navy palette.
  *
  * The shadow and the border live on two separate stacked layers: a
  * borderless surface pill carries the boxShadow, and the bordered card sits

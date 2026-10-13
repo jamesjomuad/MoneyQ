@@ -57,7 +57,7 @@ export async function saveBackup(json, fileName) {
     throw new Error('No share target is available on this device.');
   }
   await Sharing.shareAsync(file.uri, {
-    dialogTitle: 'Save your MoneyQ backup',
+    dialogTitle: 'Save your Budgetarian backup',
     mimeType: 'application/json',
     UTI: 'public.json',
   });

@@ -130,9 +130,9 @@ function toIsoFileNameDate(todayIso) {
   return isIsoCalendarDate(todayIso) ? todayIso : todayIso.slice(0, 10);
 }
 
-/** `MoneyQ-Backup-2026-10-12.json` / `MoneyQ-Backup-Recovery-2026-10-12.json`. */
+/** `Budgetarian-Backup-2026-10-12.json` / `Budgetarian-Backup-Recovery-2026-10-12.json`. */
 export function buildBackupFileName(todayIso, suffix = '') {
-  return `MoneyQ-Backup${suffix}-${toIsoFileNameDate(todayIso)}.json`;
+  return `Budgetarian-Backup${suffix}-${toIsoFileNameDate(todayIso)}.json`;
 }
 
 /** Build the full envelope object from a storage snapshot. */
@@ -143,7 +143,7 @@ export function serializeSnapshot(snapshot, { appVersion = null, createdAt = now
     format: BACKUP_FORMAT,
     formatVersion: BACKUP_FORMAT_VERSION,
     createdAt,
-    app: { name: 'MoneyQ', version: appVersion },
+    app: { name: 'Budgetarian', version: appVersion },
     data,
   };
 }
@@ -160,7 +160,7 @@ export function parseBackupText(text) {
   if (text.length > MAX_BACKUP_CHARACTERS) {
     return {
       ok: false,
-      issues: ['The file is far too large to be a MoneyQ backup.'],
+      issues: ['The file is far too large to be a Budgetarian backup.'],
       warnings: [],
     };
   }
@@ -215,10 +215,10 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
   const warnings = [];
   const fail = (message) => ({ ok: false, issues: [message], warnings: [] });
 
-  if (!isPlainObject(parsed)) return fail('This file is not a MoneyQ backup.');
+  if (!isPlainObject(parsed)) return fail('This file is not a Budgetarian backup.');
   if (parsed.format !== BACKUP_FORMAT) {
     return fail(
-      `This file is not a MoneyQ backup (found format "${String(parsed.format ?? 'missing')}").`,
+      `This file is not a Budgetarian backup (found format "${String(parsed.format ?? 'missing')}").`,
     );
   }
   if (!Number.isInteger(parsed.formatVersion) || parsed.formatVersion <= 0) {
@@ -226,8 +226,8 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
   }
   if (parsed.formatVersion > BACKUP_FORMAT_VERSION) {
     return fail(
-      `This backup was created by a newer version of MoneyQ (backup format v${parsed.formatVersion}). ` +
-        'Update MoneyQ before importing it.',
+      `This backup was created by a newer version of Budgetarian (backup format v${parsed.formatVersion}). ` +
+        'Update Budgetarian before importing it.',
     );
   }
   for (let version = parsed.formatVersion; version < BACKUP_FORMAT_VERSION; version += 1) {

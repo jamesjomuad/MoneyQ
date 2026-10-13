@@ -2177,7 +2177,7 @@ const backupEnvelope = serializeSnapshot(fixtureSnapshot, {
 check('a backup envelope declares its format and version', backupEnvelope.format === BACKUP_FORMAT && backupEnvelope.formatVersion === BACKUP_FORMAT_VERSION);
 check(
   'the envelope carries app identity and creation time',
-  backupEnvelope.app.name === 'MoneyQ' &&
+  backupEnvelope.app.name === 'Budgetarian' &&
     backupEnvelope.app.version === '1.2.3' &&
     backupEnvelope.createdAt === '2026-10-12T00:00:00.000Z',
 );
@@ -2220,8 +2220,8 @@ check(
 );
 check(
   'backup file names follow the dated convention',
-  buildBackupFileName('2026-10-12') === 'MoneyQ-Backup-2026-10-12.json' &&
-    buildBackupFileName('2026-10-12', '-Recovery') === 'MoneyQ-Backup-Recovery-2026-10-12.json',
+  buildBackupFileName('2026-10-12') === 'Budgetarian-Backup-2026-10-12.json' &&
+    buildBackupFileName('2026-10-12', '-Recovery') === 'Budgetarian-Backup-Recovery-2026-10-12.json',
 );
 
 // ---- rejection of anything that is not a usable backup -------------------
@@ -2238,7 +2238,7 @@ const rejectFuture = validateBackup({ ...backupEnvelope, formatVersion: 99 });
 check(
   'a future backup version is rejected with an upgrade hint',
   rejectFuture.ok === false &&
-    rejectFuture.issues[0].includes('newer version of MoneyQ') &&
+    rejectFuture.issues[0].includes('newer version of Budgetarian') &&
     rejectFuture.issues[0].includes('v99'),
   JSON.stringify(rejectFuture.issues),
 );

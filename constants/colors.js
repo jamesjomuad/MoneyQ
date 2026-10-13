@@ -61,7 +61,7 @@ export const darkColors = {
 };
 
 /**
- * Branded MoneyQ look: deep navy surfaces with a blue/cyan primary and a
+ * Branded Budgetarian look: deep navy surfaces with a blue/cyan primary and a
  * green/cyan secondary. Deliberately restrained — a professional finance
  * palette, not a colorful one.
  */
@@ -111,7 +111,7 @@ export const APPEARANCE_OPTIONS = [
   { key: 'system', label: 'System', caption: 'Follow the device appearance' },
   { key: 'light', label: 'Light', caption: 'Always use the light theme' },
   { key: 'dark', label: 'Dark', caption: 'Always use the dark theme' },
-  { key: 'moneyq', label: 'MoneyQ', caption: 'Deep navy with cyan accents' },
+  { key: 'moneyq', label: 'Budgetarian', caption: 'Deep navy with cyan accents' },
 ];
 
 export const tagColors = [

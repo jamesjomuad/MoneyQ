@@ -47,7 +47,7 @@ export default function BackupScreen() {
   function confirmRestore() {
     Alert.alert(
       'Replace everything?',
-      'Full restore deletes all current data first. MoneyQ saves a recovery backup of ' +
+      'Full restore deletes all current data first. Budgetarian saves a recovery backup of ' +
         'your current data before replacing it — the restore is cancelled if that save fails.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -93,7 +93,7 @@ export default function BackupScreen() {
           </View>
         ) : (
           <Text variant="caption" tone="warning" style={{ marginTop: spacing.sm }}>
-            Not available in the browser preview — run MoneyQ on your device to export.
+            Not available in the browser preview — run Budgetarian on your device to export.
           </Text>
         )}
       </Card>
@@ -114,7 +114,7 @@ export default function BackupScreen() {
           <View style={styles.flex}>
             <Text variant="body">Import from a file</Text>
             <Text variant="caption" tone="faint">
-              Choose a MoneyQ backup to preview before anything changes
+              Choose a Budgetarian backup to preview before anything changes
             </Text>
           </View>
           {isBusy && !preview && !plan ? (
@@ -134,7 +134,7 @@ export default function BackupScreen() {
             {preview.createdAt ? (
               <Text variant="caption" tone="faint" style={{ marginTop: 2 }}>
                 Exported {preview.createdAt.slice(0, 10)}
-                {preview.appVersion ? ` · MoneyQ ${preview.appVersion}` : ''}
+                {preview.appVersion ? ` · Budgetarian ${preview.appVersion}` : ''}
               </Text>
             ) : null}
 

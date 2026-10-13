@@ -235,7 +235,7 @@ function announceReminderOutcome(outcome) {
   if (outcome.status === 'blocked') {
     Alert.alert(
       'Notifications are off',
-      'Your reminder is saved, but MoneyQ cannot show it until notifications are allowed for this app.',
+      'Your reminder is saved, but Budgetarian cannot show it until notifications are allowed for this app.',
       [
         { text: 'Open Settings', onPress: openDeviceSettings },
         { text: 'Not now', style: 'cancel' },
@@ -244,7 +244,7 @@ function announceReminderOutcome(outcome) {
   } else if (outcome.status === 'failed') {
     Alert.alert(
       'Reminder saved',
-      'The notification could not be scheduled. MoneyQ will try again the next time it opens.',
+      'The notification could not be scheduled. Budgetarian will try again the next time it opens.',
     );
   }
 }

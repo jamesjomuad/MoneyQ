@@ -1,5 +1,5 @@
 /**
- * Reminder orchestration — the half of the feature that knows MoneyQ's rules.
+ * Reminder orchestration — the half of the feature that knows Budgetarian's rules.
  *
  * Ordering on every save, without exception:
  *
@@ -215,7 +215,7 @@ export async function cancelScheduledRemindersForBudget(budgetId) {
  * Reconciles the OS with the database: schedules anything active that is not
  * scheduled, cancels anything scheduled that is no longer active (disabled,
  * completed, past, deleted) and repairs ids that drifted. Runs once at launch,
- * which is what allows MoneyQ to be correct even when a notification failed,
+ * which is what allows Budgetarian to be correct even when a notification failed,
  * was cleared, or the app was reinstalled.
  */
 export async function resyncReminders() {
@@ -225,7 +225,7 @@ export async function resyncReminders() {
   const scheduled = await notifications.listScheduledAsync();
   const permission = await notifications.getPermissionStatusAsync();
 
-  /** Every MoneyQ notification we own, indexed by the reminder it belongs to. */
+  /** Every Budgetarian notification we own, indexed by the reminder it belongs to. */
   const byReminderId = new Map();
   let cancelled = 0;
   for (const request of scheduled) {

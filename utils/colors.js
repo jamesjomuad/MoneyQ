@@ -3,7 +3,7 @@
  *
  * A budget may carry a user-selected hex color (`budget.color`). When it does,
  * the folder paints with that exact color in every theme — Light, Dark and
- * MoneyQ alike — and readable ink/border colors are derived from it with WCAG
+ * Budgetarian alike — and readable ink/border colors are derived from it with WCAG
  * contrast. When it doesn't, the theme-driven `folder` / `folderBorder` /
  * `folderInk` values are used, so existing budgets render exactly as before.
  */

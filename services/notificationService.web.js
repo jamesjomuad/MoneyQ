@@ -5,7 +5,7 @@
  * `expo-notifications` (native-only, per its own docs) out of the web bundle
  * entirely. The API matches the native module so `reminderService` and every
  * screen run unchanged: scheduling simply reports that the platform cannot
- * deliver device notifications, and MoneyQ falls back to showing the saved
+ * deliver device notifications, and Budgetarian falls back to showing the saved
  * reminder without one.
  */
 

@@ -171,7 +171,7 @@ function describePermissionNotice(permission) {
   if (!permission.granted) {
     return {
       tone: 'warning',
-      text: 'Notifications are turned off for MoneyQ, so this reminder cannot fire yet. You can still save it.',
+      text: 'Notifications are turned off for Budgetarian, so this reminder cannot fire yet. You can still save it.',
       canOpenSettings: true,
     };
   }
