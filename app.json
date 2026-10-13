@@ -53,7 +53,16 @@
           "color": "#0F6B4B"
         }
       ],
-      "expo-sharing"
+      [
+        "expo-sharing",
+        {
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": ["image/*", "text/plain"],
+            "multipleShareMimeTypes": ["image/*"]
+          }
+        }
+      ]
     ],
     "extra": {
       "router": {},

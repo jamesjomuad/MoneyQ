@@ -36,6 +36,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "verify:db": "node --import ./scripts/register.mjs ./scripts/verify-schema.mjs",
+    "verify:receipt": "node --import ./scripts/register.mjs ./scripts/verify-receipt-parse.mjs",
     "lint": "expo lint"
   },
   "private": true,

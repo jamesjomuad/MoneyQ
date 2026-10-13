@@ -32,6 +32,7 @@ import { useTheme } from '../../components/ui/ThemeProvider';
 import { PendingReminders } from '../../components/reminders/PendingReminders';
 import { TransactionReminders } from '../../components/reminders/TransactionReminders';
 import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
+import { useReceiptImportStore } from '../../stores/receiptImportStore';
 import { useRemindersStore } from '../../stores/remindersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTagsStore } from '../../stores/tagsStore';
@@ -45,6 +46,7 @@ import { formatDateRange, formatShortDate, parseFlexibleDate, toIsoDate } from '
 import { createId } from '../../utils/id';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { showToast } from '../../stores/toastStore';
+import { removeStagedFile } from '../../services/receiptShareService';
 
 const TYPE_OPTIONS = [
   { value: 'expense', label: 'Expense', icon: 'expense' },
@@ -286,17 +288,30 @@ export default function TransactionFormScreen() {
     ? entries.find((entry) => entry.id === transactionId) ?? null
     : null;
 
+  // Shared-receipt import (create mode only): the receipt-import screen
+  // stages exactly one pending record and links here with its id. The form
+  // prefills from it once on mount; the record and its staged image copy
+  // are discarded when this screen unmounts, whichever way the user leaves.
+  const importId = typeof params.importId === 'string' ? params.importId : '';
+  const importRef = useRef(
+    importId && !transactionId && useReceiptImportStore.getState().pending?.id === importId
+      ? useReceiptImportStore.getState().pending
+      : null,
+  );
+  const imported = importRef.current?.parsed ?? null;
+
   const [type, setType] = useState('expense');
   const [paymentStatus, setPaymentStatus] = useState('paid');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(imported?.amount ?? '');
   const [tagId, setTagId] = useState(preselectedTagId);
   const [dueDate, setDueDate] = useState('');
   const [date, setDate] = useState(() =>
-    storeBudgetId === budgetId && budget?.id === budgetId
+    imported?.date ??
+    (storeBudgetId === budgetId && budget?.id === budgetId
       ? defaultNewTransactionDate(budget)
-      : toIsoDate(new Date()),
+      : toIsoDate(new Date())),
   );
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(imported?.notes ?? '');
   const [query, setQuery] = useState('');
   const [pendingReminders, setPendingReminders] = useState([]);
   const [errors, setErrors] = useState({});
@@ -346,7 +361,7 @@ export default function TransactionFormScreen() {
   const savePromiseRef = useRef(null);
   const leavePlannedRef = useRef(false);
   const rowSnapshotRef = useRef(null);
-  const dateEditedRef = useRef(false);
+  const dateEditedRef = useRef(Boolean(imported?.date));
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -356,6 +371,20 @@ export default function TransactionFormScreen() {
   useEffect(() => {
     refreshPermission();
   }, [refreshPermission]);
+
+  // Imported receipts are transient: save, swipe-away, or back — leaving
+  // this form drops the pending record and its staged image copy for good.
+  // A newer share (different id) is never touched by this cleanup.
+  useEffect(() => {
+    const snapshot = importRef.current;
+    if (!snapshot) return undefined;
+    return () => {
+      const { pending, clear } = useReceiptImportStore.getState();
+      if (pending?.id !== snapshot.id) return;
+      if (pending.imageUri) removeStagedFile(pending.imageUri);
+      clear();
+    };
+  }, []);
 
   // A transaction can be opened without its budget screen in front of it —
   // from a tapped notification — so make sure the store actually holds this

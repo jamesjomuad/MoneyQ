@@ -183,6 +183,14 @@ function NavigationShell() {
           }}
         />
         <Stack.Screen
+          name="receipt-import"
+          options={{
+            presentation: "modal",
+            animation: "slide_from_bottom",
+            title: "Import Receipt",
+          }}
+        />
+        <Stack.Screen
           name="reminder/form"
           options={{
             presentation: "modal",
