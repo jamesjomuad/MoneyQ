@@ -56,6 +56,12 @@ export function addMonths(monthKey, delta) {
   return monthKeyOf(shifted);
 }
 
+// Last day of the month that contains an ISO date, as an ISO date. Lets a
+// period end follow the month of its start (budgets' Ends On auto-fill).
+export function endOfMonthIso(isoDate) {
+  return monthRange(toMonthKey(isoDate)).end;
+}
+
 export function addYears(monthKey, delta) {
   const [year, month] = String(monthKey).split('-').map(Number);
   const shifted = new Date(year + delta, month - 1, 1);
@@ -204,16 +210,30 @@ export function nowTime(date = new Date()) {
 }
 
 /** 'Oct 1 – Oct 31, 2026', falling back to two full dates across a year break. */
+// Hermes builds an Intl formatter on every `toLocaleDateString` call with an
+// options object. Budget cards render this string on every list update, but
+// the result depends only on the two ISO dates, so a small memo cache turns
+// repeated renders into Map lookups. Bounded because budgets accumulate over
+// an app session; clearing wholesale keeps memory flat.
+const rangeCache = new Map();
+
 export function formatDateRange(startIso, endIso) {
+  const cacheKey = `${startIso}|${endIso}`;
+  const cached = rangeCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const start = parseIsoDate(startIso);
   const end = parseIsoDate(endIso);
   const span = { month: 'short', day: 'numeric' };
 
-  if (start.getFullYear() === end.getFullYear()) {
-    return `${start.toLocaleDateString(undefined, span)} – ${end.toLocaleDateString(undefined, { ...span, year: 'numeric' })}`;
-  }
+  const label =
+    start.getFullYear() === end.getFullYear()
+      ? `${start.toLocaleDateString(undefined, span)} – ${end.toLocaleDateString(undefined, { ...span, year: 'numeric' })}`
+      : `${start.toLocaleDateString(undefined, { ...span, year: 'numeric' })} – ${end.toLocaleDateString(undefined, { ...span, year: 'numeric' })}`;
 
-  return `${start.toLocaleDateString(undefined, { ...span, year: 'numeric' })} – ${end.toLocaleDateString(undefined, { ...span, year: 'numeric' })}`;
+  if (rangeCache.size > 200) rangeCache.clear();
+  rangeCache.set(cacheKey, label);
+  return label;
 }
 
 /**

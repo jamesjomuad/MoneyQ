@@ -123,6 +123,7 @@ const standaloneMigration = migrations.find((entry) => entry.version === 7);
 const subTransactionsMigration = migrations.find((entry) => entry.version === 8);
 const datesMigration = migrations.find((entry) => entry.version === 9);
 const foldersMigration = migrations.find((entry) => entry.version === 10);
+const perfIndexesMigration = migrations.find((entry) => entry.version === 11);
 for (const entry of migrations) {
   if (
     entry === paymentMigration ||
@@ -130,7 +131,8 @@ for (const entry of migrations) {
     entry === standaloneMigration ||
     entry === subTransactionsMigration ||
     entry === datesMigration ||
-    entry === foldersMigration
+    entry === foldersMigration ||
+    entry === perfIndexesMigration
   ) {
     continue;
   }
@@ -173,6 +175,9 @@ await datesMigration.up(adapter);
 // Folders last: the ALTER must add folder_id onto real pre-existing budget
 // rows the way an older install would receive it.
 await foldersMigration.up(adapter);
+// Indexes truly last: the rebuild migrations above drop them if applied first,
+// and runMigrations() would only ever apply version 11 after version 10.
+await perfIndexesMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -355,13 +360,25 @@ check(
   'reminder dates are indexed for the calendar',
   reminderIndexes.some((index) => index.name === 'idx_reminders_date'),
 );
+check(
+  'reminder sorts by remind_at are indexed',
+  reminderIndexes.some((index) => index.name === 'idx_reminders_remind_at'),
+  reminderIndexes.map((index) => index.name).join(','),
+);
+
+const rangeTransactionIndexes = db.prepare(`PRAGMA index_list(transactions)`).all();
+check(
+  'date-range transaction reads are indexed',
+  rangeTransactionIndexes.some((index) => index.name === 'idx_transactions_date'),
+  rangeTransactionIndexes.map((index) => index.name).join(','),
+);
 
 check(
   'reminders gained a notes column',
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 10, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 11, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -1065,6 +1082,14 @@ async function runScenario(store) {
     notes: 'Wet market, cash.',
   });
   snapshot.subsReordered = await store.listSubTransactionsByParent('p_expense');
+  // Batch read for many parents: duplicate ids dedupe, a parent without items
+  // and an unknown id simply contribute nothing.
+  snapshot.subsByParents = await store.listSubTransactionsForParents([
+    'p_expense',
+    'p_expense',
+    'p_income',
+    'no_such_parent',
+  ]);
 
   // Purchase dates and payment due dates round-trip identically: dated items
   // come back joined with parent context in date→time→position order, undated
@@ -1136,6 +1161,12 @@ async function runScenario(store) {
   });
   await store.rollbackTransaction();
   snapshot.subsAfterRollback = await store.listSubTransactionsByParent('p_zero_break');
+  // Two parents at once: rows come back grouped by parent, (position, id)
+  // within each — the exact order the Reports hydrator relies on.
+  snapshot.subsByTwoParents = await store.listSubTransactionsForParents([
+    'p_expense',
+    'p_zero_break',
+  ]);
   snapshot.zeroParentDeleteChanges = await store.deleteTransaction('p_zero_break');
   snapshot.subsAfterParentDelete = await store.listSubTransactionsByParent('p_zero_break');
 
@@ -1324,7 +1355,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 10);
+check('both adapters report the same schema version', LATEST_VERSION === 11);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -1539,7 +1570,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has nine pending migrations', pending.length === 9, String(pending.length));
+check('legacy database has ten pending migrations', pending.length === 10, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }

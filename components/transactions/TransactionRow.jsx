@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { formatCurrency } from "../../utils/currency";
@@ -14,8 +14,12 @@ import { useTheme } from "../ui/ThemeProvider";
  * One transaction in a budget. Transfers are shown without a tag and with a
  * neutral amount, because they move money between accounts rather than
  * counting as income or spending.
+ *
+ * `onEdit`/`onDelete` receive the row's own transaction, so screens pass one
+ * stable callback for every row and the memo below can actually skip
+ * untouched rows when the list re-renders.
  */
-export function TransactionRow({
+export const TransactionRow = memo(function TransactionRow({
   transaction,
   tag,
   currency,
@@ -212,7 +216,7 @@ export function TransactionRow({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Delete ${title}`}
-          onPress={onDelete}
+          onPress={() => onDelete(transaction)}
           hitSlop={10}
           style={({ pressed }) => [
             styles.delete,
@@ -224,7 +228,7 @@ export function TransactionRow({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   row: {

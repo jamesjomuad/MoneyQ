@@ -42,6 +42,20 @@ export default function CalendarScreen() {
   const remindersLoading = useRemindersStore((state) => state.dayIsLoading);
   const loadDay = useRemindersStore((state) => state.loadDay);
 
+  // One stable edit handler for every day-list row (rows carry their own
+  // budget_id), so memoized rows can skip re-rendering untouched items.
+  const handleEditTransaction = useCallback(
+    (entry) =>
+      router.push({
+        pathname: "/transaction/form",
+        params: {
+          budgetId: entry.budget_id,
+          transactionId: entry.id,
+        },
+      }),
+    [],
+  );
+
   // Reload the visible month on focus so edits made elsewhere show up; the
   // store keeps the selection when it still belongs to that month.
   useFocusEffect(
@@ -163,15 +177,7 @@ export default function CalendarScreen() {
                 currency={currency}
                 isFirst={index === 0}
                 isLast={index === dayTransactions.length - 1}
-                onEdit={(entry) =>
-                  router.push({
-                    pathname: "/transaction/form",
-                    params: {
-                      budgetId: entry.budget_id,
-                      transactionId: entry.id,
-                    },
-                  })
-                }
+                onEdit={handleEditTransaction}
               />
             ))}
           </Card>

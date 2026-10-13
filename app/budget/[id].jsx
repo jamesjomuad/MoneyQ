@@ -1,5 +1,5 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { FolderPickerSheet } from '../../components/budgets/FolderPickerSheet';
@@ -114,6 +114,39 @@ export default function BudgetDetailScreen() {
     }, [budgetId, load, loadFolders]),
   );
 
+  // Date grouping walks every transaction of the budget, so it is memoized on
+  // the list identity — screen-local toggles (privacy, collapsed sections,
+  // measured card height) no longer rebuild it. Hooks must run unconditionally,
+  // hence their position above the loading/error returns.
+  const groups = useMemo(() => groupByDate(transactions), [transactions]);
+  const tagById = useMemo(
+    () => new Map(tagSummaries.map((entry) => [entry.tag.id, entry.tag])),
+    [tagSummaries],
+  );
+
+  const handleEditTransaction = useCallback(
+    (entry) =>
+      router.push({
+        pathname: '/transaction/form',
+        params: { budgetId, transactionId: entry.id },
+      }),
+    [budgetId],
+  );
+
+  const confirmDeleteTransaction = useCallback(
+    (transaction) => {
+      Alert.alert(
+        'Delete transaction?',
+        transaction.description || 'This entry will be removed from the budget.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => removeTransaction(transaction.id) },
+        ],
+      );
+    },
+    [removeTransaction],
+  );
+
   // The route ID is the identity of this screen. Until the store has data for
   // exactly that ID, the previous budget's values must never render.
   const isCurrentBudget = Boolean(budget) && storeBudgetId === budgetId && budget.id === budgetId;
@@ -166,8 +199,6 @@ export default function BudgetDetailScreen() {
   }
 
   const activeTag = tagSummaries.find((entry) => entry.tag.id === activeTagId)?.tag ?? null;
-  const groups = groupByDate(transactions);
-  const tagById = new Map(tagSummaries.map((entry) => [entry.tag.id, entry.tag]));
 
   // Share of income already spent, from the same summary the stats row uses.
   // Income of zero means nothing to measure against → 0%, never a divide-by-zero.
@@ -180,17 +211,6 @@ export default function BudgetDetailScreen() {
   // The budget folder this budget currently sits in. Display lookup only:
   // folders organize budgets on Home and hold no money themselves.
   const budgetFolder = folders.find((folder) => folder.id === budget.folder_id) ?? null;
-
-  function confirmDeleteTransaction(transaction) {
-    Alert.alert(
-      'Delete transaction?',
-      transaction.description || 'This entry will be removed from the budget.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => removeTransaction(transaction.id) },
-      ],
-    );
-  }
 
   function confirmDeleteBudget() {
     if (!budget) return;
@@ -506,13 +526,8 @@ export default function BudgetDetailScreen() {
                       sharePercent={transaction.sharePercent}
                       isFirst={index === 0}
                       isLast={index === group.items.length - 1}
-                      onEdit={(entry) =>
-                        router.push({
-                          pathname: '/transaction/form',
-                          params: { budgetId: budget.id, transactionId: entry.id },
-                        })
-                      }
-                      onDelete={() => confirmDeleteTransaction(transaction)}
+                      onEdit={handleEditTransaction}
+                      onDelete={confirmDeleteTransaction}
                     />
                   ))}
                 </Card>

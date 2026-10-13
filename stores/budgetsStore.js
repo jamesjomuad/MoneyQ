@@ -6,6 +6,7 @@ import {
   getBudget,
   getBudgets,
   setBudgetFolder,
+  setBudgetsFolder,
   updateBudget,
 } from '../storage/repositories/budgetRepository';
 import {
@@ -91,9 +92,9 @@ export const useBudgetsStore = create((set, get) => ({
     await get().load();
   },
 
-  /** Bulk move used by Home's selection mode; applied one budget at a time. */
+  /** Bulk move used by Home's selection mode; one validated transaction for all. */
   moveManyToFolder: async (ids, folderId = null) => {
-    for (const id of ids) await setBudgetFolder(id, folderId);
+    await setBudgetsFolder(ids, folderId);
     await get().load();
   },
 }));

@@ -52,6 +52,14 @@ export default function FolderDetailScreen() {
   const folder = folders.find((entry) => entry.id === folderId) ?? null;
   const folderBudgets = budgets.filter((budget) => budget.folder_id === folderId);
 
+  // One stable press handler for every card so memoized cards can skip
+  // re-renders; BudgetCard passes the budget it was given.
+  const openBudget = useCallback(
+    (budget) =>
+      router.push({ pathname: '/budget/[id]', params: { id: budget.id } }),
+    [],
+  );
+
   if (isLoadingFolders && !folder) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
@@ -188,10 +196,8 @@ export default function FolderDetailScreen() {
                 budget={budget}
                 currency={currency}
                 pinned={pinnedIds.includes(budget.id)}
-                onTogglePin={() => togglePinned(budget.id)}
-                onPress={() =>
-                  router.push({ pathname: '/budget/[id]', params: { id: budget.id } })
-                }
+                onTogglePin={togglePinned}
+                onPress={openBudget}
               />
             ))}
           </>

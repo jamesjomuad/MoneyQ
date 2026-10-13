@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -74,23 +74,36 @@ export default function HomeScreen() {
 
   // Local search over the data the app already owns: folders are filtered
   // from the loaded budgets here, transactions through the search store.
+  // Typing debounces by a quarter second so a fast typer triggers one scan,
+  // not one per keystroke; the visible results always follow `debouncedTerm`.
   const [query, setQuery] = useState("");
+  const [debouncedTerm, setDebouncedTerm] = useState("");
   const term = query.trim();
-  const searching = term.length > 0;
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedTerm(query.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+  const searching = debouncedTerm.length > 0;
   const txMatches = useSearchStore((state) => state.transactions);
   const searchError = useSearchStore((state) => state.error);
   const runSearch = useSearchStore((state) => state.search);
   const resetSearch = useSearchStore((state) => state.reset);
 
-  // One entry point for (re)loading: identity changes when the user types, so
-  // results refresh live while focused and again when returning to the tab.
+  // Budget/folder data reloads only when the tab actually gains focus.
   useFocusEffect(
     useCallback(() => {
       load();
       loadFolders();
-      if (searching) runSearch(term);
+    }, [load, loadFolders]),
+  );
+
+  // The transaction scan re-runs when focus returns or the debounced term
+  // changes — never per keystroke.
+  useFocusEffect(
+    useCallback(() => {
+      if (debouncedTerm) runSearch(debouncedTerm);
       else resetSearch();
-    }, [load, loadFolders, searching, term, runSearch, resetSearch]),
+    }, [debouncedTerm, runSearch, resetSearch]),
   );
 
   const openFolder = useCallback(
@@ -102,50 +115,84 @@ export default function HomeScreen() {
     [],
   );
 
-  const matchedFolders = searching
-    ? budgets.filter((budget) => budget.name.toLowerCase().includes(term.toLowerCase()))
-    : [];
+  const matchedFolders = useMemo(() => {
+    if (!searching) return [];
+    const needle = debouncedTerm.toLowerCase();
+    return budgets.filter((budget) => budget.name.toLowerCase().includes(needle));
+  }, [budgets, debouncedTerm, searching]);
 
   // Transaction matches arrive newest-first across all folders; group them
   // under their folder so it's clear where each one lives. Group order follows
   // each folder's most recent match.
-  const txGroups = [];
-  const groupIndex = new Map();
-  for (const transaction of txMatches) {
-    let index = groupIndex.get(transaction.budget_id);
-    if (index === undefined) {
-      index = txGroups.length;
-      groupIndex.set(transaction.budget_id, index);
-      txGroups.push({
-        budgetId: transaction.budget_id,
-        name: transaction.budget_name ?? 'Budget',
-        items: [],
-      });
+  const txGroups = useMemo(() => {
+    const groups = [];
+    const groupIndex = new Map();
+    for (const transaction of txMatches) {
+      let index = groupIndex.get(transaction.budget_id);
+      if (index === undefined) {
+        index = groups.length;
+        groupIndex.set(transaction.budget_id, index);
+        groups.push({
+          budgetId: transaction.budget_id,
+          name: transaction.budget_name ?? 'Budget',
+          items: [],
+        });
+      }
+      groups[index].items.push(transaction);
     }
-    txGroups[index].items.push(transaction);
-  }
+    return groups;
+  }, [txMatches]);
 
   // Pinned order follows the stored insertion order, not the folder list order.
-  const pinnedBudgets = pinnedIds
-    .map((id) => budgets.find((budget) => budget.id === id))
-    .filter(Boolean);
+  const pinnedBudgets = useMemo(() => {
+    const byId = new Map(budgets.map((budget) => [budget.id, budget]));
+    return pinnedIds.map((id) => byId.get(id)).filter(Boolean);
+  }, [budgets, pinnedIds]);
 
   // Folder cards show how many budgets live inside; the main list keeps only
   // ungrouped budgets so nothing appears twice on Home.
-  const folderCounts = new Map();
-  for (const budget of budgets) {
-    if (!budget.folder_id) continue;
-    folderCounts.set(budget.folder_id, (folderCounts.get(budget.folder_id) ?? 0) + 1);
-  }
-  const ungrouped = budgets.filter((budget) => !budget.folder_id);
+  const { folderCounts, ungrouped } = useMemo(() => {
+    const counts = new Map();
+    const ungroupedBudgets = [];
+    for (const budget of budgets) {
+      if (budget.folder_id) {
+        counts.set(budget.folder_id, (counts.get(budget.folder_id) ?? 0) + 1);
+      } else {
+        ungroupedBudgets.push(budget);
+      }
+    }
+    return { folderCounts: counts, ungrouped: ungroupedBudgets };
+  }, [budgets]);
 
-  function toggleSelected(budgetId) {
+  const toggleSelected = useCallback((budget) => {
     setSelectedIds((current) =>
-      current.includes(budgetId)
-        ? current.filter((id) => id !== budgetId)
-        : [...current, budgetId],
+      current.includes(budget.id)
+        ? current.filter((id) => id !== budget.id)
+        : [...current, budget.id],
     );
-  }
+  }, []);
+
+  const startSelect = useCallback((budget) => setSelectedIds([budget.id]), []);
+
+  // One press handler for every card: its behavior only changes when the
+  // screen flips in or out of selection mode, not per keystroke or per card.
+  const handlePressBudget = useCallback(
+    (budget) => {
+      if (selecting) toggleSelected(budget);
+      else openFolder(budget);
+    },
+    [selecting, toggleSelected, openFolder],
+  );
+
+  const handleEditTransaction = useCallback((entry) => {
+    router.push({
+      pathname: "/transaction/form",
+      params: {
+        budgetId: entry.budget_id,
+        transactionId: entry.id,
+      },
+    });
+  }, []);
 
   function confirmBulkMove(folderId) {
     const destination = folderId
@@ -281,8 +328,8 @@ export default function HomeScreen() {
                     budget={budget}
                     currency={currency}
                     pinned={pinnedIds.includes(budget.id)}
-                    onTogglePin={() => togglePinned(budget.id)}
-                    onPress={() => openFolder(budget)}
+                    onTogglePin={togglePinned}
+                    onPress={openFolder}
                   />
                 ))}
               </>
@@ -332,15 +379,7 @@ export default function HomeScreen() {
                           currency={currency}
                           isFirst={index === 0}
                           isLast={index === group.items.length - 1}
-                          onEdit={(entry) =>
-                            router.push({
-                              pathname: "/transaction/form",
-                              params: {
-                                budgetId: transaction.budget_id,
-                                transactionId: entry.id,
-                              },
-                            })
-                          }
+                          onEdit={handleEditTransaction}
                         />
                       ))}
                     </Card>
@@ -353,7 +392,7 @@ export default function HomeScreen() {
               <EmptyState
                 icon="search"
                 title="No results found"
-                description={`Nothing matches "${term}". Try a different folder name, transaction description, or tag.`}
+                description={`Nothing matches "${debouncedTerm}". Try a different folder name, transaction description, or tag.`}
               >
                 <Button label="Clear search" icon="close" onPress={() => setQuery("")} />
               </EmptyState>
@@ -443,12 +482,10 @@ export default function HomeScreen() {
                   budget={budget}
                   currency={currency}
                   pinned={selecting ? false : pinnedIds.includes(budget.id)}
-                  onTogglePin={selecting ? undefined : () => togglePinned(budget.id)}
+                  onTogglePin={selecting ? undefined : togglePinned}
                   selected={selectedIds.includes(budget.id)}
-                  onLongPress={
-                    selecting ? undefined : () => setSelectedIds([budget.id])
-                  }
-                  onPress={selecting ? () => toggleSelected(budget.id) : () => openFolder(budget)}
+                  onLongPress={selecting ? undefined : startSelect}
+                  onPress={handlePressBudget}
                 />
               </Animated.View>
             ))}

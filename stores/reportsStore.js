@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { getTags } from '../storage/repositories/tagRepository';
 import {
   getBreakdownItemsInRange,
-  getSubTransactions,
+  getSubTransactionsForParents,
   getTransactionsInRange,
 } from '../storage/repositories/transactionRepository';
 import { computeTotals } from '../utils/calculations';
@@ -71,12 +71,12 @@ export const useReportsStore = create((set, get) => ({
       // same money is never counted twice. Parents without a breakdown pass
       // through, and undated legacy items fall back to the parent's date.
       // The transaction count stays parent-only, as everywhere else.
-      const hydrated = await Promise.all(
-        rows.map(async (row) =>
-          row.has_breakdown === 1
-            ? { ...row, subTransactions: await getSubTransactions(row.id) }
-            : row,
-        ),
+      const parentIds = rows.filter((row) => row.has_breakdown === 1).map((row) => row.id);
+      const itemsByParent = await getSubTransactionsForParents(parentIds);
+      const hydrated = rows.map((row) =>
+        row.has_breakdown === 1
+          ? { ...row, subTransactions: itemsByParent.get(row.id) ?? [] }
+          : row,
       );
       const purchaseRows = toPurchaseRows(hydrated, events);
 

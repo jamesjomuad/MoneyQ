@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
@@ -30,7 +31,11 @@ export function MonthCalendar({
   onSelectDate,
 }) {
   const { colors, spacing } = useTheme();
-  const today = todayIso();
+  // The clock read and the 42-cell grid depend on nothing else, so they are
+  // computed once per day/month rather than on every parent re-render
+  // (date taps, reminder loads, month slides all re-render this component).
+  const today = useMemo(() => todayIso(), []);
+  const weeks = useMemo(() => monthWeeks(monthKey), [monthKey]);
 
   return (
     <View>
@@ -75,7 +80,7 @@ export function MonthCalendar({
         ))}
       </View>
 
-      {monthWeeks(monthKey).map((week, weekIndex) => (
+      {weeks.map((week, weekIndex) => (
         <View key={`week-${weekIndex}`} style={styles.week}>
           {week.map((isoDate, cellIndex) => {
             if (!isoDate) {

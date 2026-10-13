@@ -1,3 +1,4 @@
+import { memo, useCallback } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { Icon } from '../ui/Icon';
@@ -12,21 +13,29 @@ import { formatDateRange } from '../../utils/dates';
  * A Budget is rendered as a folder: a tab sitting on top of the card body with
  * the period and derived spend inside it. There is no progress bar or limit,
  * because a budget only holds transactions rather than capping them.
+ *
+ * Handlers receive the budget (or its id for the pin), so list screens pass
+ * one stable callback instead of a fresh closure per card — the memo below
+ * only pays off when props stay referentially equal between renders.
  */
-export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, onLongPress, selected = false }) {
+export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, onLongPress, selected = false }) {
   const { colors, radius, spacing } = useTheme();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
   // A user-selected folder color paints identically in every theme; budgets
   // without one fall back to the theme-driven folder colors.
   const folder = resolveFolderPalette(budget.color, colors);
 
+  const handlePress = useCallback(() => onPress?.(budget), [onPress, budget]);
+  const handleLongPress = useCallback(() => onLongPress?.(budget), [onLongPress, budget]);
+  const handleTogglePin = useCallback(() => onTogglePin?.(budget.id), [onTogglePin, budget.id]);
+
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${budget.name}, ${formatCurrency(budget.spent, { currency })} spent, ${formatCurrency(balance, { currency })} balance`}
       accessibilityState={{ selected }}
-      onPress={onPress}
-      onLongPress={onLongPress}
+      onPress={handlePress}
+      onLongPress={onLongPress ? handleLongPress : undefined}
       style={({ pressed }) => [{ marginBottom: spacing.lg }, pressed && { opacity: 0.82 }]}
     >
       <View style={[styles.tab, { backgroundColor: folder.folderBorder }]} />
@@ -60,7 +69,7 @@ export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, curre
               accessibilityRole={Platform.OS === 'web' ? undefined : 'button'}
               accessibilityLabel={pinned ? `Unpin ${budget.name}` : `Pin ${budget.name}`}
               accessibilityState={{ selected: pinned }}
-              onPress={onTogglePin}
+              onPress={handleTogglePin}
               hitSlop={8}
               style={pinned ? null : styles.pinDimmed}
             >
@@ -97,7 +106,7 @@ export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, curre
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   tab: {

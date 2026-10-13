@@ -43,6 +43,20 @@ export async function getSubTransactions(transactionId) {
 }
 
 /**
+ * Items of many parents in a single read, grouped by parent id in persisted
+ * order — the Reports hydrator replaces its former one-query-per-row loop.
+ */
+export async function getSubTransactionsForParents(transactionIds) {
+  const rows = await storage.listSubTransactionsForParents(transactionIds);
+  const byParent = new Map();
+  for (const row of rows) {
+    if (!byParent.has(row.transaction_id)) byParent.set(row.transaction_id, []);
+    byParent.get(row.transaction_id).push(row);
+  }
+  return byParent;
+}
+
+/**
  * Purchase events for a date range: breakdown items whose own purchase_date
  * falls inside the bounds, joined with just enough parent context (type,
  * tag, budget, description) for the Calendar and the purchase-date reports.

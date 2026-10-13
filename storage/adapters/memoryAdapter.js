@@ -397,6 +397,15 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         .map(copy);
     },
 
+    /** Mirror of the SQLite batch read; grouped rows keep (position, id) order. */
+    async listSubTransactionsForParents(ids) {
+      const wanted = new Set(ids);
+      return store.subTransactions
+        .filter((item) => wanted.has(item.transaction_id))
+        .sort(bySubTransaction)
+        .map(copy);
+    },
+
     async insertSubTransaction(row) {
       store.subTransactions.push({
         id: row.id,

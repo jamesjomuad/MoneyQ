@@ -357,6 +357,29 @@ export function createSqliteAdapter(getDb) {
       );
     },
 
+    /**
+     * Breakdown items for many parents in one read — Reports hydrates every
+     * breakdown row without one serialized query per parent. Ordering within
+     * each parent matches listSubTransactionsByParent (position, id).
+     */
+    async listSubTransactionsForParents(ids) {
+      const unique = [...new Set(ids)];
+      const rows = [];
+      // Chunked to stay far below SQLite's bound-parameter limit.
+      for (let i = 0; i < unique.length; i += 400) {
+        const chunk = unique.slice(i, i + 400);
+        rows.push(
+          ...(await query(
+            `SELECT * FROM sub_transactions
+              WHERE transaction_id IN (${chunk.map(() => '?').join(', ')})
+              ORDER BY transaction_id, position ASC, id ASC`,
+            ...chunk,
+          )),
+        );
+      }
+      return rows;
+    },
+
     async insertSubTransaction(row) {
       await run(
         `INSERT INTO sub_transactions

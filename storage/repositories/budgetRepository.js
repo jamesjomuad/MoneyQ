@@ -100,6 +100,41 @@ export async function setBudgetFolder(id, folderId = null) {
   return getBudget(id);
 }
 
+/**
+ * Bulk variant of setBudgetFolder: one target-folder validation for the whole
+ * selection, every reassignment inside a single SQL transaction. A failure
+ * mid-loop rolls the whole move back rather than leaving half the selection
+ * in the folder. Touches only the assignment and `updated_at`, exactly like
+ * the single-budget move.
+ */
+export async function setBudgetsFolder(ids, folderId = null) {
+  const nextFolderId = await resolveFolderId(folderId);
+  const timestamp = nowIso();
+
+  await storage.beginTransaction();
+  try {
+    for (const id of ids) {
+      const current = await storage.getBudget(id);
+      if (!current) throw new Error('That budget no longer exists.');
+      await storage.updateBudget({
+        id,
+        name: current.name,
+        start_date: current.start_date,
+        end_date: current.end_date,
+        color: current.color ?? null,
+        folder_id: nextFolderId,
+        updated_at: timestamp,
+      });
+    }
+    await storage.commitTransaction();
+  } catch (error) {
+    await storage.rollbackTransaction();
+    throw error;
+  }
+
+  return ids;
+}
+
 /** Cascades to the budget's transactions; callers must confirm with the user. */
 export async function deleteBudget(id) {
   return storage.deleteBudget(id);
