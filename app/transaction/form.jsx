@@ -331,6 +331,10 @@ export default function TransactionFormScreen() {
   // mode). Leaving the create form discards it all — nothing was written.
   const [breakdownActive, setBreakdownActive] = useState(false);
   const [items, setItems] = useState([]);
+  // While a breakdown row is held by its drag handle the page scroll is
+  // disabled; Android's native ScrollView would otherwise force-cancel the
+  // handle's responder the moment it intercepts the touch stream.
+  const [breakdownDragging, setBreakdownDragging] = useState(false);
   const [itemSheet, setItemSheet] = useState(null); // { item | null }
   const [itemDetail, setItemDetail] = useState(null); // item being viewed
   const undoRef = useRef(null); // latest undo closure, read by the snackbar
@@ -790,6 +794,7 @@ export default function TransactionFormScreen() {
 
       <View style={StyleSheet.absoluteFill}>
         <Screen
+          scrollEnabled={!breakdownDragging}
           contentContainerStyle={{
             paddingTop: spacing.md + cardHeight + spacing.xl,
             paddingBottom: (transactionId ? 48 : barHeight) + keyboardHeight,
@@ -906,6 +911,7 @@ export default function TransactionFormScreen() {
               onAddItem={openAddItemSheet}
               onOpenItem={(item) => setItemDetail(item)}
               onReorder={handleReorder}
+              onDragStateChange={setBreakdownDragging}
             />
             {errors.breakdown ? (
               <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>

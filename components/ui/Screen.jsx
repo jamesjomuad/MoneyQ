@@ -33,6 +33,11 @@ export function Screen({
   topInset = false,
   enter = true,
   bottomSpace = 0,
+  // Pass false while a child owns an in-progress drag gesture: Android's
+  // native ScrollView intercepts at the touch slop and force-cancels the JS
+  // responder regardless of termination refusals, so the only reliable way to
+  // keep a child drag alive is to stop the scroll container from scrolling.
+  scrollEnabled = true,
 }) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
@@ -73,6 +78,7 @@ export function Screen({
       style={[styles.fill, { backgroundColor: colors.background }]}
       contentContainerStyle={contentStyle}
       keyboardShouldPersistTaps="handled"
+      scrollEnabled={scrollEnabled}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

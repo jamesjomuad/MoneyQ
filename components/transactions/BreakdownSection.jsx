@@ -21,13 +21,23 @@ const HANDLE_MIN_HEIGHT = 56;
  * is measured per row (onLayout), so the drop position follows the finger at
  * any row height, the dragged row lifts and moves with the gesture, and the
  * rest of the list re-slots live. The handle refuses responder termination so
- * the enclosing ScrollView cannot steal the gesture mid-drag.
+ * the enclosing ScrollView cannot steal the gesture mid-drag, and reports the
+ * drag up via `onDragStateChange` so the page scroll is disabled while a drag
+ * is held — Android's native ScrollView force-cancels the JS responder on
+ * interception and ignores termination refusals.
  * Tapping a row opens its detail sheet (full description, notes, move/delete).
  * Deletion feedback is the app-wide bottom snackbar with Undo, raised by the
  * form; reordering only changes positions — the parent total is the sum, so
  * it can never move.
  */
-export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReorder }) {
+export function BreakdownSection({
+  items,
+  currency,
+  onAddItem,
+  onOpenItem,
+  onReorder,
+  onDragStateChange,
+}) {
   const { colors, radius, spacing } = useTheme();
   const [drag, setDrag] = useState(null); // { id, originTop, height, dy }
   // Gesture bookkeeping only; never read while rendering a branch.
@@ -47,6 +57,7 @@ export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReo
     if (index < 0 || !layout) return;
     dragRef.current = { id, startY: pageY, originTop: layout.top, height: layout.height };
     setDrag({ id, originTop: layout.top, height: layout.height, dy: 0 });
+    if (onDragStateChange) onDragStateChange(true);
   }
 
   function move(id, pageY) {
@@ -72,6 +83,7 @@ export function BreakdownSection({ items, currency, onAddItem, onOpenItem, onReo
   function end() {
     dragRef.current = null;
     setDrag(null);
+    if (onDragStateChange) onDragStateChange(false);
   }
 
   const total = items.reduce((sum, item) => sum + item.amount, 0);
