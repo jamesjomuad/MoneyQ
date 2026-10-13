@@ -78,6 +78,36 @@ storage/
 - Money is stored as **integer minor units** (centavos) end to end. Format with `utils/currency.js`; never hard-code a currency symbol.
 - Transfers move value between accounts: they never count as income or expense and leave total assets unchanged, even though the UI has no transfer form yet.
 
+### Folders and Budgets — official terminology
+
+**Folder** — an optional organizational category that groups Budgets (`storage/repositories/folderRepository.js`).
+
+- Users name folders however they want: by year (`2025`, `2026`), purpose (`Travel`, `Business`), or any other category. Folder names must never be restricted to years or predefined categories.
+- Folders are not financial entities, budgets, transactions, or archive statuses. They own no income, expenses, balances, or financial calculations of their own.
+- Folders have customizable `name` and `color`. Folder colors are independent of Budget colors (nullable `color` = theme default).
+- A Folder contains Budgets only. Nested folders and subfolders are not supported unless explicitly introduced in a future feature.
+
+**Budget** — an independent financial entity that holds its own financial data and associated records (transactions, breakdown items, tags, reminders, color, amounts).
+
+- A Budget may belong to one Folder or remain ungrouped at the root level (`budgets.folder_id`, nullable); each Budget belongs to at most one Folder at a time.
+- A Budget retains its own identity, color, amounts, transactions, breakdown items, tags, reminders, and other associated data regardless of Folder assignment.
+- Moving a Budget between Folders, or between a Folder and the root level, must not recreate, duplicate, reset, or delete its data (`setBudgetFolder` touches only the assignment).
+
+**Hierarchy**: `Folder → Budget → Transactions / Breakdown Items`. The Folder organizes Budgets; the Budget owns its financial records. Folder membership must never change the ownership or meaning of those records.
+
+**Folder operation rules**
+
+- Creating or renaming a Folder must not affect existing Budgets.
+- Moving a Budget changes only its Folder assignment.
+- Deleting a Folder must not delete its Budgets or associated records — they return to the root level (`ON DELETE SET NULL` on `budgets.folder_id`, mirrored by `memoryAdapter.js`).
+- Empty Folders are allowed. Ungrouped Budgets remain fully supported.
+
+**Financial and reporting rules**
+
+- Folders are organizational only. Folder operations must leave Budget and transaction calculations, reports, calendar entries, reminders, and historical financial data unchanged.
+- Do not introduce Folder-level financial totals or calculations unless explicitly requested.
+- Never interpret a Folder named `2025` as an automatic date filter, an archive operation, or a signal that its Budgets are inactive.
+
 ## Conventions
 
 - **Dates**: build and read ISO dates with local `Date` getters via `utils/dates.js` (`toIsoDate`). Never `toISOString()` — it shifts across time zones. `parseFlexibleDate` accepts `2026-10-01`, `Oct 1, 2026`, `Oct 1`, `today`.
