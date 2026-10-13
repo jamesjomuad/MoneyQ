@@ -16,7 +16,7 @@ import { resolveFolderPalette } from "../../utils/colors";
 import { useBudgetsStore } from "../../stores/budgetsStore";
 import { useFoldersStore } from "../../stores/foldersStore";
 import { showToast } from "../../stores/toastStore";
-import { daysInclusive, parseFlexibleDate, suggestBudgetDates } from "../../utils/dates";
+import { daysInclusive, endOfMonthIso, parseFlexibleDate, suggestBudgetDates } from "../../utils/dates";
 
 /**
  * Normalized snapshot for the dirty check: trimmed name, ISO dates, a null
@@ -136,10 +136,11 @@ export default function BudgetFormScreen() {
   }, []);
 
   // Picking a future start must stay possible, so the start calendar is not
-  // capped by the end date; instead the end follows when the start passes it.
+  // capped by the end date; instead the end follows the start's period: every
+  // Starts On pick sets Ends On to the last day of that same month.
   const handleStartDateChange = useCallback((nextStart) => {
     setStartDate(nextStart);
-    setEndDate((currentEnd) => (!currentEnd || nextStart > currentEnd ? nextStart : currentEnd));
+    setEndDate(endOfMonthIso(nextStart));
     setErrors((current) => ({ ...current, start: undefined, end: undefined }));
     setFormError(null);
   }, []);
