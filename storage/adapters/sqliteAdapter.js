@@ -459,17 +459,34 @@ export function createSqliteAdapter(getDb) {
     },
 
     async getReminder(id) {
-      return first('SELECT * FROM reminders WHERE id = ?', id);
+      return first(`
+        SELECT r.*,
+               t.budget_id            AS budget_id,
+               t.amount               AS amount,
+               t.description          AS description,
+               t.transaction_date     AS transaction_date
+          FROM reminders r
+          LEFT JOIN transactions t ON t.id = r.transaction_id
+         WHERE r.id = ?
+      `, id);
     },
 
     /** The oldest reminder linked to a transaction, if any. */
     async getReminderByTransaction(transactionId) {
       if (transactionId == null) return null;
       return first(
-        `SELECT * FROM reminders
-          WHERE transaction_id = ?
-          ORDER BY created_at ASC, id ASC
-          LIMIT 1`,
+        `
+        SELECT r.*,
+               t.budget_id            AS budget_id,
+               t.amount               AS amount,
+               t.description          AS description,
+               t.transaction_date     AS transaction_date
+          FROM reminders r
+          LEFT JOIN transactions t ON t.id = r.transaction_id
+         WHERE r.transaction_id = ?
+         ORDER BY r.created_at ASC, r.id ASC
+         LIMIT 1
+        `,
         transactionId,
       );
     },

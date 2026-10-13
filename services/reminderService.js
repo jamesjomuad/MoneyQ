@@ -168,6 +168,14 @@ export async function editReminder(id, { date, time, notes, transactionId, reque
     return { status: 'saved', reminder: row };
   }
 
+  // An overdue reminder whose schedule was left untouched is saved but not
+  // re-armed: a past DATE trigger would fire immediately, and resyncReminders
+  // will never schedule it either.
+  if (isRemindAtPast(row.remind_at)) {
+    await saveReminderNotification(row, null);
+    return { status: 'saved', reminder: row };
+  }
+
   if (!notifications.isSupported) {
     return { status: 'unsupported', reminder: row };
   }

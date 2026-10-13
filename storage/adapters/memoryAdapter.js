@@ -36,6 +36,26 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
 
   const copy = (row) => (row ? { ...row } : null);
 
+  /**
+   * SQLite's reminder LEFT JOIN: reminder row plus its transaction's
+   * budget_id, amount, description and transaction_date (all NULL for a
+   * standalone reminder). Every reminder read recomputes these from the
+   * current transaction row, so no stale join data is ever returned.
+   */
+  const projectReminder = (reminder) => {
+    if (!reminder) return null;
+    const transaction = reminder.transaction_id
+      ? store.transactions.find((tx) => tx.id === reminder.transaction_id)
+      : null;
+    return copy({
+      ...reminder,
+      budget_id: transaction?.budget_id ?? null,
+      amount: transaction?.amount ?? null,
+      description: transaction?.description ?? null,
+      transaction_date: transaction?.transaction_date ?? null,
+    });
+  };
+
   /** SQLite's `ORDER BY start_date DESC, created_at DESC`. */
   const byBudgetPeriod = (a, b) =>
     b.start_date.localeCompare(a.start_date) || b.created_at.localeCompare(a.created_at);
@@ -486,30 +506,17 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
      * fields, or NULL transaction fields for a standalone reminder.
      */
     async listReminders() {
-      return store.reminders
-        .map((reminder) => {
-          const transaction = reminder.transaction_id
-            ? store.transactions.find((tx) => tx.id === reminder.transaction_id)
-            : null;
-          return {
-            ...reminder,
-            budget_id: transaction?.budget_id ?? null,
-            amount: transaction?.amount ?? null,
-            description: transaction?.description ?? null,
-            transaction_date: transaction?.transaction_date ?? null,
-          };
-        })
-        .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
+      return store.reminders.map(projectReminder).sort((a, b) => a.remind_at.localeCompare(b.remind_at));
     },
 
     async getReminder(id) {
-      return copy(store.reminders.find((reminder) => reminder.id === id) ?? null);
+      return projectReminder(store.reminders.find((reminder) => reminder.id === id) ?? null);
     },
 
     /** The oldest reminder linked to a transaction, if any. */
     async getReminderByTransaction(transactionId) {
       if (transactionId == null) return null;
-      return copy(
+      return projectReminder(
         [...store.reminders]
           .filter((reminder) => reminder.transaction_id === transactionId)
           .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))[0] ??

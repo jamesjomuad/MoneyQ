@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { DatePicker } from '../../components/dates/DatePicker';
@@ -86,6 +86,10 @@ export default function ReminderFormScreen() {
   const [dateError, setDateError] = useState(null);
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
+  // The schedule as stored when editing began. Re-saving an overdue reminder
+  // whose date and time were not touched is allowed (mirrors the repository
+  // rule), so editing only the notes never traps the user on a past instant.
+  const savedScheduleRef = useRef(null);
 
   useEffect(() => {
     refreshPermission();
@@ -107,6 +111,7 @@ export default function ReminderFormScreen() {
         setNotes(row.notes ?? '');
         setTransactionId(row.transaction_id);
         setStatus(row.status);
+        savedScheduleRef.current = { date: row.remind_date, time: row.remind_time };
       })
       .catch((error) => {
         if (!cancelled) setFormError(error?.message ?? 'Could not load this reminder.');
@@ -153,7 +158,13 @@ export default function ReminderFormScreen() {
   }, [navigation, resetLinkSearch]);
 
   async function handleSave() {
-    const error = reminderValidationError(date, time);
+    // Mirrors updateReminder's rule: only a changed schedule must be in the
+    // future, so an overdue reminder can still be saved when just its notes
+    // or link were edited.
+    const saved = savedScheduleRef.current;
+    const scheduleUntouched =
+      editing && saved && saved.date === date && saved.time === time;
+    const error = scheduleUntouched ? null : reminderValidationError(date, time);
     if (error) {
       setDateError(error);
       return;
