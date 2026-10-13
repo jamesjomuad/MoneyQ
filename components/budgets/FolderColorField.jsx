@@ -4,7 +4,7 @@ import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ColorPicker, { HueSlider, Panel1, PreviewText, Swatches } from 'reanimated-color-picker';
 
-import { tagColors } from '../../constants/colors';
+import { brandPalette, tagColors } from '../../constants/colors';
 import { resolveFolderPalette } from '../../utils/colors';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
@@ -81,6 +81,7 @@ function FolderColorSheet({ value, onChange, onClose }) {
 
   const [pending, setPending] = useState(value);
   const palette = resolveFolderPalette(pending, colors);
+  const selectedBrand = brandPalette.find((brand) => brand.hex === pending);
 
   function commit() {
     onChange(pending);
@@ -129,6 +130,44 @@ function FolderColorSheet({ value, onChange, onClose }) {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
             >
+              <View>
+                <Text variant="label" tone="muted" style={{ marginBottom: spacing.sm }}>
+                  Budgetarian Palette
+                </Text>
+                <View style={styles.brandRow}>
+                  {brandPalette.map((brand) => {
+                    const selected = pending === brand.hex;
+                    // Ink/border stay readable on the swatch itself, so the
+                    // checkmark shows on light colors and dark colors alike.
+                    const ink = resolveFolderPalette(brand.hex, colors).folderInk;
+                    return (
+                      <Pressable
+                        key={brand.hex}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Brand color ${brand.name}`}
+                        accessibilityState={{ selected }}
+                        onPress={() => setPending(brand.hex)}
+                        style={({ pressed }) => [
+                          styles.brandSwatch,
+                          {
+                            backgroundColor: brand.hex,
+                            borderColor: selected ? ink : 'transparent',
+                            borderRadius: radius.md,
+                            opacity: pressed ? 0.75 : 1,
+                          },
+                        ]}
+                      >
+                        {selected ? <Icon name="check" size={18} color={ink} /> : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <Text variant="label" tone="muted">
+                Custom
+              </Text>
+
               <ColorPicker
                 value={pending ?? colors.primary}
                 sliderThickness={22}
@@ -154,7 +193,14 @@ function FolderColorSheet({ value, onChange, onClose }) {
                     ]}
                   />
                   {pending ? (
-                    <PreviewText style={{ color: colors.textMuted }} colorFormat="hex" />
+                    <View style={styles.flex}>
+                      <PreviewText style={{ color: colors.textMuted }} colorFormat="hex" />
+                      {selectedBrand ? (
+                        <Text variant="caption" tone="faint">
+                          {selectedBrand.name}
+                        </Text>
+                      ) : null}
+                    </View>
                   ) : (
                     <Text variant="body" tone="muted">
                       Theme default
@@ -199,6 +245,18 @@ const styles = StyleSheet.create({
   backdropWrap: {
     flex: 1,
     justifyContent: 'flex-end',
+  },
+  brandRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  brandSwatch: {
+    alignItems: 'center',
+    aspectRatio: 1,
+    borderWidth: 2,
+    flex: 1,
+    justifyContent: 'center',
+    maxWidth: 48,
   },
   field: {
     alignItems: 'center',

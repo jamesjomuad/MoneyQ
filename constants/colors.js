@@ -114,6 +114,20 @@ export const APPEARANCE_OPTIONS = [
   { key: 'moneyq', label: 'Budgetarian', caption: 'Deep navy with cyan accents' },
 ];
 
+/**
+ * Official Budgetarian Botanical Green brand palette — the single source of
+ * truth for the six foundation colors. Components consume this list; the hex
+ * values must never be duplicated elsewhere.
+ */
+export const brandPalette = [
+  { name: 'Forest Green', hex: '#244C3A' },
+  { name: 'Sage Green', hex: '#79A88A' },
+  { name: 'Soft Sage', hex: '#E8F0E9' },
+  { name: 'Warm Ivory', hex: '#F7F6F0' },
+  { name: 'Deep Evergreen', hex: '#202923' },
+  { name: 'Harvest Gold', hex: '#D9A441' },
+];
+
 export const tagColors = [
   '#0F6B4B',
   '#B3261E',
