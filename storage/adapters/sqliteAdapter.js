@@ -88,12 +88,13 @@ export function createSqliteAdapter(getDb) {
 
     async insertBudget(row) {
       await run(
-        'INSERT INTO budgets (id, name, start_date, end_date, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO budgets (id, name, start_date, end_date, color, folder_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         row.id,
         row.name,
         row.start_date,
         row.end_date,
         row.color ?? null,
+        row.folder_id ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -101,11 +102,12 @@ export function createSqliteAdapter(getDb) {
 
     async updateBudget(row) {
       await run(
-        'UPDATE budgets SET name = ?, start_date = ?, end_date = ?, color = ?, updated_at = ? WHERE id = ?',
+        'UPDATE budgets SET name = ?, start_date = ?, end_date = ?, color = ?, folder_id = ?, updated_at = ? WHERE id = ?',
         row.name,
         row.start_date,
         row.end_date,
         row.color ?? null,
+        row.folder_id ?? null,
         row.updated_at,
         row.id,
       );
@@ -114,6 +116,56 @@ export function createSqliteAdapter(getDb) {
     /** Cascades to the budget's transactions through the foreign key. */
     async deleteBudget(id) {
       const result = await run('DELETE FROM budgets WHERE id = ?', id);
+      return result.changes ?? 0;
+    },
+
+    // --- folders ---------------------------------------------------------
+
+    /** Budget folders in user order; ties fall back to creation time, then id. */
+    async listFolders() {
+      return query(`
+        SELECT * FROM folders
+         ORDER BY position ASC, created_at ASC, id ASC
+      `);
+    },
+
+    async getFolder(id) {
+      return first('SELECT * FROM folders WHERE id = ?', id);
+    },
+
+    /** Pass `exceptId` to ignore one row — used by the uniqueness check on edit. */
+    async findFolderByName(name, exceptId = null) {
+      if (exceptId == null) return first('SELECT * FROM folders WHERE name = ?', name);
+      return first('SELECT * FROM folders WHERE name = ? AND id <> ?', name, exceptId);
+    },
+
+    async insertFolder(row) {
+      await run(
+        `INSERT INTO folders (id, name, color, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        row.id,
+        row.name,
+        row.color ?? null,
+        row.position ?? 0,
+        row.created_at,
+        row.updated_at,
+      );
+    },
+
+    async updateFolder(row) {
+      await run(
+        'UPDATE folders SET name = ?, color = ?, position = ?, updated_at = ? WHERE id = ?',
+        row.name,
+        row.color ?? null,
+        row.position ?? 0,
+        row.updated_at,
+        row.id,
+      );
+    },
+
+    /** The FK nulls `budgets.folder_id`, so the folder's budgets return to root. */
+    async deleteFolder(id) {
+      const result = await run('DELETE FROM folders WHERE id = ?', id);
       return result.changes ?? 0;
     },
 
@@ -518,13 +570,29 @@ export function createSqliteAdapter(getDb) {
     async replaceBudget(row) {
       const result = await run(
         `UPDATE budgets
-            SET name = ?, start_date = ?, end_date = ?, color = ?,
+            SET name = ?, start_date = ?, end_date = ?, color = ?, folder_id = ?,
                 created_at = ?, updated_at = ?
           WHERE id = ?`,
         row.name,
         row.start_date,
         row.end_date,
         row.color ?? null,
+        row.folder_id ?? null,
+        row.created_at,
+        row.updated_at,
+        row.id,
+      );
+      return result.changes ?? 0;
+    },
+
+    async replaceFolder(row) {
+      const result = await run(
+        `UPDATE folders
+            SET name = ?, color = ?, position = ?, created_at = ?, updated_at = ?
+          WHERE id = ?`,
+        row.name,
+        row.color ?? null,
+        row.position ?? 0,
         row.created_at,
         row.updated_at,
         row.id,
@@ -607,6 +675,7 @@ export function createSqliteAdapter(getDb) {
          DELETE FROM transactions;
          DELETE FROM reminders;
          DELETE FROM budgets;
+         DELETE FROM folders;
          DELETE FROM tags;
          DELETE FROM accounts;
          DELETE FROM settings;`,

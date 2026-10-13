@@ -10,6 +10,7 @@ import { storage } from '../adapters/adapter';
 /** Every table + settings, in the shape utils/backup serializes. */
 export async function readSnapshot(store = storage) {
   const accounts = await store.listAccounts();
+  const folders = await store.listFolders();
   const budgets = await store.listBudgets();
   const tags = await store.listTags({ includeArchived: true });
   const transactions = [];
@@ -22,7 +23,7 @@ export async function readSnapshot(store = storage) {
   }
   const reminders = await store.listReminders();
   const settings = await store.getAllSettings();
-  return { accounts, budgets, tags, transactions, subTransactions, reminders, settings };
+  return { accounts, folders, budgets, tags, transactions, subTransactions, reminders, settings };
 }
 
 /**
@@ -35,6 +36,7 @@ export async function restoreAll(data, store = storage) {
   try {
     await store.clearAllData();
     for (const row of data.accounts) await store.insertAccount(row);
+    for (const row of data.folders) await store.insertFolder(row);
     for (const row of data.budgets) await store.insertBudget(row);
     for (const row of data.tags) await store.insertTag(row);
     for (const row of data.transactions) await store.insertTransaction(row);
@@ -61,6 +63,12 @@ export async function applyMerge(writes, store = storage) {
           break;
         case 'replaceAccount':
           await store.replaceAccount(write.row);
+          break;
+        case 'insertFolder':
+          await store.insertFolder(write.row);
+          break;
+        case 'replaceFolder':
+          await store.replaceFolder(write.row);
           break;
         case 'insertBudget':
           await store.insertBudget(write.row);

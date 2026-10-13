@@ -122,13 +122,15 @@ const notesMigration = migrations.find((entry) => entry.version === 6);
 const standaloneMigration = migrations.find((entry) => entry.version === 7);
 const subTransactionsMigration = migrations.find((entry) => entry.version === 8);
 const datesMigration = migrations.find((entry) => entry.version === 9);
+const foldersMigration = migrations.find((entry) => entry.version === 10);
 for (const entry of migrations) {
   if (
     entry === paymentMigration ||
     entry === notesMigration ||
     entry === standaloneMigration ||
     entry === subTransactionsMigration ||
-    entry === datesMigration
+    entry === datesMigration ||
+    entry === foldersMigration
   ) {
     continue;
   }
@@ -168,6 +170,9 @@ check(
 await standaloneMigration.up(adapter);
 await subTransactionsMigration.up(adapter);
 await datesMigration.up(adapter);
+// Folders last: the ALTER must add folder_id onto real pre-existing budget
+// rows the way an older install would receive it.
+await foldersMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -179,6 +184,7 @@ const tables = (
 for (const expected of [
   'accounts',
   'budgets',
+  'folders',
   'reminders',
   'settings',
   'sub_transactions',
@@ -202,6 +208,21 @@ check(
   'budgets are period containers',
   ['name', 'start_date', 'end_date'].every((column) => budgetColumns.includes(column)),
   budgetColumns.join(','),
+);
+check(
+  'budgets gained an optional folder reference',
+  budgetColumns.includes('folder_id'),
+  budgetColumns.join(','),
+);
+const folderColumns = columnsOf('folders');
+check(
+  'folders carry name, color, position and timestamps',
+  ['name', 'color', 'position', 'created_at', 'updated_at'].every((column) => folderColumns.includes(column)),
+  folderColumns.join(','),
+);
+check(
+  'the v4 budget row survived the folder ALTER with a null reference',
+  (await adapter.getFirstAsync(`SELECT folder_id FROM budgets WHERE id = 'v4_budget'`))?.folder_id === null,
 );
 
 const transactionColumns = columnsOf('transactions');
@@ -266,6 +287,12 @@ check(
   subIndexes.some((index) => index.name === 'idx_sub_transactions_parent') &&
     subIndexes.some((index) => index.name === 'idx_sub_transactions_description'),
   subIndexes.map((index) => index.name).join(','),
+);
+const budgetFolderIndexes = db.prepare(`PRAGMA index_list(budgets)`).all();
+check(
+  'budgets by folder are indexed',
+  budgetFolderIndexes.some((index) => index.name === 'idx_budgets_folder'),
+  budgetFolderIndexes.map((index) => index.name).join(','),
 );
 
 const v4Rows = await adapter.getAllAsync(
@@ -334,7 +361,7 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 9, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 10, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -752,6 +779,61 @@ async function runScenario(store) {
     updated_at: STAMP,
   });
   snapshot.decoloredBudget = await store.getBudget('p_budget');
+
+  // Budget folders: create, look up by name, rename, reorder, assign a
+  // budget to one, then delete the folder. The budget must survive with a
+  // cleared reference, identically on both engines.
+  await store.insertFolder({
+    id: 'p_folder',
+    name: 'Parity Folder',
+    color: '#FF9800',
+    position: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertFolder({
+    id: 'p_folder_b',
+    name: 'Second',
+    color: null,
+    position: 1,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.folders = await store.listFolders();
+  snapshot.duplicateFolderName = await store.findFolderByName('Second');
+  snapshot.duplicateFolderNameIgnoringSelf = await store.findFolderByName('Second', 'p_folder_b');
+  snapshot.missingFolderName = await store.findFolderByName('Nope');
+  await store.updateFolder({
+    id: 'p_folder',
+    name: 'Renamed Folder',
+    color: null,
+    position: 1,
+    updated_at: STAMP,
+  });
+  await store.updateFolder({
+    id: 'p_folder_b',
+    name: 'Second',
+    color: '#00FF00',
+    position: 0,
+    updated_at: STAMP,
+  });
+  snapshot.foldersAfterSwap = await store.listFolders();
+  snapshot.missingFolder = await store.getFolder('nope');
+  await store.updateBudget({
+    id: 'p_budget',
+    name: 'Parity',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    color: null,
+    folder_id: 'p_folder_b',
+    updated_at: STAMP,
+  });
+  snapshot.budgetInFolder = await store.getBudget('p_budget');
+  snapshot.folderDeleteChanges = await store.deleteFolder('p_folder');
+  snapshot.missingFolderDelete = await store.deleteFolder('nope');
+  await store.deleteFolder('p_folder_b');
+  snapshot.budgetAfterFolderDelete = await store.getBudget('p_budget');
+  snapshot.foldersAfterDelete = await store.listFolders();
 
   snapshot.duplicateNameIgnoringSelf = await store.findTagByName('Parity Tag', 'p_tag');
   snapshot.duplicateNameAgainstOther = await store.findTagByName('Parity Tag', 'someone_else');
@@ -1242,7 +1324,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 9);
+check('both adapters report the same schema version', LATEST_VERSION === 10);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -1457,7 +1539,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has eight pending migrations', pending.length === 8, String(pending.length));
+check('legacy database has nine pending migrations', pending.length === 9, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -1470,7 +1552,7 @@ const legacyTables = legacyDb
 for (const removed of ['budget_categories', 'categories']) {
   check(`legacy table ${removed} was dropped`, !legacyTables.includes(removed));
 }
-for (const expected of ['accounts', 'budgets', 'reminders', 'settings', 'tags', 'transactions']) {
+for (const expected of ['accounts', 'budgets', 'folders', 'reminders', 'settings', 'tags', 'transactions']) {
   check(`rebuilt table ${expected} exists`, legacyTables.includes(expected));
 }
 
@@ -2023,6 +2105,24 @@ const fixtureSnapshot = {
       updated_at: BACKUP_STAMP,
     },
   ],
+  folders: [
+    {
+      id: 'folder_1',
+      name: 'Travel',
+      color: '#0F6B4B',
+      position: 0,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+    {
+      id: 'folder_2',
+      name: 'Business',
+      color: null,
+      position: 1,
+      created_at: BACKUP_STAMP,
+      updated_at: BACKUP_STAMP,
+    },
+  ],
   budgets: [
     {
       id: 'bkt_1',
@@ -2030,6 +2130,7 @@ const fixtureSnapshot = {
       start_date: '2026-10-01',
       end_date: '2026-10-31',
       color: '#FF9800',
+      folder_id: 'folder_1',
       created_at: BACKUP_STAMP,
       updated_at: BACKUP_STAMP,
     },
@@ -2195,6 +2296,7 @@ check(
 check(
   'the round trip reports preview counts',
   roundTrip.ok &&
+    roundTrip.counts.folders === 2 &&
     roundTrip.counts.budgets === 1 &&
     roundTrip.counts.transactions === 4 &&
     roundTrip.counts.breakdownTransactions === 1 &&
@@ -2217,6 +2319,51 @@ check(
   'orphan pins produce a warning',
   roundTrip.warnings.some((w) => w.includes('unknown budget')),
   JSON.stringify(roundTrip.warnings),
+);
+check(
+  'the round trip preserves folder rows and budget folder references',
+  roundTrip.ok &&
+    roundTrip.data.folders.length === 2 &&
+    roundTrip.data.folders[0].name === 'Travel' &&
+    roundTrip.data.folders[1].name === 'Business' &&
+    roundTrip.data.budgets[0].folder_id === 'folder_1',
+  JSON.stringify(roundTrip.data?.folders),
+);
+const noFolders = dataClone((d) => delete d.folders);
+check(
+  'a backup without the folders section imports with a compat warning',
+  noFolders.ok === true &&
+    noFolders.data.folders.length === 0 &&
+    noFolders.warnings.some((w) => w.includes('predates budget folders')) &&
+    // Its budgets referenced a folder that is no longer known: ungrouped.
+    noFolders.data.budgets[0].folder_id === null,
+  JSON.stringify(noFolders.warnings ?? noFolders.issues),
+);
+const orphanFolder = dataClone((d) => {
+  d.folders = [{ ...d.folders[0], id: 'other_folder' }];
+});
+check(
+  'a budget pointing at a missing folder is left ungrouped with a warning',
+  orphanFolder.ok === true &&
+    orphanFolder.data.budgets[0].folder_id === null &&
+    orphanFolder.warnings.some((w) => w.includes('folder_1') && w.includes('left ungrouped')),
+  JSON.stringify(orphanFolder.warnings ?? orphanFolder.issues),
+);
+const dupFolderId = dataClone((d) => d.folders.push({ ...d.folders[0] }));
+check(
+  'duplicate folder ids are rejected',
+  dupFolderId.ok === false && dupFolderId.issues.some((i) => i.includes('budget folder')),
+  JSON.stringify(dupFolderId.issues),
+);
+const junkFolderPosition = dataClone((d) => {
+  d.folders[0].position = 'top';
+});
+check(
+  'a non-numeric folder position repairs to 0 with a warning',
+  junkFolderPosition.ok === true &&
+    junkFolderPosition.data.folders[0].position === 0 &&
+    junkFolderPosition.warnings.some((w) => w.includes('position')),
+  JSON.stringify(junkFolderPosition.warnings ?? junkFolderPosition.issues),
 );
 check(
   'backup file names follow the dated convention',
@@ -2370,6 +2517,7 @@ check(
 // ---- merge planning ---------------------------------------------------------
 const currentData = structuredClone(fixtureSnapshot);
 currentData.budgets[0].name = 'October (my edits)';
+currentData.folders[0].name = 'Travel (my edits)';
 // Local edits that keep the breakdown total consistent (5500 + 4500 = 10000)
 // but differ from the backup's items (6000 + 4000).
 currentData.subTransactions[0].amount = 5500;
@@ -2384,6 +2532,7 @@ const conflictKeys = mergePlan.groups.filter((g) => g.state === 'conflict').map(
 check(
   'the merge spots changed rows as conflicts with a safe default',
   conflictKeys.includes('budgets:bkt_1') &&
+    conflictKeys.includes('folders:folder_1') &&
     conflictKeys.includes('transactions:tx_1') &&
     mergePlan.groups.find((g) => g.key === 'budgets:bkt_1').resolution === 'keep',
   JSON.stringify(conflictKeys),
@@ -2405,7 +2554,11 @@ check(
   txGroup.state === 'conflict' && txGroup.items.length === 2 && txGroup.existingItems.length === 2,
 );
 const decidedPlan = resolveGroup(
-  resolveGroup(mergePlan, 'budgets:bkt_1', 'replace'),
+  resolveGroup(
+    resolveGroup(mergePlan, 'budgets:bkt_1', 'replace'),
+    'folders:folder_1',
+    'replace',
+  ),
   'transactions:tx_1',
   'replace',
 );
@@ -2427,6 +2580,12 @@ check(
   'the merge writes parents before the rows that reference them',
   opNames.indexOf('replaceBudget') !== -1 &&
     opNames.indexOf('replaceBudget') < opNames.findIndex((op) => op.includes('Transaction')),
+  JSON.stringify(opNames),
+);
+check(
+  'folder rows are written before the budgets that reference them',
+  opNames.indexOf('replaceFolder') !== -1 &&
+    opNames.indexOf('replaceFolder') < opNames.indexOf('replaceBudget'),
   JSON.stringify(opNames),
 );
 check(
@@ -2483,6 +2642,7 @@ async function restoreVia(store, data) {
   try {
     await store.clearAllData();
     for (const row of data.accounts) await store.insertAccount(row);
+    for (const row of data.folders) await store.insertFolder(row);
     for (const row of data.budgets) await store.insertBudget(row);
     for (const row of data.tags) await store.insertTag(row);
     for (const row of data.transactions) await store.insertTransaction(row);
@@ -2506,6 +2666,12 @@ async function applyWrites(store, writes) {
           break;
         case 'replaceAccount':
           await store.replaceAccount(write.row);
+          break;
+        case 'insertFolder':
+          await store.insertFolder(write.row);
+          break;
+        case 'replaceFolder':
+          await store.replaceFolder(write.row);
           break;
         case 'insertBudget':
           await store.insertBudget(write.row);
@@ -2561,6 +2727,7 @@ async function readEverything(store) {
   }
   return stable({
     accounts: await store.listAccounts(),
+    folders: await store.listFolders(),
     budgets,
     tags: await store.listTags({ includeArchived: true }),
     transactions,
@@ -2589,6 +2756,8 @@ check(
     'the restore brings back every entity',
     after.budgets.length === 1 &&
       after.budgets[0].name === 'October' &&
+      after.folders.length === 2 &&
+      after.budgets[0].folder_id === 'folder_1' &&
       after.tags.length === 2 &&
       after.transactions.length === 4 &&
       after.subTransactions.length === 2 &&

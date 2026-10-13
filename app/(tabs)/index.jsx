@@ -2,6 +2,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   TextInput,
@@ -10,6 +11,8 @@ import {
 import Animated, { FadeInDown, useReducedMotion } from "react-native-reanimated";
 
 import { BudgetCard } from "../../components/budgets/BudgetCard";
+import { FolderGroupCard } from "../../components/budgets/FolderGroupCard";
+import { FolderPickerSheet } from "../../components/budgets/FolderPickerSheet";
 import { PinnedFolders } from "../../components/budgets/PinnedFolders";
 import { TransactionRow } from "../../components/transactions/TransactionRow";
 import { Button } from "../../components/ui/Button";
@@ -20,8 +23,10 @@ import { Screen, SectionHeader } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useTheme } from "../../components/ui/ThemeProvider";
 import { useBudgetsStore } from "../../stores/budgetsStore";
+import { useFoldersStore } from "../../stores/foldersStore";
 import { useSearchStore } from "../../stores/searchStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { showToast } from "../../stores/toastStore";
 
 // The entrance plays once per app session. The flag clears only on a JS
 // reload (cold start); returning from a detail page, a tab or the background
@@ -37,7 +42,16 @@ export default function HomeScreen() {
   const isLoading = useBudgetsStore((state) => state.isLoading);
   const load = useBudgetsStore((state) => state.load);
   const togglePinned = useBudgetsStore((state) => state.togglePinned);
+  const moveManyToFolder = useBudgetsStore((state) => state.moveManyToFolder);
+  const folders = useFoldersStore((state) => state.folders);
+  const loadFolders = useFoldersStore((state) => state.load);
   const currency = useSettingsStore((state) => state.currency);
+
+  // Bulk move: a long press picks up the first budget, taps then add or
+  // remove; the bottom bar shows the count and opens the destination sheet.
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const selecting = selectedIds.length > 0;
 
   // Intro state: `playIntro` freezes at mount so re-renders never restart it;
   // the module flag flips once the first settled content (not the loading
@@ -73,9 +87,10 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
+      loadFolders();
       if (searching) runSearch(term);
       else resetSearch();
-    }, [load, searching, term, runSearch, resetSearch]),
+    }, [load, loadFolders, searching, term, runSearch, resetSearch]),
   );
 
   const openFolder = useCallback(
@@ -114,6 +129,54 @@ export default function HomeScreen() {
   const pinnedBudgets = pinnedIds
     .map((id) => budgets.find((budget) => budget.id === id))
     .filter(Boolean);
+
+  // Folder cards show how many budgets live inside; the main list keeps only
+  // ungrouped budgets so nothing appears twice on Home.
+  const folderCounts = new Map();
+  for (const budget of budgets) {
+    if (!budget.folder_id) continue;
+    folderCounts.set(budget.folder_id, (folderCounts.get(budget.folder_id) ?? 0) + 1);
+  }
+  const ungrouped = budgets.filter((budget) => !budget.folder_id);
+
+  function toggleSelected(budgetId) {
+    setSelectedIds((current) =>
+      current.includes(budgetId)
+        ? current.filter((id) => id !== budgetId)
+        : [...current, budgetId],
+    );
+  }
+
+  function confirmBulkMove(folderId) {
+    const destination = folderId
+      ? folders.find((folder) => folder.id === folderId)?.name ?? 'folder'
+      : null;
+    const count = selectedIds.length;
+    Alert.alert(
+      `Move ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
+      destination
+        ? `They will appear under "${destination}" on Home. Nothing else about them changes.`
+        : 'They will return to the main Home list. Nothing else about them changes.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Move',
+          onPress: async () => {
+            try {
+              await moveManyToFolder(selectedIds, folderId);
+              setSelectedIds([]);
+              showToast(
+                destination ? `Moved to ${destination}` : 'Moved to Home',
+                'success',
+              );
+            } catch (error) {
+              showToast(error?.message ?? 'Could not move the budgets.', 'error');
+            }
+          },
+        },
+      ],
+    );
+  }
 
   return (
     <View style={styles.fill}>
@@ -187,17 +250,25 @@ export default function HomeScreen() {
               Loading budgets…
             </Text>
           </View>
-        ) : budgets.length === 0 && !searching ? (
+        ) : budgets.length === 0 && folders.length === 0 && !searching ? (
           <EmptyState
             icon="folder"
             title="No budgets yet"
             description="A budget is a period you name, such as October 2026. Transactions you add inside it are what make up your spending."
           >
-            <Button
-              label="Create your first budget"
-              icon="add"
-              onPress={() => router.push("/budget/form")}
-            />
+            <View style={{ alignItems: "center", gap: spacing.sm, width: "100%" }}>
+              <Button
+                label="Create your first budget"
+                icon="add"
+                onPress={() => router.push("/budget/form")}
+              />
+              <Button
+                label="New folder"
+                icon="folder"
+                variant="secondary"
+                onPress={() => router.push("/folder/form")}
+              />
+            </View>
           </EmptyState>
         ) : searching ? (
           <>
@@ -295,28 +366,144 @@ export default function HomeScreen() {
             ) : null}
           </>
         ) : (
-          budgets.map((budget, index) => (
-            <Animated.View
-              key={budget.id}
-              entering={introEnter(2 + Math.min(index, 4))}
-            >
-              <BudgetCard
-                budget={budget}
-                currency={currency}
-                pinned={pinnedIds.includes(budget.id)}
-                onTogglePin={() => togglePinned(budget.id)}
-                onPress={() => openFolder(budget)}
-              />
-            </Animated.View>
-          ))
+          <>
+            {folders.length > 0 ? (
+              <>
+                <SectionHeader
+                  title={`Budget folders · ${folders.length}`}
+                  fontSize={14}
+                  action={
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Create a new budget folder"
+                      onPress={() => router.push("/folder/form")}
+                      hitSlop={8}
+                    >
+                      <Text variant="label" tone="primary">
+                        New folder
+                      </Text>
+                    </Pressable>
+                  }
+                />
+                {folders.map((folder, index) => (
+                  <Animated.View
+                    key={folder.id}
+                    entering={introEnter(2 + Math.min(index, 4))}
+                  >
+                    <FolderGroupCard
+                      folder={folder}
+                      budgetCount={folderCounts.get(folder.id) ?? 0}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/folder/[id]",
+                          params: { id: folder.id },
+                        })
+                      }
+                    />
+                  </Animated.View>
+                ))}
+                {ungrouped.length > 0 ? (
+                  <SectionHeader title={`Ungrouped · ${ungrouped.length}`} fontSize={14} />
+                ) : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Create a new budget"
+                    onPress={() => router.push("/budget/form")}
+                    hitSlop={8}
+                    style={{ marginBottom: spacing.lg, marginTop: spacing.sm }}
+                  >
+                    <Text variant="label" tone="primary">
+                      + New budget
+                    </Text>
+                  </Pressable>
+                )}
+              </>
+            ) : (
+              // No folders yet: keep the entry point visible above the budget
+              // list so the first folder can be created from Home.
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Create a new budget folder"
+                onPress={() => router.push("/folder/form")}
+                hitSlop={8}
+                style={{ marginBottom: spacing.sm }}
+              >
+                <Text variant="label" tone="primary">
+                  + New folder
+                </Text>
+              </Pressable>
+            )}
+
+            {ungrouped.map((budget, index) => (
+              <Animated.View
+                key={budget.id}
+                entering={introEnter(2 + Math.min(index, 4))}
+              >
+                <BudgetCard
+                  budget={budget}
+                  currency={currency}
+                  pinned={selecting ? false : pinnedIds.includes(budget.id)}
+                  onTogglePin={selecting ? undefined : () => togglePinned(budget.id)}
+                  selected={selectedIds.includes(budget.id)}
+                  onLongPress={
+                    selecting ? undefined : () => setSelectedIds([budget.id])
+                  }
+                  onPress={selecting ? () => toggleSelected(budget.id) : () => openFolder(budget)}
+                />
+              </Animated.View>
+            ))}
+          </>
         )}
       </Screen>
 
-      {searching ? null : (
+      {selecting && !searching ? (
+        <View
+          style={[
+            styles.selectionBar,
+            {
+              backgroundColor: colors.surfaceElevated,
+              borderColor: colors.border,
+              gap: spacing.sm,
+              paddingBottom: Math.max(spacing.md, 4),
+              paddingHorizontal: spacing.lg,
+              paddingTop: spacing.md,
+            },
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel selection"
+            onPress={() => setSelectedIds([])}
+            hitSlop={8}
+            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Text variant="label" tone="muted">
+              Cancel
+            </Text>
+          </Pressable>
+          <Text variant="body" tone="muted" style={styles.selectionCount}>
+            {selectedIds.length} selected
+          </Text>
+          <Button
+            label={`Move ${selectedIds.length} to…`}
+            icon="folder"
+            onPress={() => setPickerOpen(true)}
+            style={styles.moveButton}
+          />
+        </View>
+      ) : searching ? null : (
         <Animated.View entering={introEnter(7)}>
           <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
         </Animated.View>
       )}
+
+      {pickerOpen ? (
+        <FolderPickerSheet
+          folders={folders}
+          onPick={(folderId) => confirmBulkMove(folderId)}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -358,5 +545,17 @@ const styles = StyleSheet.create({
   searchNote: {
     marginTop: 8,
     textAlign: "center",
+  },
+  selectionBar: {
+    alignItems: "center",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+  },
+  selectionCount: {
+    flex: 1,
+    textAlign: "right",
+  },
+  moveButton: {
+    marginLeft: 8,
   },
 });

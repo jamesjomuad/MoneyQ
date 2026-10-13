@@ -40,7 +40,8 @@ const THEME_VALUES = ['system', 'light', 'dark', 'moneyq'];
 /** Column whitelist per entity, in a fixed order for stable output. */
 const ENTITY_COLUMNS = {
   accounts: ['id', 'name', 'type', 'initial_balance', 'archived', 'created_at', 'updated_at'],
-  budgets: ['id', 'name', 'start_date', 'end_date', 'color', 'created_at', 'updated_at'],
+  folders: ['id', 'name', 'color', 'position', 'created_at', 'updated_at'],
+  budgets: ['id', 'name', 'start_date', 'end_date', 'color', 'folder_id', 'created_at', 'updated_at'],
   tags: [
     'id',
     'name',
@@ -286,6 +287,44 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
     accountIds.add(id);
   }
 
+  // ---- folders --------------------------------------------------------
+  // Optional section: backups written before budget folders existed simply
+  // omit it (same precedent as `subTransactions` below).
+  if (data.folders === undefined || data.folders === null) {
+    warnings.push('This backup predates budget folders; it was read without any.');
+  }
+  const folders = [];
+  const folderIds = new Set();
+  const seenFolderIds = new Set();
+  for (const row of missingSection('folders', { optional: true, label: 'budget folders' })) {
+    if (!isPlainObject(row)) {
+      issues.push('A budget folder entry is not an object.');
+      continue;
+    }
+    const id = typeof row.id === 'string' && row.id !== '' ? row.id : null;
+    if (!id || seenFolderIds.has(id)) {
+      issues.push(`A budget folder has a missing or duplicate id ("${String(row.id)}").`);
+      continue;
+    }
+    seenFolderIds.add(id);
+    folders.push({
+      id,
+      name: coerceText(row.name, 'Budget folder', warnings, `Budget folder ${id}`, id, 'name'),
+      color: coerceHexColor(row.color, warnings, `Budget folder ${id}`, id),
+      position: Number.isInteger(row.position) && row.position >= 0
+        ? row.position
+        : row.position === null || row.position === undefined
+          ? 0
+          : (() => {
+              warnings.push(`Budget folder ${id} had a non-numeric position; set to 0.`);
+              return 0;
+            })(),
+      created_at: coerceTimestamp(row.created_at, warnings, `Budget folder ${id}`, id, nowStamp, 'created_at'),
+      updated_at: coerceTimestamp(row.updated_at, warnings, `Budget folder ${id}`, id, nowStamp, 'updated_at'),
+    });
+    folderIds.add(id);
+  }
+
   // ---- budgets --------------------------------------------------------
   const budgets = [];
   const budgetIds = new Set();
@@ -311,6 +350,12 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
       start_date: row.start_date,
       end_date: row.end_date,
       color: coerceHexColor(row.color, warnings, `Budget ${id}`, id),
+      folder_id:
+        row.folder_id === null || row.folder_id === undefined
+          ? null
+          : folderIds.has(row.folder_id)
+            ? row.folder_id
+            : (warnings.push(`Budget ${id} referenced budget folder "${String(row.folder_id)}" which is not in the backup; left ungrouped.`), null),
       created_at: coerceTimestamp(row.created_at, warnings, `Budget ${id}`, id, nowStamp, 'created_at'),
       updated_at: coerceTimestamp(row.updated_at, warnings, `Budget ${id}`, id, nowStamp, 'updated_at'),
     });
@@ -672,7 +717,7 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
 
   if (issues.length > 0) return { ok: false, issues, warnings };
 
-  const normalized = { accounts, budgets, tags, transactions, subTransactions, reminders, settings };
+  const normalized = { accounts, folders, budgets, tags, transactions, subTransactions, reminders, settings };
   return {
     ok: true,
     data: normalized,
@@ -687,6 +732,7 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
 export function previewCounts(data) {
   return {
     accounts: data.accounts.length,
+    folders: data.folders.length,
     budgets: data.budgets.length,
     tags: data.tags.length,
     transactions: data.transactions.length,
@@ -703,7 +749,7 @@ export function previewCounts(data) {
 // Merge planning
 // =========================================================================
 
-const MERGE_ROW_KINDS = ['accounts', 'budgets', 'tags', 'transactions', 'reminders'];
+const MERGE_ROW_KINDS = ['accounts', 'folders', 'budgets', 'tags', 'transactions', 'reminders'];
 
 /**
  * Row equality used by the merge planner. Reminders drop their volatile
@@ -812,6 +858,8 @@ export function describeConflict(group, { currency }) {
   switch (group.kind) {
     case 'budgets':
       return { title: row.name, detail: `${row.start_date} → ${row.end_date}` };
+    case 'folders':
+      return { title: row.name, detail: 'Budget folder' };
     case 'tags':
       return { title: `${row.emoji ?? ''} ${row.name}`.trim(), detail: 'Tag' };
     case 'transactions': {
@@ -854,6 +902,11 @@ export function compileMergeWrites(plan) {
     else if (group.state === 'conflict' && group.resolution === 'replace')
       writes.push({ op: 'replaceAccount', row: group.incoming });
   }
+  for (const group of byKind('folders')) {
+    if (group.state === 'new') writes.push({ op: 'insertFolder', row: group.incoming });
+    else if (group.state === 'conflict' && group.resolution === 'replace')
+      writes.push({ op: 'replaceFolder', row: group.incoming });
+  }
   for (const group of byKind('budgets')) {
     if (group.state === 'new') writes.push({ op: 'insertBudget', row: group.incoming });
     else if (group.state === 'conflict' && group.resolution === 'replace')
@@ -895,6 +948,7 @@ export function compileMergeWrites(plan) {
 export function projectMergeResult(currentData, writes) {
   const projected = {
     accounts: normalizeRows(currentData.accounts, 'accounts').map((row) => ({ ...row })),
+    folders: normalizeRows(currentData.folders, 'folders').map((row) => ({ ...row })),
     budgets: normalizeRows(currentData.budgets, 'budgets').map((row) => ({ ...row })),
     tags: normalizeRows(currentData.tags, 'tags').map((row) => ({ ...row })),
     transactions: normalizeRows(currentData.transactions, 'transactions').map((row) => ({ ...row })),
@@ -913,6 +967,12 @@ export function projectMergeResult(currentData, writes) {
         break;
       case 'replaceAccount':
         Object.assign(byId(projected.accounts, write.row.id) ?? {}, write.row);
+        break;
+      case 'insertFolder':
+        projected.folders.push({ ...write.row });
+        break;
+      case 'replaceFolder':
+        Object.assign(byId(projected.folders, write.row.id) ?? {}, write.row);
         break;
       case 'insertBudget':
         projected.budgets.push({ ...write.row });

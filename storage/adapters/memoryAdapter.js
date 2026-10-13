@@ -18,6 +18,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
   const store = {
     accounts: [],
     budgets: [],
+    folders: [],
     tags: [],
     transactions: [],
     subTransactions: [],
@@ -38,6 +39,12 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
   /** SQLite's `ORDER BY start_date DESC, created_at DESC`. */
   const byBudgetPeriod = (a, b) =>
     b.start_date.localeCompare(a.start_date) || b.created_at.localeCompare(a.created_at);
+
+  /** SQLite's folder order: `ORDER BY position, created_at, id`. */
+  const byFolderPosition = (a, b) =>
+    a.position - b.position ||
+    a.created_at.localeCompare(b.created_at) ||
+    a.id.localeCompare(b.id);
 
   /** SQLite's `ORDER BY transaction_date DESC, created_at DESC`. */
   const byTransactionDate = (a, b) =>
@@ -75,6 +82,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       journal = {
         accounts: store.accounts.map((row) => ({ ...row })),
         budgets: store.budgets.map((row) => ({ ...row })),
+        folders: store.folders.map((row) => ({ ...row })),
         tags: store.tags.map((row) => ({ ...row })),
         transactions: store.transactions.map((row) => ({ ...row })),
         subTransactions: store.subTransactions.map((row) => ({ ...row })),
@@ -93,6 +101,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       if (!journal) return Promise.resolve();
       store.accounts = journal.accounts;
       store.budgets = journal.budgets;
+      store.folders = journal.folders;
       store.tags = journal.tags;
       store.transactions = journal.transactions;
       store.subTransactions = journal.subTransactions;
@@ -126,9 +135,9 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async insertBudget(row) {
-      // Mirror the SQLite schema: `color` always exists on the row (NULL when
-      // the budget keeps the theme-driven folder colors).
-      store.budgets.push({ color: null, ...row });
+      // Mirror the SQLite schema: `color` and `folder_id` always exist on the
+      // row (NULL when the budget keeps theme colors / stays ungrouped).
+      store.budgets.push({ color: null, folder_id: null, ...row });
     },
 
     async updateBudget(row) {
@@ -156,6 +165,52 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       );
       for (const reminder of store.reminders) {
         if (doomed.has(reminder.transaction_id)) reminder.transaction_id = null;
+      }
+      return removed;
+    },
+
+    // --- folders ---------------------------------------------------------
+
+    /** SQLite's `ORDER BY position ASC, created_at ASC, id ASC`. */
+    async listFolders() {
+      return [...store.folders].sort(byFolderPosition).map(copy);
+    },
+
+    async getFolder(id) {
+      return copy(store.folders.find((folder) => folder.id === id) ?? null);
+    },
+
+    /** Pass `exceptId` to ignore one row — used by the uniqueness check on edit. */
+    async findFolderByName(name, exceptId = null) {
+      return copy(store.folders.find((folder) => folder.name === name && folder.id !== exceptId) ?? null);
+    },
+
+    async insertFolder(row) {
+      store.folders.push({
+        id: row.id,
+        name: row.name,
+        color: row.color ?? null,
+        position: row.position ?? 0,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+    },
+
+    async updateFolder(row) {
+      const index = store.folders.findIndex((folder) => folder.id === row.id);
+      if (index >= 0) store.folders[index] = { ...store.folders[index], ...row };
+    },
+
+    /**
+     * Mirrors `ON DELETE SET NULL` on `budgets.folder_id`: the group goes, its
+     * budgets survive and return to the root list untouched.
+     */
+    async deleteFolder(id) {
+      const before = store.folders.length;
+      store.folders = store.folders.filter((folder) => folder.id !== id);
+      const removed = before - store.folders.length;
+      for (const budget of store.budgets) {
+        if (budget.folder_id === id) budget.folder_id = null;
       }
       return removed;
     },
@@ -553,6 +608,20 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         start_date: row.start_date,
         end_date: row.end_date,
         color: row.color ?? null,
+        folder_id: row.folder_id ?? null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+      return 1;
+    },
+
+    async replaceFolder(row) {
+      const existing = store.folders.find((folder) => folder.id === row.id);
+      if (!existing) return 0;
+      Object.assign(existing, {
+        name: row.name,
+        color: row.color ?? null,
+        position: row.position ?? 0,
         created_at: row.created_at,
         updated_at: row.updated_at,
       });
@@ -619,6 +688,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     async clearAllData() {
       store.accounts = [];
       store.budgets = [];
+      store.folders = [];
       store.tags = [];
       store.transactions = [];
       store.subTransactions = [];
@@ -668,6 +738,7 @@ function seedDemoData(store, timestamp) {
     color: null,
     created_at: timestamp,
     updated_at: timestamp,
+    folder_id: null,
   }));
 
   store.budgets.push(...budgets);

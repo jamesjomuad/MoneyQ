@@ -5,6 +5,7 @@ import {
   deleteBudget,
   getBudget,
   getBudgets,
+  setBudgetFolder,
   updateBudget,
 } from '../storage/repositories/budgetRepository';
 import {
@@ -79,5 +80,20 @@ export const useBudgetsStore = create((set, get) => ({
       : [...current, id];
     set({ pinnedIds });
     await setPinnedBudgetIds(pinnedIds);
+  },
+
+  /**
+   * Reassign one budget's folder (`null` returns it to the root). Only the
+   * assignment changes — name, period, colors and transactions are untouched.
+   */
+  moveToFolder: async (id, folderId = null) => {
+    await setBudgetFolder(id, folderId);
+    await get().load();
+  },
+
+  /** Bulk move used by Home's selection mode; applied one budget at a time. */
+  moveManyToFolder: async (ids, folderId = null) => {
+    for (const id of ids) await setBudgetFolder(id, folderId);
+    await get().load();
   },
 }));

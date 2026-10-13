@@ -7,6 +7,7 @@ import { migration as reminderNotes } from './006_reminder_notes';
 import { migration as reminderIndependent } from './007_reminder_independent';
 import { migration as subTransactions } from './008_sub_transactions';
 import { migration as breakdownDates } from './009_breakdown_dates';
+import { migration as folders } from './010_folders';
 
 /**
  * Append-only list. Never edit a shipped migration — add a new one so existing
@@ -22,6 +23,7 @@ export const migrations = [
   reminderIndependent,
   subTransactions,
   breakdownDates,
+  folders,
 ];
 
 export const LATEST_VERSION = migrations.reduce(

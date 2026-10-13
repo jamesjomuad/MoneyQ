@@ -72,7 +72,7 @@ export default function BackupScreen() {
       <Card>
         <Text variant="body">Backup file</Text>
         <Text variant="caption" tone="faint" style={{ marginTop: 2 }}>
-          All budgets, transactions, breakdown items, tags, reminders and settings as one
+          All budgets, budget folders, transactions, breakdown items, tags, reminders and settings as one
           JSON file. Nothing leaves your device unless you save or share it yourself.
         </Text>
         {fileService.supported ? (
@@ -139,6 +139,9 @@ export default function BackupScreen() {
             ) : null}
 
             <View style={[styles.counts, { marginTop: spacing.md }]}>
+              {preview.counts.folders > 0 ? (
+                <CountRow label="Budget folders" value={preview.counts.folders} />
+              ) : null}
               <CountRow label="Budgets" value={preview.counts.budgets} />
               <CountRow label="Transactions" value={preview.counts.transactions} />
               <CountRow label="Breakdown items" value={preview.counts.breakdownItems} />

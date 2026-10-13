@@ -2,6 +2,7 @@ import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { FolderPickerSheet } from '../../components/budgets/FolderPickerSheet';
 import { TagSpendRow } from '../../components/tags/TagSpendRow';
 import { TransactionRow } from '../../components/transactions/TransactionRow';
 import { Button } from '../../components/ui/Button';
@@ -15,7 +16,9 @@ import { Text } from '../../components/ui/Text';
 import { useTheme } from '../../components/ui/ThemeProvider';
 import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
 import { useBudgetsStore } from '../../stores/budgetsStore';
+import { useFoldersStore } from '../../stores/foldersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { showToast } from '../../stores/toastStore';
 import { groupByDate } from '../../utils/calculations';
 import { formatCurrency } from '../../utils/currency';
 import { isHexColor, resolveFolderPalette } from '../../utils/colors';
@@ -82,6 +85,9 @@ export default function BudgetDetailScreen() {
   const setActiveTag = useBudgetDetailStore((state) => state.setActiveTag);
   const removeTransaction = useBudgetDetailStore((state) => state.removeTransaction);
   const removeBudget = useBudgetsStore((state) => state.removeBudget);
+  const moveToFolder = useBudgetsStore((state) => state.moveToFolder);
+  const folders = useFoldersStore((state) => state.folders);
+  const loadFolders = useFoldersStore((state) => state.load);
 
   // Fold long lists so the summary card stays in reach; the headers remain so
   // a folded section can be reopened.
@@ -95,11 +101,17 @@ export default function BudgetDetailScreen() {
   // lives with this screen, touches no stored data and no other figures.
   // Privacy is on by default: the amount starts masked until revealed.
   const [remainingVisible, setRemainingVisible] = useState(false);
+  // Budget-folder quick move: opening the picker is display state; the move
+  // itself goes through the budgets store (which re-reads from the repository).
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
-      if (budgetId) load(budgetId);
-    }, [budgetId, load]),
+      if (budgetId) {
+        load(budgetId);
+        loadFolders();
+      }
+    }, [budgetId, load, loadFolders]),
   );
 
   // The route ID is the identity of this screen. Until the store has data for
@@ -165,6 +177,9 @@ export default function BudgetDetailScreen() {
   const fillColor = spendColor(colors, spentPercent);
   const folderCard = isHexColor(budget.color) ? resolveFolderPalette(budget.color, colors) : null;
   const folderInk = folderCard ? folderCard.folderInk : null;
+  // The budget folder this budget currently sits in. Display lookup only:
+  // folders organize budgets on Home and hold no money themselves.
+  const budgetFolder = folders.find((folder) => folder.id === budget.folder_id) ?? null;
 
   function confirmDeleteTransaction(transaction) {
     Alert.alert(
@@ -298,6 +313,32 @@ export default function BudgetDetailScreen() {
           >
             {formatDateRange(budget.start_date, budget.end_date)}
           </Text>
+          {/* Quick move: which folder this budget lives in (or none), tap to
+              change. Touch target stays comfortable even though the text is
+              caption-sized. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={budgetFolder ? `Move out of folder ${budgetFolder.name}` : 'Add this budget to a folder'}
+            onPress={() => setFolderPickerOpen(true)}
+            style={({ pressed }) => [
+              styles.folderRow,
+              {
+                marginTop: spacing.sm,
+                opacity: pressed ? 0.6 : 1,
+              },
+            ]}
+          >
+            <Icon name="folder" size={16} color={folderInk ?? colors.textMuted} />
+            <Text
+              variant="caption"
+              tone="muted"
+              numberOfLines={1}
+              style={{ flexShrink: 1, ...(folderInk ? { color: folderInk, opacity: 0.85 } : null) }}
+            >
+              {budgetFolder ? `In “${budgetFolder.name}”` : 'Add to folder'}
+            </Text>
+            <Icon name="chevronRight" size={14} color={folderInk ?? colors.textMuted} />
+          </Pressable>
 
           {/* Progress bar replaces the old stats separator: the fill shows how
               much of the budget's income has been spent (expense / income). */}
@@ -489,6 +530,22 @@ export default function BudgetDetailScreen() {
         }
         accessibilityLabel="Add transaction"
       />
+
+      {folderPickerOpen ? (
+        <FolderPickerSheet
+          folders={folders}
+          onPick={async (pickedId) => {
+            try {
+              await moveToFolder(budget.id, pickedId);
+              const destination = folders.find((folder) => folder.id === pickedId);
+              showToast(destination ? `Moved to ${destination.name}` : 'Moved to Home');
+            } catch (moveError) {
+              showToast(moveError?.message ?? 'Could not move the budget.', 'error');
+            }
+          }}
+          onClose={() => setFolderPickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -512,6 +569,8 @@ const styles = StyleSheet.create({
   // centered against the 40px display text.
   remainingRow: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
   visibilityButton: { marginRight: 30, padding: 2 },
+  // Folder quick-move row under the date caption: icon, label, chevron.
+  folderRow: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   stats: { flexDirection: 'row' },
   // Centered rule between the Income / Expenses / Transactions stats. It is
   // deliberately shorter than the stat block (not a full-height gridline)

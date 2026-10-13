@@ -13,7 +13,7 @@ import { formatDateRange } from '../../utils/dates';
  * the period and derived spend inside it. There is no progress bar or limit,
  * because a budget only holds transactions rather than capping them.
  */
-export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency }) {
+export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, onLongPress, selected = false }) {
   const { colors, radius, spacing } = useTheme();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
   // A user-selected folder color paints identically in every theme; budgets
@@ -24,7 +24,9 @@ export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, curre
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${budget.name}, ${formatCurrency(budget.spent, { currency })} spent, ${formatCurrency(balance, { currency })} balance`}
+      accessibilityState={{ selected }}
       onPress={onPress}
+      onLongPress={onLongPress}
       style={({ pressed }) => [{ marginBottom: spacing.lg }, pressed && { opacity: 0.82 }]}
     >
       <View style={[styles.tab, { backgroundColor: folder.folderBorder }]} />
@@ -34,11 +36,17 @@ export function BudgetCard({ budget, onPress, onTogglePin, pinned = false, curre
           styles.body,
           {
             backgroundColor: folder.folder,
-            borderColor: folder.folderBorder,
+            borderColor: selected ? folder.folderInk : folder.folderBorder,
             borderRadius: radius.md,
+            borderWidth: selected ? 2 : StyleSheet.hairlineWidth,
           },
         ]}
       >
+        {selected ? (
+          <View style={[styles.checkmark, { backgroundColor: folder.folderInk, borderRadius: radius.pill }]}>
+            <Icon name="check" size={14} color={folder.folder} />
+          </View>
+        ) : null}
         <View style={styles.headerRow}>
           <Icon name="folder" size={20} color={folder.folderInk} />
           <Text variant="heading" numberOfLines={1} style={[styles.title, { color: folder.folderInk }]}>
@@ -102,6 +110,16 @@ const styles = StyleSheet.create({
   body: {
     borderWidth: StyleSheet.hairlineWidth,
     padding: 14,
+    position: 'relative',
+  },
+  checkmark: {
+    alignItems: 'center',
+    height: 22,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 10,
+    top: 10,
+    width: 22,
   },
   headerRow: {
     alignItems: 'center',

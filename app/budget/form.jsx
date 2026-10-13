@@ -1,23 +1,27 @@
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { DatePicker } from "../../components/dates/DatePicker";
 import { FolderColorField } from "../../components/budgets/FolderColorField";
+import { FolderPickerSheet } from "../../components/budgets/FolderPickerSheet";
 import { Button } from "../../components/ui/Button";
 import { Chip } from "../../components/ui/Chip";
+import { Icon } from "../../components/ui/Icon";
 import { Screen, ScreenTitle, SectionHeader } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { TextField } from "../../components/ui/TextField";
 import { useTheme } from "../../components/ui/ThemeProvider";
+import { resolveFolderPalette } from "../../utils/colors";
 import { useBudgetsStore } from "../../stores/budgetsStore";
+import { useFoldersStore } from "../../stores/foldersStore";
 import { showToast } from "../../stores/toastStore";
 import { daysInclusive, parseFlexibleDate, suggestBudgetDates } from "../../utils/dates";
 
 /**
- * Normalized snapshot for the dirty check: trimmed name, ISO dates, and a
- * null color meaning "theme default". Equal values always serialize equal,
- * so restoring a field counts as no change.
+ * Normalized snapshot for the dirty check: trimmed name, ISO dates, a null
+ * color meaning "theme default", and the folder assignment. Equal values
+ * always serialize equal, so restoring a field counts as no change.
  */
 function budgetSnapshot(values) {
   return JSON.stringify({
@@ -25,6 +29,7 @@ function budgetSnapshot(values) {
     startDate: values.startDate ?? "",
     endDate: values.endDate ?? "",
     color: values.color ?? null,
+    folderId: values.folderId ?? null,
   });
 }
 
@@ -35,12 +40,14 @@ const PERIOD_CHIPS = [
 ];
 
 export default function BudgetFormScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, folderId: initialFolderParam } = useLocalSearchParams();
   const { colors, spacing } = useTheme();
   const fetchBudget = useBudgetsStore((state) => state.fetchBudget);
   const addBudget = useBudgetsStore((state) => state.addBudget);
   const editBudget = useBudgetsStore((state) => state.editBudget);
   const removeBudget = useBudgetsStore((state) => state.removeBudget);
+  const folders = useFoldersStore((state) => state.folders);
+  const loadFolders = useFoldersStore((state) => state.load);
 
   const editing = typeof id === "string" && id.length > 0;
   const navigation = useNavigation();
@@ -63,10 +70,23 @@ export default function BudgetFormScreen() {
   );
   // null keeps the theme-driven folder colors — custom colors are optional.
   const [color, setColor] = useState(null);
+  // Which budget folder this budget will sit in; null is the Home root. A new
+  // budget started from inside a folder (folder screen's "New budget") keeps
+  // that folder preselected.
+  const [folderId, setFolderId] = useState(() =>
+    typeof initialFolderParam === "string" && initialFolderParam.length > 0
+      ? initialFolderParam
+      : null,
+  );
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(editing);
+
+  useEffect(() => {
+    loadFolders();
+  }, [loadFolders]);
 
   useEffect(() => {
     if (!editing) return undefined;
@@ -79,7 +99,17 @@ export default function BudgetFormScreen() {
         setStartDate(budget.start_date);
         setEndDate(budget.end_date);
         setColor(budget.color ?? null);
-        const saved = budgetSnapshot(budget);
+        setFolderId(budget.folder_id ?? null);
+        // Rows arrive snake_case; the snapshot is built from the same keys the
+        // live form uses so an untouched visit is genuinely clean (zero writes,
+        // zero toasts) exactly like the auto-save comment promises.
+        const saved = budgetSnapshot({
+          name: budget.name,
+          startDate: budget.start_date,
+          endDate: budget.end_date,
+          color: budget.color ?? null,
+          folderId: budget.folder_id ?? null,
+        });
         setBaseline(saved);
         baselineRef.current = saved;
       })
@@ -123,6 +153,12 @@ export default function BudgetFormScreen() {
     return days === 1 ? 'A single day' : `${days} days long`;
   }, [startDate, endDate]);
 
+  // Display only for the folder field. A stale preselection (deleted folder)
+  // renders as "No folder"; the repository still rejects it on save.
+  const selectedFolder = folders.find((folder) => folder.id === folderId) ?? null;
+  const selectedFolderName = selectedFolder?.name ?? 'No folder';
+  const folderPalette = resolveFolderPalette(selectedFolder?.color ?? null, colors);
+
   function validateBudget(values) {
     const nextErrors = {};
     const resolvedStart = parseFlexibleDate(values.startDate);
@@ -145,7 +181,7 @@ export default function BudgetFormScreen() {
   useEffect(() => {
     if (!editing || loading || baseline === null) return undefined;
 
-    const values = { name, startDate, endDate, color };
+    const values = { name, startDate, endDate, color, folderId };
     const snapshot = budgetSnapshot(values);
     if (snapshot === baseline) return undefined;
 
@@ -170,6 +206,7 @@ export default function BudgetFormScreen() {
           startDate: parseFlexibleDate(values.startDate),
           endDate: parseFlexibleDate(values.endDate),
           color: values.color,
+          folderId: values.folderId,
         });
         baselineRef.current = snapshot;
         setBaseline(snapshot);
@@ -225,6 +262,7 @@ export default function BudgetFormScreen() {
     startDate,
     endDate,
     color,
+    folderId,
     id,
     editBudget,
     navigation,
@@ -248,6 +286,7 @@ export default function BudgetFormScreen() {
         startDate: parseFlexibleDate(startDate),
         endDate: parseFlexibleDate(endDate),
         color,
+        folderId,
       });
       router.replace({ pathname: "/budget/[id]", params: { id: budget.id } });
     } catch (error) {
@@ -324,6 +363,62 @@ export default function BudgetFormScreen() {
 
       <FolderColorField value={color} onChange={setColor} />
 
+      <Text variant="label" tone="muted" style={{ marginBottom: spacing.xs }}>
+        Budget folder
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Budget folder: ${selectedFolderName}`}
+        onPress={() => setFolderPickerOpen(true)}
+        style={({ pressed }) => [
+          styles.folderField,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            borderRadius: 50,
+            opacity: pressed ? 0.7 : 1,
+            marginBottom: spacing.lg,
+            gap: spacing.md,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.md,
+          },
+        ]}
+      >
+        {selectedFolder ? (
+          <View
+            style={[
+              styles.folderSwatch,
+              {
+                backgroundColor: folderPalette.folder,
+                borderColor: folderPalette.folderBorder,
+              },
+            ]}
+          />
+        ) : (
+          <Icon name="folder" size={20} color={colors.textMuted} />
+        )}
+        <View style={styles.folderFieldText}>
+          <Text variant="body">{selectedFolder ? selectedFolder.name : 'No folder'}</Text>
+          <Text variant="caption" tone="faint">
+            {selectedFolder ? 'Grouped on Home' : 'Sits in the main Home list'}
+          </Text>
+        </View>
+        <Icon name="chevronRight" size={16} color={colors.textFaint} />
+      </Pressable>
+
+      {folderPickerOpen ? (
+        <FolderPickerSheet
+          folders={folders}
+          title="Choose folder"
+          onPick={(pickedId) => {
+            setFolderId(pickedId);
+            // A preselected folder that no longer exists (deleted elsewhere)
+            // is silently dropped here; the repository still guards writes.
+          }}
+          onClose={() => setFolderPickerOpen(false)}
+        />
+      ) : null}
+
       <SectionHeader title="Dates" />
       <DatePicker
         label="Starts on"
@@ -395,4 +490,18 @@ export default function BudgetFormScreen() {
 
 const styles = StyleSheet.create({
   chipRow: { paddingRight: 8 },
+  folderField: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+  },
+  folderFieldText: {
+    flex: 1,
+  },
+  folderSwatch: {
+    borderRadius: 8,
+    borderWidth: 2,
+    height: 30,
+    width: 30,
+  },
 });
