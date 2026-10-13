@@ -16,6 +16,7 @@
     "expo-splash-screen": "~57.0.9",
     "expo-sqlite": "~57.0.4",
     "expo-symbols": "~57.0.3",
+    "opencode-quota": "^0.0.1-dev",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
