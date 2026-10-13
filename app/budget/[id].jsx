@@ -78,6 +78,10 @@ export default function BudgetDetailScreen() {
   // a folded section can be reopened.
   const [tagsOpen, setTagsOpen] = useState(true);
   const [transactionsOpen, setTransactionsOpen] = useState(true);
+  // Measured height of the floating summary card, so the scroll body can
+  // reserve exactly the space it occupies (same trick as the transaction
+  // form's sticky Amount card).
+  const [cardHeight, setCardHeight] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -208,13 +212,14 @@ export default function BudgetDetailScreen() {
         }}
       />
 
-      {/* Pinned summary: the remaining balance stays visible while the
-          tag and transaction lists scroll underneath it. */}
+      {/* Pinned summary: floats over the scroll body like the transaction
+          form's sticky Amount card — the tag and transaction lists scroll
+          beneath the card's opaque surface instead of clipping against a
+          full-width band. */}
       <View
         style={[
           styles.pinned,
           {
-            backgroundColor: colors.background,
             paddingHorizontal: spacing.lg,
             paddingBottom: spacing.md,
             paddingTop: spacing.md,
@@ -222,36 +227,40 @@ export default function BudgetDetailScreen() {
         ]}
       >
         <Card
-          style={
-            folderCard
+          onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}
+          style={{
+            ...(folderCard
               ? { backgroundColor: folderCard.folder, borderColor: folderCard.folderBorder }
-              : null
-          }
+              : null),
+            // Mirror of the transaction form's sticky Amount card: a floating,
+            // borderless, generously rounded surface with a soft drop shadow.
+            borderRadius: 25,
+            borderWidth: 0,
+            padding: spacing.md,
+            boxShadow: `0 6px 16px ${colors.shadow}`,
+          }}
         >
-          <Text
-            variant="caption"
-            tone="muted"
-            style={
-              folderInk
-                ? { color: folderInk, opacity: 0.85, marginBottom: spacing.xs }
-                : { marginBottom: spacing.xs }
-            }
-          >
-            {formatDateRange(budget.start_date, budget.end_date)}
-          </Text>
-          <Text
-            variant="label"
-            tone="muted"
-            style={folderInk ? { color: folderInk, opacity: 0.85 } : undefined}
-          >
-            REMAINING
-          </Text>
+          <SectionHeader title="Remaining" color={folderInk} />
           <Text
             variant="display"
             tone={summary.remaining < 0 ? 'expense' : 'default'}
-            style={folderInk ? { marginTop: 4, color: folderInk } : { marginTop: 4 }}
+            style={{
+              fontSize: 40,
+              letterSpacing: -0.8,
+              ...(folderInk ? { color: folderInk } : null),
+            }}
           >
             {formatCurrency(summary.remaining, { currency })}
+          </Text>
+          <Text
+            variant="caption"
+            tone="muted"
+            style={{
+              marginTop: spacing.xs,
+              ...(folderInk ? { color: folderInk, opacity: 0.85 } : null),
+            }}
+          >
+            {formatDateRange(budget.start_date, budget.end_date)}
           </Text>
 
           {/* Progress bar replaces the old stats separator: the fill shows how
@@ -323,7 +332,10 @@ export default function BudgetDetailScreen() {
 
       {/* Reserve room for the floating add button: its own bottom offset plus
           the button height, so the last transaction row scrolls clear of it. */}
-      <Screen bottomSpace={FAB_SIZE + spacing.xl}>
+      <Screen
+        bottomSpace={FAB_SIZE + spacing.xl}
+        contentContainerStyle={{ paddingTop: spacing.md + cardHeight + spacing.xl }}
+      >
         <SectionHeader
           title={`Tags · ${tagSummaries.length}`}
           fontSize={14}
@@ -447,7 +459,17 @@ export default function BudgetDetailScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  pinned: { flexShrink: 0 },
+  pinned: {
+    // Lifted out of the column flow so the Screen's ScrollView fills the
+    // whole scene and its content slides under the card instead of being
+    // hard-clipped at the band's edge. zIndex keeps the card on top even
+    // though it precedes the ScrollView in JSX order.
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+  },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   stats: { flexDirection: 'row' },
   // Centered rule between the Income / Expenses / Transactions stats. It is
