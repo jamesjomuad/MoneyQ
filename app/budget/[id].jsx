@@ -50,6 +50,15 @@ function spendColor(colors, percent) {
   return mixHex(colors.warning, colors.expense, (p - 0.5) / 0.5);
 }
 
+/**
+ * Privacy mask for the Remaining amount: every digit becomes a bullet and the
+ * thousands/decimal separators drop out, so `₱1,000.00` reads as `₱••••••`.
+ * Purely cosmetic — the value it masks is never altered.
+ */
+function maskAmountText(text) {
+  return text.replace(/\d/g, '•').replace(/[,.]/g, '');
+}
+
 export default function BudgetDetailScreen() {
   const { id: routeBudgetId } = useLocalSearchParams();
   const budgetId =
@@ -82,6 +91,10 @@ export default function BudgetDetailScreen() {
   // reserve exactly the space it occupies (same trick as the transaction
   // form's sticky Amount card).
   const [cardHeight, setCardHeight] = useState(0);
+  // Privacy toggle for the pinned Remaining amount only — display state,
+  // lives with this screen, touches no stored data and no other figures.
+  // Privacy is on by default: the amount starts masked until revealed.
+  const [remainingVisible, setRemainingVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -241,17 +254,40 @@ export default function BudgetDetailScreen() {
           }}
         >
           <SectionHeader title="Remaining" color={folderInk} />
-          <Text
-            variant="display"
-            tone={summary.remaining < 0 ? 'expense' : 'default'}
-            style={{
-              fontSize: 40,
-              letterSpacing: -0.8,
-              ...(folderInk ? { color: folderInk } : null),
-            }}
-          >
-            {formatCurrency(summary.remaining, { currency })}
-          </Text>
+          <View style={styles.remainingRow}>
+            <Text
+              variant="display"
+              tone={summary.remaining < 0 ? 'expense' : 'default'}
+              style={{
+                fontSize: 40,
+                letterSpacing: -0.8,
+                // Let the figure yield to the eye button on very large amounts
+                // instead of pushing it past the card's right edge.
+                flexShrink: 1,
+                ...(folderInk ? { color: folderInk } : null),
+              }}
+            >
+              {remainingVisible
+                ? formatCurrency(summary.remaining, { currency })
+                : maskAmountText(formatCurrency(summary.remaining, { currency }))}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={remainingVisible ? 'Hide remaining amount' : 'Show remaining amount'}
+              onPress={() => setRemainingVisible((visible) => !visible)}
+              hitSlop={10}
+              style={({ pressed }) => [
+                styles.visibilityButton,
+                { opacity: pressed ? 0.5 : 0.75 },
+              ]}
+            >
+              <Icon
+                name={remainingVisible ? 'eye' : 'eyeOff'}
+                size={26}
+                color={folderInk ?? colors.textMuted}
+              />
+            </Pressable>
+          </View>
           <Text
             variant="caption"
             tone="muted"
@@ -471,6 +507,11 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
+  // Remaining amount with its privacy toggle: the figure keeps the left edge
+  // and the eye button sits flush with the card's right edge, optically
+  // centered against the 40px display text.
+  remainingRow: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
+  visibilityButton: { marginRight: 30, padding: 2 },
   stats: { flexDirection: 'row' },
   // Centered rule between the Income / Expenses / Transactions stats. It is
   // deliberately shorter than the stat block (not a full-height gridline)

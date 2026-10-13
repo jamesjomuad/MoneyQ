@@ -46,6 +46,8 @@ const ICONS = {
   refresh: { ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' },
   pin: { ios: 'pin', android: 'push_pin', web: 'push_pin' },
   pinFilled: { ios: 'pin.fill', android: 'push_pin', web: 'push_pin' },
+  eye: { ios: 'eye', android: 'visibility', web: 'visibility' },
+  eyeOff: { ios: 'eye.slash', android: 'visibility_off', web: 'visibility_off' },
 };
 
 export const ICON_NAMES = Object.keys(ICONS);
