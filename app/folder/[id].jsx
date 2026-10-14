@@ -4,7 +4,9 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-nat
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { BudgetCard } from '../../components/budgets/BudgetCard';
+import { FolderPickerSheet } from '../../components/budgets/FolderPickerSheet';
 import { DraggableRows } from '../../components/lists/DraggableRows';
+import { SelectionWrapper } from '../../components/selection/SelectionWrapper';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -41,6 +43,7 @@ export default function FolderDetailScreen() {
   const togglePinned = useBudgetsStore((state) => state.togglePinned);
   const pinnedIds = useBudgetsStore((state) => state.pinnedIds);
   const reorderBudget = useBudgetsStore((state) => state.reorderBudget);
+  const moveManyToFolder = useBudgetsStore((state) => state.moveManyToFolder);
 
   const folders = useFoldersStore((state) => state.folders);
   const isLoadingFolders = useFoldersStore((state) => state.isLoading);
@@ -56,6 +59,22 @@ export default function FolderDetailScreen() {
 
   const folder = folders.find((entry) => entry.id === folderId) ?? null;
   const folderBudgets = budgets.filter((budget) => budget.folder_id === folderId);
+
+  // Bulk move out of (or across) this folder: the reusable selection system
+  // owns the three-state parent checkbox and the picked ids; this screen only
+  // supplies the list, its actions, and the actual move. Every row here is a
+  // budget, so all rows are eligible by default.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const selectionActions = useMemo(
+    () => [
+      {
+        label: 'Move to Folder',
+        icon: 'folder',
+        onPress: () => setPickerOpen(true),
+      },
+    ],
+    [setPickerOpen],
+  );
 
   // Drag-and-drop reordering (same contract as Home): lock the scroll while a
   // row is lifted and drive edge auto-scroll programmatically through
@@ -162,108 +181,165 @@ export default function FolderDetailScreen() {
   }
 
   return (
-    <GestureHandlerRootView style={styles.fill}>
-      <Stack.Screen
-        options={{
-          title: folder.name,
-          headerRight: () => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Folder options"
-              onPress={() =>
-                Alert.alert(folder.name, null, [
-                  {
-                    text: 'Edit folder',
-                    onPress: () =>
-                      router.push({ pathname: '/folder/form', params: { id: folder.id } }),
-                  },
-                  { text: 'Delete folder', style: 'destructive', onPress: confirmDeleteFolder },
-                  { text: 'Cancel', style: 'cancel' },
-                ])
-              }
-              hitSlop={10}
+    <SelectionWrapper
+      items={folderBudgets}
+      actions={selectionActions}
+      selectLabel="Select all budgets"
+      deselectLabel="Deselect all budgets"
+    >
+      {(sel) => {
+        function confirmBulkMove(targetFolderId) {
+          const destination = targetFolderId
+            ? folders.find((entry) => entry.id === targetFolderId)?.name ?? 'folder'
+            : null;
+          const count = sel.selectedIds.length;
+          Alert.alert(
+            `Move ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
+            destination
+              ? `They will appear under "${destination}" on Home. Nothing else about them changes.`
+              : 'They will return to the main Home list. Nothing else about them changes.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Move',
+                onPress: async () => {
+                  try {
+                    await moveManyToFolder(sel.selectedIds, targetFolderId);
+                    sel.exitSelection();
+                    showToast(
+                      destination ? `Moved to ${destination}` : 'Moved to Home',
+                      'success',
+                    );
+                  } catch (error) {
+                    showToast(error?.message ?? 'Could not move the budgets.', 'error');
+                  }
+                },
+              },
+            ],
+          );
+        }
+
+        return (
+          <GestureHandlerRootView style={styles.fill}>
+            <Stack.Screen
+              options={{
+                title: folder.name,
+                headerRight: () => (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Folder options"
+                    onPress={() =>
+                      Alert.alert(folder.name, null, [
+                        {
+                          text: 'Edit folder',
+                          onPress: () =>
+                            router.push({ pathname: '/folder/form', params: { id: folder.id } }),
+                        },
+                        { text: 'Delete folder', style: 'destructive', onPress: confirmDeleteFolder },
+                        { text: 'Cancel', style: 'cancel' },
+                      ])
+                    }
+                    hitSlop={10}
+                  >
+                    <Icon name="more" size={20} color={colors.text} />
+                  </Pressable>
+                ),
+              }}
+            />
+
+            <Screen
+              topInset={false}
+              bottomSpace={FAB_SIZE + spacing.xl}
+              scrollRef={scrollRef}
+              onScroll={handleScroll}
+              scrollEnabled={liftedKey === null}
             >
-              <Icon name="more" size={20} color={colors.text} />
-            </Pressable>
-          ),
-        }}
-      />
+              <View style={[styles.metaRow, { gap: spacing.sm }]}>
+                <View
+                  style={[
+                    styles.swatch,
+                    { backgroundColor: palette.folder, borderColor: palette.folderBorder },
+                  ]}
+                />
+                <Text variant="body" tone="muted">
+                  {folderBudgets.length} {folderBudgets.length === 1 ? 'budget' : 'budgets'} · folders
+                  organize budgets only — no totals live here.
+                </Text>
+              </View>
 
-      <Screen
-        topInset={false}
-        bottomSpace={FAB_SIZE + spacing.xl}
-        scrollRef={scrollRef}
-        onScroll={handleScroll}
-        scrollEnabled={liftedKey === null}
-      >
-        <View style={[styles.metaRow, { gap: spacing.sm }]}>
-          <View
-            style={[
-              styles.swatch,
-              { backgroundColor: palette.folder, borderColor: palette.folderBorder },
-            ]}
-          />
-          <Text variant="body" tone="muted">
-            {folderBudgets.length} {folderBudgets.length === 1 ? 'budget' : 'budgets'} · folders
-            organize budgets only — no totals live here.
-          </Text>
-        </View>
-
-        {folderBudgets.length === 0 ? (
-          <EmptyState
-            icon="folder"
-            title="No budgets in this folder yet"
-            description="Create a new budget here, or move an existing one in from Home with Select."
-          >
-            <Button
-              label="New budget in this folder"
-              icon="add"
-              onPress={openCreateBudget}
-            />
-          </EmptyState>
-        ) : (
-          <>
-            <SectionHeader
-              title={`Budgets · ${folderBudgets.length}`}
-              fontSize={14}
-              action={
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Create a new budget in this folder"
-                  onPress={openCreateBudget}
-                  hitSlop={8}
+              {folderBudgets.length === 0 ? (
+                <EmptyState
+                  icon="folder"
+                  title="No budgets in this folder yet"
+                  description="Create a new budget here, or move an existing one in from Home using the checkboxes."
                 >
-                  <Text variant="label" tone="primary">
-                    New budget
-                  </Text>
-                </Pressable>
-              }
-            />
-            <Card padded={false}>
-              <DraggableRows
-                items={dragItems}
-                scroll={dragScroll}
-                onLiftChange={setLiftedKey}
-                onReorder={handleReorder}
-                renderItem={(item, index, total, lifted) => (
-                  <BudgetCard
-                    key={item.key}
-                    budget={item.budget}
-                    currency={currency}
-                    pinned={pinnedIds.includes(item.budget.id)}
-                    onTogglePin={togglePinned}
-                    onPress={lifted ? undefined : openBudget}
-                    isLast={index === total - 1}
+                  <Button
+                    label="New budget in this folder"
+                    icon="add"
+                    onPress={openCreateBudget}
                   />
-                )}
-              />
-            </Card>
-          </>
-        )}
-      </Screen>
+                </EmptyState>
+              ) : (
+                <>
+                  <SectionHeader
+                    title={`Budgets · ${folderBudgets.length}`}
+                    fontSize={14}
+                    action={
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Create a new budget in this folder"
+                        onPress={openCreateBudget}
+                        hitSlop={8}
+                      >
+                        <Text variant="label" tone="primary">
+                          New budget
+                        </Text>
+                      </Pressable>
+                    }
+                  />
+                  <Card padded={false}>
+                    {sel.masterRow}
+                    <DraggableRows
+                      items={dragItems}
+                      disabled={sel.selectionMode}
+                      scroll={dragScroll}
+                      onLiftChange={setLiftedKey}
+                      onReorder={handleReorder}
+                      renderItem={(item, index, total, lifted) => (
+                        <BudgetCard
+                          key={item.key}
+                          budget={item.budget}
+                          currency={currency}
+                          pinned={pinnedIds.includes(item.budget.id)}
+                          onTogglePin={togglePinned}
+                          selectable={sel.selectionMode}
+                          selected={sel.isSelected(item.budget.id)}
+                          onToggleSelect={sel.toggleItem}
+                          onPress={lifted ? undefined : openBudget}
+                          isLast={index === total - 1}
+                        />
+                      )}
+                    />
+                  </Card>
+                </>
+              )}
+            </Screen>
 
-      <Fab onPress={openCreateBudget} accessibilityLabel="Create a new budget in this folder" />
-    </GestureHandlerRootView>
+            {/* Selection mode swaps the create FAB for the contextual move bar,
+                exactly like Home swaps its pinned strip. */}
+            {sel.selectionMode ? sel.toolbar : <Fab onPress={openCreateBudget} accessibilityLabel="Create a new budget in this folder" />}
+
+            {pickerOpen ? (
+              <FolderPickerSheet
+                folders={folders}
+                onPick={(targetFolderId) => confirmBulkMove(targetFolderId)}
+                onClose={() => setPickerOpen(false)}
+              />
+            ) : null}
+          </GestureHandlerRootView>
+        );
+      }}
+    </SelectionWrapper>
   );
 }
 

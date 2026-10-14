@@ -15,6 +15,7 @@ import { FolderGroupCard } from "../../components/budgets/FolderGroupCard";
 import { FolderPickerSheet } from "../../components/budgets/FolderPickerSheet";
 import { PinnedFolders } from "../../components/budgets/PinnedFolders";
 import { DraggableRows } from "../../components/lists/DraggableRows";
+import { SelectionWrapper } from "../../components/selection/SelectionWrapper";
 import { TransactionRow } from "../../components/transactions/TransactionRow";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -35,6 +36,12 @@ import { showToast } from "../../stores/toastStore";
 let homeIntroPlayed = false;
 const INTRO_STAGGER = 55; // ms between steps; a step is one major item or card
 
+// Bulk-move eligibility on Home: only ungrouped budget rows are selectable —
+// folder rows never carry a child checkbox. Selection addresses budgets by
+// their stable ids.
+const isBudgetRow = (item) => item.kind === 'budget';
+const budgetRowId = (item) => item.budget.id;
+
 export default function HomeScreen() {
   const { colors, radius, spacing } = useTheme();
   const reduced = useReducedMotion();
@@ -50,25 +57,22 @@ export default function HomeScreen() {
   const moveFolder = useFoldersStore((state) => state.moveFolder);
   const currency = useSettingsStore((state) => state.currency);
 
-  // Bulk move lives in an explicit Gmail-style selection mode entered from the
-  // "Select" header action (never a gesture — long-press belongs to drag
-  // alone). Checkboxes appear on budget rows; the bottom bar shows the count,
-  // a Cancel that clears everything, and the disabled-until-something-is-
-  // picked Move to Folder action.
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const selecting = selectionMode;
 
-  const enterSelection = useCallback(() => {
-    setSelectionMode(true);
-    setSelectedIds([]);
-  }, []);
-
-  const exitSelection = useCallback(() => {
-    setSelectionMode(false);
-    setSelectedIds([]);
-  }, []);
+  // The only Home-specific piece the selection wrapper is told about: the
+  // Move action opens the destination picker, and the actual move (plus its
+  // confirmation, exit, and error toast) stays in this screen's business
+  // logic below.
+  const selectionActions = useMemo(
+    () => [
+      {
+        label: 'Move to Folder',
+        icon: 'folder',
+        onPress: () => setPickerOpen(true),
+      },
+    ],
+    [],
+  );
 
   // Drag-and-drop reordering: `liftedKey` is the row currently held by a
   // long-press drag (null while idle). The list scroll locks while it is set
@@ -230,34 +234,6 @@ export default function HomeScreen() {
     return items;
   }, [folders, ungrouped]);
 
-  const toggleSelected = useCallback((budget) => {
-    setSelectedIds((current) =>
-      current.includes(budget.id)
-        ? current.filter((id) => id !== budget.id)
-        : [...current, budget.id],
-    );
-  }, []);
-
-  // One press handler for every card: entering selection mode flips rows from
-  // "open" to "toggle checkbox"; tapping a checkbox is tapping its row.
-  const handlePressBudget = useCallback(
-    (budget) => {
-      if (selecting) toggleSelected(budget);
-      else openFolder(budget);
-    },
-    [selecting, toggleSelected, openFolder],
-  );
-
-  const handleEditTransaction = useCallback((entry) => {
-    router.push({
-      pathname: "/transaction/form",
-      params: {
-        budgetId: entry.budget_id,
-        transactionId: entry.id,
-      },
-    });
-  }, []);
-
   // Mixed-list guard for drag: the unified list is folders-then-budgets, and
   // each kind persists positions only within its own scope. A dragged row
   // may therefore only land inside its own block — folders stay above the
@@ -307,364 +283,339 @@ export default function HomeScreen() {
     [listItems, moveFolder, reorderBudget],
   );
 
-  // One row renderer for both the unified Home list and search results, so
-  // folder and budget rows stay pixel-identical in every context. Search
-  // rows keep pinning but never enter bulk-move selection.
-  const renderRow = (item, index, total, forSearch, lifted = false) => (
-    <Animated.View
-      key={item.key}
-      entering={introEnter(2 + Math.min(index, 4))}
-    >
-      {item.kind === 'folder' ? (
-        <FolderGroupCard
-          folder={item.folder}
-          budgetCount={folderCounts.get(item.folder.id) ?? 0}
-          isLast={index === total - 1}
-          onPress={
-            lifted || selecting
-              ? undefined
-              : () =>
-                  router.push({
-                    pathname: "/folder/[id]",
-                    params: { id: item.folder.id },
-                  })
-          }
-        />
-      ) : (
-        <BudgetCard
-          budget={item.budget}
-          currency={currency}
-          pinned={selecting && !forSearch ? false : pinnedIds.includes(item.budget.id)}
-          onTogglePin={selecting && !forSearch ? undefined : togglePinned}
-          selectable={selecting && !forSearch}
-          selected={!forSearch && selectedIds.includes(item.budget.id)}
-          onPress={
-            lifted ? undefined : forSearch ? openFolder : handlePressBudget
-          }
-          isLast={index === total - 1}
-        />
-      )}
-    </Animated.View>
-  );
-
-  function confirmBulkMove(folderId) {
-    const destination = folderId
-      ? folders.find((folder) => folder.id === folderId)?.name ?? 'folder'
-      : null;
-    const count = selectedIds.length;
-    Alert.alert(
-      `Move ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
-      destination
-        ? `They will appear under "${destination}" on Home. Nothing else about them changes.`
-        : 'They will return to the main Home list. Nothing else about them changes.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Move',
-          onPress: async () => {
-            try {
-              await moveManyToFolder(selectedIds, folderId);
-              exitSelection();
-              showToast(
-                destination ? `Moved to ${destination}` : 'Moved to Home',
-                'success',
-              );
-            } catch (error) {
-              showToast(error?.message ?? 'Could not move the budgets.', 'error');
-            }
-          },
-        },
-      ],
-    );
-  }
+  const handleEditTransaction = useCallback((entry) => {
+    router.push({
+      pathname: "/transaction/form",
+      params: {
+        budgetId: entry.budget_id,
+        transactionId: entry.id,
+      },
+    });
+  }, []);
 
   return (
-    <View style={styles.fill}>
-      {/* Home animates its own items, so the scroll body stays put. */}
-      {/* The tab bar is in normal flow, so no large reserved clearance is
-          needed; a modest gap keeps the last card off the pinned strip. */}
-      <Screen
-        topInset
-        enter={false}
-        scrollRef={scrollRef}
-        onScroll={handleScroll}
-        scrollEnabled={liftedKey === null}
-      >
-        {budgets.length > 0 && !searching ? (
-          <Animated.View entering={introEnter(1)}>
-            <SectionHeader
-              title={`Your Budgets · ${budgets.length}`}
-              action={
-                selecting ? null : (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Select budgets to move"
-                    onPress={enterSelection}
-                    hitSlop={8}
-                    style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-                  >
-                    <Text variant="label" tone="primary">
-                      Select
-                    </Text>
-                  </Pressable>
-                )
-              }
-            />
-          </Animated.View>
-        ) : null}
-
-        <Animated.View
-          entering={introEnter(0)}
-          style={[
-            styles.searchBar,
-            {
-              backgroundColor: colors.surfaceMuted,
-              borderColor: colors.border,
-              // Matches the app's pill-shaped fields.
-              borderRadius: 50,
-              marginBottom: spacing.md,
-              paddingHorizontal: spacing.md,
-            },
-          ]}
-        >
-          <Icon name="search" size={18} color={colors.textFaint} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search folders and transactions..."
-            placeholderTextColor={colors.textFaint}
-            selectionColor={colors.primary}
-            accessibilityLabel="Search folders and transactions"
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-            style={[
-              styles.searchInput,
-              {
-                color: colors.text,
-                marginLeft: spacing.sm,
-                marginRight: term.length > 0 ? 0 : spacing.xs,
-              },
-            ]}
-          />
-          {term.length > 0 ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Clear search"
-              onPress={() => setQuery("")}
-              hitSlop={8}
-              style={({ pressed }) => [
-                styles.clearButton,
-                {
-                  borderRadius: radius.sm,
-                  opacity: pressed ? 0.55 : 1,
-                },
-              ]}
-            >
-              <Icon name="close" size={15} color={colors.textMuted} />
-            </Pressable>
-          ) : null}
-        </Animated.View>
-
-        {isLoading && budgets.length === 0 ? (
-          <View style={styles.loading}>
-            <ActivityIndicator color={colors.primary} size="large" />
-            <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
-              Loading budgets…
-            </Text>
-          </View>
-        ) : budgets.length === 0 && folders.length === 0 && !searching ? (
-          <EmptyState
-            icon="folder"
-            title="No budgets yet"
-            description="A budget is a period you name, such as October 2026. Transactions you add inside it are what make up your spending."
+    <SelectionWrapper
+      items={listItems}
+      idOf={budgetRowId}
+      isEligible={isBudgetRow}
+      actions={selectionActions}
+      selectLabel="Select all budgets"
+      deselectLabel="Deselect all budgets"
+    >
+      {(sel) => {
+        // One row renderer for both the unified Home list and search results,
+        // so folder and budget rows stay pixel-identical in every context.
+        // Search rows keep pinning but never enter bulk-move selection.
+        const renderRow = (item, index, total, forSearch, lifted = false) => (
+          <Animated.View
+            key={item.key}
+            entering={introEnter(2 + Math.min(index, 4))}
           >
-            <View style={{ alignItems: "center", gap: spacing.sm, width: "100%" }}>
-              <Button
-                label="Create your first budget"
-                icon="add"
-                onPress={() => router.push("/budget/form")}
-              />
-              <Button
-                label="New folder"
-                icon="folder"
-                variant="secondary"
-                onPress={() => router.push("/folder/form")}
-              />
-            </View>
-          </EmptyState>
-        ) : searching ? (
-          <>
-            {matchedItems.length > 0 ? (
-              <>
-                <SectionHeader
-                  title={`Folders & Budgets · ${matchedItems.length}`}
-                  fontSize={14}
-                />
-                <Card padded={false} style={{ marginBottom: spacing.lg }}>
-                  {matchedItems.map((item, index) =>
-                    renderRow(item, index, matchedItems.length, true)
-                  )}
-                </Card>
-              </>
-            ) : null}
-
-            {txMatches.length > 0 ? (
-              <View style={matchedItems.length > 0 ? styles.txSection : null}>
-                <SectionHeader
-                  title={`Transactions · ${txMatches.length}`}
-                  fontSize={14}
-                />
-                {txGroups.map((group, groupIdx) => (
-                  <View
-                    key={group.budgetId}
-                    style={groupIdx > 0 ? styles.txGroup : null}
-                  >
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open folder ${group.name}`}
-                      onPress={() =>
+            {item.kind === 'folder' ? (
+              <FolderGroupCard
+                folder={item.folder}
+                budgetCount={folderCounts.get(item.folder.id) ?? 0}
+                isLast={index === total - 1}
+                onPress={
+                  lifted
+                    ? undefined
+                    : () =>
                         router.push({
-                          pathname: "/budget/[id]",
-                          params: { id: group.budgetId },
+                          pathname: "/folder/[id]",
+                          params: { id: item.folder.id },
                         })
-                      }
-                      hitSlop={8}
-                      style={({ pressed }) => [
-                        styles.folderHeader,
-                        {
-                          gap: spacing.sm,
-                          opacity: pressed ? 0.6 : 1,
-                          paddingVertical: spacing.sm,
-                        },
-                      ]}
-                    >
-                      <Text variant="label" tone="primary" numberOfLines={1}>
-                        {group.name.toUpperCase()} · {group.items.length}
-                      </Text>
-                      <Icon name="chevronRight" size={14} color={colors.primary} />
-                    </Pressable>
-                    <Card padded={false}>
-                      {group.items.map((transaction, index) => (
-                        <TransactionRow
-                          key={transaction.id}
-                          transaction={transaction}
-                          tag={transaction.tag}
-                          currency={currency}
-                          isFirst={index === 0}
-                          isLast={index === group.items.length - 1}
-                          onEdit={handleEditTransaction}
-                        />
-                      ))}
-                    </Card>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-
-            {matchedItems.length === 0 && txMatches.length === 0 ? (
-              <EmptyState
-                icon="search"
-                title="No results found"
-                description={`Nothing matches "${debouncedTerm}". Try a different folder name, transaction description, or tag.`}
-              >
-                <Button label="Clear search" icon="close" onPress={() => setQuery("")} />
-              </EmptyState>
-            ) : null}
-
-            {searchError ? (
-              <Text variant="caption" tone="expense" style={styles.searchNote}>
-                Search could not finish. Check the data and try again.
-              </Text>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <Card padded={false} style={{ marginBottom: spacing.sm }}>
-              <DraggableRows
-                items={listItems}
-                disabled={selecting}
-                scroll={dragScroll}
-                onLiftChange={setLiftedKey}
-                resolveTarget={resolveMixedTarget}
-                onReorder={handleReorder}
-                renderItem={(item, index, total, lifted) =>
-                  renderRow(item, index, total, false, lifted)
                 }
               />
-            </Card>
+            ) : (
+              <BudgetCard
+                budget={item.budget}
+                currency={currency}
+                pinned={pinnedIds.includes(item.budget.id)}
+                onTogglePin={togglePinned}
+                selectable={sel.selectionMode && !forSearch}
+                selected={!forSearch && sel.isSelected(item.budget.id)}
+                onToggleSelect={sel.toggleItem}
+                onPress={lifted ? undefined : openFolder}
+                isLast={index === total - 1}
+              />
+            )}
+          </Animated.View>
+        );
 
-            {/* The Plus action: same create entry Home offered before,
-                now sitting under the single unified list. */}
-            {ungrouped.length === 0 ? (
-              <View style={styles.listActions}>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Create a new budget"
-                  onPress={() => router.push("/budget/form")}
-                  hitSlop={8}
-                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-                >
-                  <Text variant="label" tone="primary">
-                    + New budget
+        function confirmBulkMove(folderId) {
+          const destination = folderId
+            ? folders.find((folder) => folder.id === folderId)?.name ?? 'folder'
+            : null;
+          const count = sel.selectedIds.length;
+          Alert.alert(
+            `Move ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
+            destination
+              ? `They will appear under "${destination}" on Home. Nothing else about them changes.`
+              : 'They will return to the main Home list. Nothing else about them changes.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Move',
+                onPress: async () => {
+                  try {
+                    await moveManyToFolder(sel.selectedIds, folderId);
+                    sel.exitSelection();
+                    showToast(
+                      destination ? `Moved to ${destination}` : 'Moved to Home',
+                      'success',
+                    );
+                  } catch (error) {
+                    showToast(error?.message ?? 'Could not move the budgets.', 'error');
+                  }
+                },
+              },
+            ],
+          );
+        }
+
+        return (
+          <View style={styles.fill}>
+            {/* Home animates its own items, so the scroll body stays put. */}
+            {/* The tab bar is in normal flow, so no large reserved clearance is
+                needed; a modest gap keeps the last card off the pinned strip. */}
+            <Screen
+              topInset
+              enter={false}
+              scrollRef={scrollRef}
+              onScroll={handleScroll}
+              scrollEnabled={liftedKey === null}
+            >
+              {budgets.length > 0 && !searching ? (
+                <Animated.View entering={introEnter(1)}>
+                  <SectionHeader title={`Your Budgets · ${budgets.length}`} />
+                </Animated.View>
+              ) : null}
+
+              <Animated.View
+                entering={introEnter(0)}
+                style={[
+                  styles.searchBar,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                    // Matches the app's pill-shaped fields.
+                    borderRadius: 50,
+                    marginBottom: spacing.md,
+                    paddingHorizontal: spacing.md,
+                  },
+                ]}
+              >
+                <Icon name="search" size={18} color={colors.textFaint} />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Search folders and transactions..."
+                  placeholderTextColor={colors.textFaint}
+                  selectionColor={colors.primary}
+                  accessibilityLabel="Search folders and transactions"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  style={[
+                    styles.searchInput,
+                    {
+                      color: colors.text,
+                      marginLeft: spacing.sm,
+                      marginRight: term.length > 0 ? 0 : spacing.xs,
+                    },
+                  ]}
+                />
+                {term.length > 0 ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                    onPress={() => setQuery("")}
+                    hitSlop={8}
+                    style={({ pressed }) => [
+                      styles.clearButton,
+                      {
+                        borderRadius: radius.sm,
+                        opacity: pressed ? 0.55 : 1,
+                      },
+                    ]}
+                  >
+                    <Icon name="close" size={15} color={colors.textMuted} />
+                  </Pressable>
+                ) : null}
+              </Animated.View>
+
+              {isLoading && budgets.length === 0 ? (
+                <View style={styles.loading}>
+                  <ActivityIndicator color={colors.primary} size="large" />
+                  <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
+                    Loading budgets…
                   </Text>
-                </Pressable>
-              </View>
+                </View>
+              ) : budgets.length === 0 && folders.length === 0 && !searching ? (
+                <EmptyState
+                  icon="folder"
+                  title="No budgets yet"
+                  description="A budget is a period you name, such as October 2026. Transactions you add inside it are what make up your spending."
+                >
+                  <View style={{ alignItems: "center", gap: spacing.sm, width: "100%" }}>
+                    <Button
+                      label="Create your first budget"
+                      icon="add"
+                      onPress={() => router.push("/budget/form")}
+                    />
+                    <Button
+                      label="New folder"
+                      icon="folder"
+                      variant="secondary"
+                      onPress={() => router.push("/folder/form")}
+                    />
+                  </View>
+                </EmptyState>
+              ) : searching ? (
+                <>
+                  {matchedItems.length > 0 ? (
+                    <>
+                      <SectionHeader
+                        title={`Folders & Budgets · ${matchedItems.length}`}
+                        fontSize={14}
+                      />
+                      <Card padded={false} style={{ marginBottom: spacing.lg }}>
+                        {matchedItems.map((item, index) =>
+                          renderRow(item, index, matchedItems.length, true)
+                        )}
+                      </Card>
+                    </>
+                  ) : null}
+
+                  {txMatches.length > 0 ? (
+                    <View style={matchedItems.length > 0 ? styles.txSection : null}>
+                      <SectionHeader
+                        title={`Transactions · ${txMatches.length}`}
+                        fontSize={14}
+                      />
+                      {txGroups.map((group, groupIdx) => (
+                        <View
+                          key={group.budgetId}
+                          style={groupIdx > 0 ? styles.txGroup : null}
+                        >
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`Open folder ${group.name}`}
+                            onPress={() =>
+                              router.push({
+                                pathname: "/budget/[id]",
+                                params: { id: group.budgetId },
+                              })
+                            }
+                            hitSlop={8}
+                            style={({ pressed }) => [
+                              styles.folderHeader,
+                              {
+                                gap: spacing.sm,
+                                opacity: pressed ? 0.6 : 1,
+                                paddingVertical: spacing.sm,
+                              },
+                            ]}
+                          >
+                            <Text variant="label" tone="primary" numberOfLines={1}>
+                              {group.name.toUpperCase()} · {group.items.length}
+                            </Text>
+                            <Icon name="chevronRight" size={14} color={colors.primary} />
+                          </Pressable>
+                          <Card padded={false}>
+                            {group.items.map((transaction, index) => (
+                              <TransactionRow
+                                key={transaction.id}
+                                transaction={transaction}
+                                tag={transaction.tag}
+                                currency={currency}
+                                isFirst={index === 0}
+                                isLast={index === group.items.length - 1}
+                                onEdit={handleEditTransaction}
+                              />
+                            ))}
+                          </Card>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+
+                  {matchedItems.length === 0 && txMatches.length === 0 ? (
+                    <EmptyState
+                      icon="search"
+                      title="No results found"
+                      description={`Nothing matches "${debouncedTerm}". Try a different folder name, transaction description, or tag.`}
+                    >
+                      <Button label="Clear search" icon="close" onPress={() => setQuery("")} />
+                    </EmptyState>
+                  ) : null}
+
+                  {searchError ? (
+                    <Text variant="caption" tone="expense" style={styles.searchNote}>
+                      Search could not finish. Check the data and try again.
+                    </Text>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <Card padded={false} style={{ marginBottom: spacing.sm }}>
+                    {/* The three-state parent checkbox sits under the search
+                        field, above a hairline, left-aligned with the child
+                        checkboxes it controls. */}
+                    {sel.masterRow}
+                    <DraggableRows
+                      items={listItems}
+                      disabled={sel.selectionMode}
+                      scroll={dragScroll}
+                      onLiftChange={setLiftedKey}
+                      resolveTarget={resolveMixedTarget}
+                      onReorder={handleReorder}
+                      renderItem={(item, index, total, lifted) =>
+                        renderRow(item, index, total, false, lifted)
+                      }
+                    />
+                  </Card>
+
+                  {/* The Plus action: same create entry Home offered before,
+                      now sitting under the single unified list. */}
+                  {ungrouped.length === 0 ? (
+                    <View style={styles.listActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Create a new budget"
+                        onPress={() => router.push("/budget/form")}
+                        hitSlop={8}
+                        style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+                      >
+                        <Text variant="label" tone="primary">
+                          + New budget
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </>
+              )}
+            </Screen>
+
+            {sel.selectionMode && !searching ? (
+              sel.toolbar
+            ) : searching ? null : (
+              <Animated.View entering={introEnter(7)}>
+                <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
+              </Animated.View>
+            )}
+
+            {pickerOpen ? (
+              <FolderPickerSheet
+                folders={folders}
+                onPick={(folderId) => confirmBulkMove(folderId)}
+                onClose={() => setPickerOpen(false)}
+              />
             ) : null}
-          </>
-        )}
-      </Screen>
-
-      {selecting && !searching ? (
-        <View
-          style={[
-            styles.selectionBar,
-            {
-              backgroundColor: colors.surfaceElevated,
-              borderColor: colors.border,
-              gap: spacing.sm,
-              paddingBottom: Math.max(spacing.md, 4),
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.md,
-            },
-          ]}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Cancel selection"
-            onPress={exitSelection}
-            hitSlop={8}
-            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text variant="label" tone="muted">
-              Cancel
-            </Text>
-          </Pressable>
-          <Text variant="body" tone="muted" style={styles.selectionCount}>
-            {selectedIds.length} selected
-          </Text>
-          <Button
-            label="Move to Folder"
-            icon="folder"
-            disabled={selectedIds.length === 0}
-            onPress={() => setPickerOpen(true)}
-            style={styles.moveButton}
-          />
-        </View>
-      ) : searching ? null : (
-        <Animated.View entering={introEnter(7)}>
-          <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
-        </Animated.View>
-      )}
-
-      {pickerOpen ? (
-        <FolderPickerSheet
-          folders={folders}
-          onPick={(folderId) => confirmBulkMove(folderId)}
-          onClose={() => setPickerOpen(false)}
-        />
-      ) : null}
-    </View>
+          </View>
+        );
+      }}
+    </SelectionWrapper>
   );
 }
 
@@ -712,17 +663,5 @@ const styles = StyleSheet.create({
   searchNote: {
     marginTop: 8,
     textAlign: "center",
-  },
-  selectionBar: {
-    alignItems: "center",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-  },
-  selectionCount: {
-    flex: 1,
-    textAlign: "right",
-  },
-  moveButton: {
-    marginLeft: 8,
   },
 });

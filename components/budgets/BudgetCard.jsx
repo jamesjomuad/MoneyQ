@@ -1,8 +1,8 @@
 import { memo, useCallback } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 
 import { Icon } from '../ui/Icon';
+import { SelectionCheckbox } from '../selection/SelectionCheckbox';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 import { formatCurrency } from '../../utils/currency';
@@ -18,19 +18,21 @@ import { formatDateRange } from '../../utils/dates';
  * There is no progress bar or limit, because a budget only holds transactions
  * rather than capping them.
  *
- * Handlers receive the budget (or its id for the pin), so list screens pass
- * one stable callback instead of a fresh closure per card — the memo below
- * only pays off when props stay referentially equal between renders.
+ * Handlers receive the budget (or its id for the pin and the select), so list
+ * screens pass one stable callback instead of a fresh closure per card — the
+ * memo below only pays off when props stay referentially equal between
+ * renders.
  *
- * Selection mode: `selectable` reveals a Gmail-style checkbox to the LEFT of
- * the chip (fading in subtly), and `selected` fills it. The row's own press
- * owns the toggle — the checkbox is not a second target, so it can never
- * race or start a drag. The chevron stays in place so rows don't jump.
+ * Three-state bulk move: when a list's selection mode is on, `selectable`
+ * budgets show a child checkbox (the shared `SelectionCheckbox`) to the LEFT
+ * of the chip. The checkbox is its own press target (`onToggleSelect`
+ * receives the budget's id), so tapping it selects the row while tapping
+ * anywhere else still opens it — a checkbox tap can never race a drag or
+ * open a budget. The chevron stays in place so rows don't jump.
  * Folders have no checkbox: only budgets are ever eligible to move.
  */
-export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, selected = false, selectable = false, isLast = false }) {
+export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, selected = false, selectable = false, onToggleSelect, isLast = false }) {
   const { colors, radius, spacing } = useTheme();
-  const reduced = useReducedMotion();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
   // A user-selected color paints the chip exactly in every theme; budgets
   // without one fall back to the theme's primary tokens.
@@ -38,17 +40,18 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
   const period = formatDateRange(budget.start_date, budget.end_date);
 
   const handlePress = useCallback(() => onPress?.(budget), [onPress, budget]);
+  const handleToggleSelect = useCallback(() => onToggleSelect?.(budget.id), [onToggleSelect, budget.id]);
   const handleTogglePin = useCallback(() => onTogglePin?.(budget.id), [onTogglePin, budget.id]);
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${budget.name}, ${formatCurrency(budget.spent, { currency })} spent, ${formatCurrency(balance, { currency })} balance`}
-      accessibilityState={{ selected }}
       onPress={handlePress}
       style={({ pressed }) => [
         styles.row,
         {
+          backgroundColor: selected ? colors.primarySoft : 'transparent',
           borderBottomColor: colors.border,
           borderBottomWidth: isLast ? 0 : StyleSheet.hairlineWidth,
           gap: spacing.md,
@@ -59,20 +62,13 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
       ]}
     >
       {selectable ? (
-        <Animated.View entering={reduced ? undefined : FadeIn.duration(180)}>
-          <View
-            style={[
-              styles.checkbox,
-              {
-                borderRadius: radius.pill,
-                borderColor: selected ? colors.primary : colors.textFaint,
-                backgroundColor: selected ? colors.primary : 'transparent',
-              },
-            ]}
-          >
-            {selected ? <Icon name="check" size={14} color={colors.onPrimary} /> : null}
-          </View>
-        </Animated.View>
+        <SelectionCheckbox
+          state={selected}
+          onPress={handleToggleSelect}
+          accessibilityLabel={selected ? `Deselect ${budget.name}` : `Select ${budget.name}`}
+          nested
+          hitSlop={10}
+        />
       ) : null}
 
       <View
@@ -160,12 +156,5 @@ const styles = StyleSheet.create({
   },
   pinDimmed: {
     opacity: 0.45,
-  },
-  checkbox: {
-    alignItems: 'center',
-    borderWidth: 2,
-    height: 22,
-    justifyContent: 'center',
-    width: 22,
   },
 });
