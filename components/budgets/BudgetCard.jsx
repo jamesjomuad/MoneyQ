@@ -65,7 +65,7 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
               styles.checkbox,
               {
                 borderRadius: radius.pill,
-                borderColor: selected ? colors.primary : colors.border,
+                borderColor: selected ? colors.primary : colors.textFaint,
                 backgroundColor: selected ? colors.primary : 'transparent',
               },
             ]}
