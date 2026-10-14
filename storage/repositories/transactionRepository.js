@@ -90,6 +90,25 @@ function resolvePaymentDueDate(value) {
 const SEARCH_RESULT_LIMIT = 30;
 
 /**
+ * Receipt attachment rule: the reference is either NULL or the
+ * document-relative path of a file the app itself wrote into its receipts
+ * folder (`receipts/<name>.<ext>` — see services/receiptFiles.js).
+ * Absolute URIs, cache paths and traversal are rejected here so a stored
+ * row can never point outside app-managed storage. An update that does not
+ * mention the receipt keeps whatever the row already had.
+ */
+const RECEIPT_PATH_RE = /^receipts\/[\w.-]+$/;
+
+function resolveReceiptPath(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const text = String(value).trim();
+  if (!RECEIPT_PATH_RE.test(text)) {
+    throw new Error('The receipt reference is not valid.');
+  }
+  return text;
+}
+
+/**
  * Payment status rules. Only expenses have one; income and transfers always
  * store NULL. A new expense defaults to 'paid' unless the caller says
  * otherwise, and an update that does not mention the status keeps whatever
@@ -260,6 +279,7 @@ export async function createTransaction(input) {
       payment_status: resolveNewPaymentStatus(type, input.paymentStatus),
       has_breakdown: breakdown.hasBreakdown ? 1 : 0,
       payment_due_date: resolvePaymentDueDate(input.paymentDueDate),
+      receipt_path: resolveReceiptPath(input.receiptPath),
       created_at: timestamp,
       updated_at: timestamp,
     },
@@ -282,6 +302,10 @@ export async function updateTransaction(id, input) {
     input.paymentDueDate === undefined
       ? existing.payment_due_date ?? null
       : resolvePaymentDueDate(input.paymentDueDate);
+  const receiptPath =
+    input.receiptPath === undefined
+      ? existing.receipt_path ?? null
+      : resolveReceiptPath(input.receiptPath);
 
   const breakdown = await resolveBreakdown(type, existing, input);
 
@@ -314,6 +338,7 @@ export async function updateTransaction(id, input) {
       payment_status: resolveUpdatedPaymentStatus(type, existing, input),
       has_breakdown: breakdown.hasBreakdown ? 1 : 0,
       payment_due_date: paymentDueDate,
+      receipt_path: receiptPath,
       updated_at: timestamp,
     },
     // A metadata-only save (no breakdown mentioned) must not rewrite — or

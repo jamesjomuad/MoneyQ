@@ -381,6 +381,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         created_at: row.created_at,
         updated_at: row.updated_at,
         payment_due_date: row.payment_due_date ?? null,
+        receipt_path: row.receipt_path ?? null,
       });
     },
 
@@ -395,6 +396,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       existing.payment_status = row.payment_status ?? null;
       existing.has_breakdown = row.has_breakdown ? 1 : 0;
       existing.payment_due_date = row.payment_due_date ?? null;
+      existing.receipt_path = row.receipt_path ?? null;
       existing.updated_at = row.updated_at;
       return 1;
     },
@@ -695,6 +697,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         payment_status: row.payment_status ?? null,
         has_breakdown: row.has_breakdown ? 1 : 0,
         payment_due_date: row.payment_due_date ?? null,
+        receipt_path: row.receipt_path ?? null,
         created_at: row.created_at,
         updated_at: row.updated_at,
       });

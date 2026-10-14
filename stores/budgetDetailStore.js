@@ -7,10 +7,12 @@ import {
   createTransaction,
   deleteTransaction,
   getSubTransactionsForBudget,
+  getTransaction,
   getTransactionsForBudget,
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
 import { applyReminder } from '../services/reminderService';
+import { deleteReceiptFile } from '../services/receiptFiles';
 import {
   collectUsedTagIds,
   computeTagExpenseBreakdown,
@@ -179,7 +181,12 @@ export const useBudgetDetailStore = create((set, get) => {
     removeTransaction: async (transactionId) => {
       // The transaction goes; its reminders survive as standalone records
       // (the foreign key clears the link), keeping their schedules.
+      const row = await getTransaction(transactionId);
       await deleteTransaction(transactionId);
+      // Only once the row is gone: its receipt image goes too. Each receipt
+      // file has a unique name, so no other row can reference it — and a
+      // failed delete above throws first, leaving file and row untouched.
+      if (row?.receipt_path) deleteReceiptFile(row.receipt_path);
       await get().load(get().budgetId);
     },
 

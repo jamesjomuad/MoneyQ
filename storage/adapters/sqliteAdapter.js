@@ -315,8 +315,8 @@ export function createSqliteAdapter(getDb) {
         `INSERT INTO transactions
            (id, budget_id, type, amount, tag_id, account_id, to_account_id, description,
             transaction_date, payment_status, has_breakdown, payment_due_date,
-            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            receipt_path, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.budget_id,
         row.type,
@@ -329,6 +329,7 @@ export function createSqliteAdapter(getDb) {
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
         row.payment_due_date ?? null,
+        row.receipt_path ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -339,7 +340,7 @@ export function createSqliteAdapter(getDb) {
         `UPDATE transactions
             SET type = ?, amount = ?, tag_id = ?, description = ?,
                 transaction_date = ?, payment_status = ?, has_breakdown = ?,
-                payment_due_date = ?, updated_at = ?
+                payment_due_date = ?, receipt_path = ?, updated_at = ?
           WHERE id = ?`,
         row.type,
         row.amount,
@@ -349,6 +350,7 @@ export function createSqliteAdapter(getDb) {
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
         row.payment_due_date ?? null,
+        row.receipt_path ?? null,
         row.updated_at,
         row.id,
       );
@@ -689,7 +691,7 @@ export function createSqliteAdapter(getDb) {
             SET budget_id = ?, type = ?, amount = ?, tag_id = ?, account_id = ?,
                 to_account_id = ?, description = ?, transaction_date = ?,
                 payment_status = ?, has_breakdown = ?, payment_due_date = ?,
-                created_at = ?, updated_at = ?
+                receipt_path = ?, created_at = ?, updated_at = ?
           WHERE id = ?`,
         row.budget_id,
         row.type,
@@ -702,6 +704,7 @@ export function createSqliteAdapter(getDb) {
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
         row.payment_due_date ?? null,
+        row.receipt_path ?? null,
         row.created_at,
         row.updated_at,
         row.id,

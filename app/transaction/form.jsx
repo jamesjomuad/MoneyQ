@@ -8,8 +8,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Keyboard,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -49,6 +51,7 @@ import { createId } from '../../utils/id';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { showToast } from '../../stores/toastStore';
 import { removeStagedFile } from '../../services/receiptShareService';
+import { deleteReceiptFile, persistReceipt, receiptFileUri } from '../../services/receiptFiles';
 
 const TYPE_OPTIONS = [
   { value: 'expense', label: 'Expense', icon: 'expense' },
@@ -122,6 +125,7 @@ function formSnapshot(values) {
         ? values.dueDate || null
         : null,
     description: values.description?.trim() ? values.description.trim() : null,
+    receiptPath: values.receiptPath ?? null,
     breakdown: breakdownSnapshot(values.breakdownActive, values.items),
   });
 }
@@ -136,6 +140,7 @@ function snapshotOfRow(row) {
     date: row.transaction_date,
     dueDate: row.payment_due_date ?? null,
     description: row.description,
+    receiptPath: row.receipt_path ?? null,
     breakdownActive: row.has_breakdown === 1,
     items: row.subTransactions ?? [],
   });
@@ -213,6 +218,7 @@ function buildPayload(f, currency) {
     paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
     paymentDueDate:
       f.type === 'expense' && f.paymentStatus === 'unpaid' ? f.dueDate || null : null,
+    receiptPath: f.receiptPath ?? null,
     ...(f.breakdownActive
       ? {
           hasBreakdown: true,
@@ -267,7 +273,7 @@ function announceReminderOutcomes(outcomes) {
 
 export default function TransactionFormScreen() {
   const params = useLocalSearchParams();
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
   const tags = useTagsStore((state) => state.tags);
   const loadTags = useTagsStore((state) => state.load);
@@ -301,6 +307,19 @@ export default function TransactionFormScreen() {
       : null,
   );
   const imported = importRef.current?.parsed ?? null;
+
+  // Receipt attachment state. `receiptUri` is what the preview renders: the
+  // staged cache copy in create mode, the persistent document file resolved
+  // from the row's reference in edit mode. `receiptPath` is the stored
+  // document-relative reference (`receipts/<name>.<ext>`) — null until a
+  // save writes it. `receiptRemovedRef` queues the persistent files a
+  // Remove unlinked; they are deleted only after the save that drops their
+  // reference has actually landed, never before.
+  const [receiptUri, setReceiptUri] = useState(() => importRef.current?.imageUri ?? null);
+  const [receiptPath, setReceiptPath] = useState(null);
+  const [receiptFailed, setReceiptFailed] = useState(false);
+  const [receiptViewer, setReceiptViewer] = useState(false);
+  const receiptRemovedRef = useRef([]);
 
   const [type, setType] = useState('expense');
   const [paymentStatus, setPaymentStatus] = useState('paid');
@@ -374,8 +393,9 @@ export default function TransactionFormScreen() {
   }, [refreshPermission]);
 
   // Imported receipts are transient: save, swipe-away, or back — leaving
-  // this form drops the pending record and its staged image copy for good.
-  // A newer share (different id) is never touched by this cleanup.
+  // this form drops the pending record and its staged cache copy for good.
+  // A newer share (different id) is never touched by this cleanup, and
+  // neither is the persistent document copy a successful save created.
   useEffect(() => {
     const snapshot = importRef.current;
     if (!snapshot) return undefined;
@@ -386,6 +406,34 @@ export default function TransactionFormScreen() {
       clear();
     };
   }, []);
+
+  // Discarding the receipt hides the section and leaves every other value
+  // untouched. A staged (unsaved) import loses its cache copy right away —
+  // the store record is updated first so the unmount cleanup above does
+  // not try to remove the same file twice. A persistent attachment is only
+  // unlinked: its file is queued and deleted once the save that drops the
+  // reference has landed, so a failed or abandoned save can never strand
+  // the stored image or break the stored reference.
+  const handleRemoveReceipt = () => {
+    if (receiptPath) {
+      receiptRemovedRef.current.push(receiptPath);
+      setReceiptPath(null);
+      setReceiptUri(null);
+      setReceiptViewer(false);
+      setReceiptFailed(false);
+      return;
+    }
+    const uri = receiptUri;
+    if (!uri) return;
+    const { pending, setPending } = useReceiptImportStore.getState();
+    if (pending?.id === importRef.current?.id && pending.imageUri === uri) {
+      setPending({ ...pending, imageUri: null });
+    }
+    removeStagedFile(uri);
+    setReceiptUri(null);
+    setReceiptViewer(false);
+    setReceiptFailed(false);
+  };
 
   // A transaction can be opened without its budget screen in front of it —
   // from a tapped notification — so make sure the store actually holds this
@@ -430,6 +478,15 @@ export default function TransactionFormScreen() {
     setDate(editing.transaction_date);
     setDueDate(editing.payment_due_date ?? '');
     setDescription(editing.description ?? '');
+    // Reopening a saved transaction resolves its stored receipt reference
+    // to the persistent file — independent of any pending import state.
+    // A reference whose file is gone still shows the section (fallback
+    // text) so it can be removed instead of haunting the row forever.
+    const attachedPath = editing.receipt_path ?? null;
+    setReceiptPath(attachedPath);
+    setReceiptUri(attachedPath ? receiptFileUri(attachedPath) : null);
+    setReceiptFailed(false);
+    receiptRemovedRef.current = [];
     setBreakdownActive(editing.has_breakdown === 1);
     setItems(
       (editing.subTransactions ?? []).map((item) => ({
@@ -618,6 +675,7 @@ export default function TransactionFormScreen() {
       date,
       dueDate,
       description,
+      receiptPath,
       breakdownActive,
       items,
     };
@@ -629,6 +687,7 @@ export default function TransactionFormScreen() {
       date,
       dueDate,
       description,
+      receiptPath,
       breakdownActive,
       items,
     });
@@ -659,6 +718,12 @@ export default function TransactionFormScreen() {
           id: transactionId,
           ...buildPayload(fields, currency),
         });
+        // The save that dropped a receipt reference has landed — only now
+        // can the unlinked files be deleted (never before the write).
+        if (receiptRemovedRef.current.length > 0) {
+          for (const path of receiptRemovedRef.current) deleteReceiptFile(path);
+          receiptRemovedRef.current = [];
+        }
         rowSnapshotRef.current = snapshot;
         showToast('Changes saved successfully', 'success');
         return 'saved';
@@ -735,6 +800,7 @@ export default function TransactionFormScreen() {
     date,
     dueDate,
     description,
+    receiptPath,
     breakdownActive,
     items,
     currency,
@@ -773,10 +839,18 @@ export default function TransactionFormScreen() {
     setErrors({});
     setSaving(true);
 
+    // The receipt's permanent copy is written first: the row may only
+    // reference a file that already exists. A failed copy aborts the whole
+    // save with everything (staged import included) left in place.
+    let freshReceiptPath = null;
     try {
+      if (receiptUri && !receiptPath) {
+        freshReceiptPath = await persistReceipt(receiptUri);
+      }
       const { transaction } = await addTransaction({
         budgetId,
         ...buildPayload(fields, currency),
+        receiptPath: receiptPath ?? freshReceiptPath,
       });
       // Reminders staged in this form are created now, linked to the row that
       // was just written. The transaction is already saved, so a single
@@ -799,6 +873,10 @@ export default function TransactionFormScreen() {
       router.back();
       announceReminderOutcomes(outcomes);
     } catch (error) {
+      // The row never committed: the receipt copy made for it would be an
+      // orphan no transaction references, so it goes back out with the
+      // failure. The staged import copy is untouched — retrying still works.
+      if (freshReceiptPath) deleteReceiptFile(freshReceiptPath);
       setSaving(false);
       Alert.alert('Could not save', error?.message ?? 'Please try again.');
     }
@@ -855,6 +933,53 @@ export default function TransactionFormScreen() {
             paddingBottom: (transactionId ? 48 : barHeight) + keyboardHeight,
           }}
         >
+        {receiptUri || receiptPath ? (
+          <>
+            <SectionHeader title="Receipt" />
+            <Pressable
+              onPress={() => receiptUri && setReceiptViewer(true)}
+              accessibilityRole="imagebutton"
+              accessibilityLabel="View receipt"
+            >
+              <Card padded={false} style={{ overflow: 'hidden', borderRadius: radius.lg }}>
+                {receiptFailed || !receiptUri ? (
+                  <View style={styles.receiptFallback}>
+                    <Text variant="body" tone="muted">
+                      The receipt image could not be displayed.
+                    </Text>
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: receiptUri }}
+                    style={styles.receiptPreview}
+                    resizeMode="contain"
+                    onError={() => setReceiptFailed(true)}
+                  />
+                )}
+              </Card>
+            </Pressable>
+            <View style={styles.receiptActions}>
+              {receiptUri && !receiptFailed ? (
+                <Button
+                  label="View receipt"
+                  icon="eye"
+                  variant="secondary"
+                  onPress={() => setReceiptViewer(true)}
+                  style={{ borderRadius: radius.pill }}
+                />
+              ) : null}
+              <Button
+                label="Remove"
+                icon="trash"
+                variant="secondary"
+                onPress={handleRemoveReceipt}
+                style={{ borderRadius: radius.pill }}
+              />
+            </View>
+            <View style={{ height: spacing.lg }} />
+          </>
+        ) : null}
+
         <SectionHeader title="Description" />
         <TextField
           value={description}
@@ -1224,7 +1349,50 @@ export default function TransactionFormScreen() {
           onClose={() => setItemDetail(null)}
         />
       ) : null}
+
+      {receiptViewer && receiptUri ? (
+        <ReceiptViewer failed={receiptFailed} uri={receiptUri} onClose={() => setReceiptViewer(false)} />
+      ) : null}
     </View>
+  );
+}
+
+/**
+ * Full-screen receipt viewer: a fade Modal over the form so every entered
+ * value stays exactly as it was when the user closes it. Tapping anywhere
+ * (or the Android back gesture via onRequestClose) returns to the form.
+ */
+function ReceiptViewer({ failed, onClose, uri }) {
+  const { colors, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal animationType="fade" onRequestClose={onClose} accessibilityViewIsModal visible>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onClose}
+        style={[styles.viewerBackdrop, { backgroundColor: colors.background }]}
+      >
+        <View style={{ alignItems: 'flex-end', paddingBottom: spacing.sm, paddingRight: spacing.lg, paddingTop: insets.top + spacing.md }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close receipt preview"
+            onPress={onClose}
+            style={[styles.viewerClose, { backgroundColor: colors.surfaceElevated }]}
+          >
+            <Icon name="close" size={20} color={colors.text} />
+          </Pressable>
+        </View>
+        <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center', padding: spacing.lg }}>
+          {failed ? (
+            <Text variant="body" tone="muted">
+              The receipt image could not be displayed.
+            </Text>
+          ) : (
+            <Image source={{ uri }} style={{ flex: 1, width: '100%' }} resizeMode="contain" />
+          )}
+        </View>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1292,4 +1460,22 @@ const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap' },
   tagRow: { alignItems: 'center', paddingRight: 6 },
   tagFade: { bottom: 0, position: 'absolute', top: 0 },
+  // Receipt preview: fixed max-height box with contain scaling, so tall
+  // receipts keep their aspect ratio instead of being cropped or stretched.
+  receiptPreview: { height: 240, width: '100%' },
+  receiptFallback: {
+    alignItems: 'center',
+    height: 140,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  receiptActions: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 12 },
+  viewerBackdrop: { flex: 1 },
+  viewerClose: {
+    alignItems: 'center',
+    borderRadius: 999,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
 });

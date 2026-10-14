@@ -125,6 +125,7 @@ const datesMigration = migrations.find((entry) => entry.version === 9);
 const foldersMigration = migrations.find((entry) => entry.version === 10);
 const perfIndexesMigration = migrations.find((entry) => entry.version === 11);
 const budgetPositionMigration = migrations.find((entry) => entry.version === 12);
+const receiptPathMigration = migrations.find((entry) => entry.version === 13);
 for (const entry of migrations) {
   if (
     entry === paymentMigration ||
@@ -134,7 +135,8 @@ for (const entry of migrations) {
     entry === datesMigration ||
     entry === foldersMigration ||
     entry === perfIndexesMigration ||
-    entry === budgetPositionMigration
+    entry === budgetPositionMigration ||
+    entry === receiptPathMigration
   ) {
     continue;
   }
@@ -183,6 +185,11 @@ await perfIndexesMigration.up(adapter);
 // Budget manual order last: its backfill ranks rows by folder_id, which only
 // exists after migration 10, and must run over real pre-existing budgets.
 await budgetPositionMigration.up(adapter);
+// Receipt attachments truly last: migration 8 rebuilds the transactions
+// table, so an ALTER applied before it would be dropped again — on a real
+// install runMigrations() applies version 13 after everything else, and the
+// receipt_path column must survive onto the rows older installs held.
+await receiptPathMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -259,6 +266,11 @@ check(
 check(
   'transactions gained a has_breakdown flag',
   transactionColumns.includes('has_breakdown'),
+  transactionColumns.join(','),
+);
+check(
+  'transactions gained an optional receipt_path column',
+  transactionColumns.includes('receipt_path'),
   transactionColumns.join(','),
 );
 const v4AfterBreakdown = await adapter.getFirstAsync(
@@ -392,7 +404,7 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 12, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 13, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -1412,7 +1424,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 12);
+check('both adapters report the same schema version', LATEST_VERSION === 13);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -1627,7 +1639,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has eleven pending migrations', pending.length === 11, String(pending.length));
+check('legacy database has twelve pending migrations', pending.length === 12, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
