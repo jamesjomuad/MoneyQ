@@ -115,11 +115,25 @@ export default function HomeScreen() {
     [],
   );
 
-  const matchedFolders = useMemo(() => {
+  // Unified search hits: folders first, then budgets, each keeping its own
+  // existing store order. Rows render through the same components as the
+  // main Home list.
+  const matchedItems = useMemo(() => {
     if (!searching) return [];
     const needle = debouncedTerm.toLowerCase();
-    return budgets.filter((budget) => budget.name.toLowerCase().includes(needle));
-  }, [budgets, debouncedTerm, searching]);
+    const items = [];
+    for (const folder of folders) {
+      if (folder.name.toLowerCase().includes(needle)) {
+        items.push({ kind: 'folder', key: `f_${folder.id}`, folder });
+      }
+    }
+    for (const budget of budgets) {
+      if (budget.name.toLowerCase().includes(needle)) {
+        items.push({ kind: 'budget', key: `b_${budget.id}`, budget });
+      }
+    }
+    return items;
+  }, [budgets, debouncedTerm, folders, searching]);
 
   // Transaction matches arrive newest-first across all folders; group them
   // under their folder so it's clear where each one lives. Group order follows
@@ -164,6 +178,20 @@ export default function HomeScreen() {
     return { folderCounts: counts, ungrouped: ungroupedBudgets };
   }, [budgets]);
 
+  // One unified Home list: every folder, then the ungrouped budgets, each in
+  // its existing store order. This is presentation only — no re-sorting, no
+  // grouping headers, and grouped budgets still live only inside their folder.
+  const listItems = useMemo(() => {
+    const items = [];
+    for (const folder of folders) {
+      items.push({ kind: 'folder', key: `f_${folder.id}`, folder });
+    }
+    for (const budget of ungrouped) {
+      items.push({ kind: 'budget', key: `b_${budget.id}`, budget });
+    }
+    return items;
+  }, [folders, ungrouped]);
+
   const toggleSelected = useCallback((budget) => {
     setSelectedIds((current) =>
       current.includes(budget.id)
@@ -193,6 +221,41 @@ export default function HomeScreen() {
       },
     });
   }, []);
+
+  // One row renderer for both the unified Home list and search results, so
+  // folder and budget rows stay pixel-identical in every context. Search
+  // rows keep pinning but never enter bulk-move selection.
+  const renderRow = (item, index, total, forSearch) => (
+    <Animated.View
+      key={item.key}
+      entering={introEnter(2 + Math.min(index, 4))}
+    >
+      {item.kind === 'folder' ? (
+        <FolderGroupCard
+          folder={item.folder}
+          budgetCount={folderCounts.get(item.folder.id) ?? 0}
+          isLast={index === total - 1}
+          onPress={() =>
+            router.push({
+              pathname: "/folder/[id]",
+              params: { id: item.folder.id },
+            })
+          }
+        />
+      ) : (
+        <BudgetCard
+          budget={item.budget}
+          currency={currency}
+          pinned={selecting && !forSearch ? false : pinnedIds.includes(item.budget.id)}
+          onTogglePin={selecting && !forSearch ? undefined : togglePinned}
+          selected={!forSearch && selectedIds.includes(item.budget.id)}
+          onLongPress={forSearch || selecting ? undefined : startSelect}
+          onPress={forSearch ? openFolder : handlePressBudget}
+          isLast={index === total - 1}
+        />
+      )}
+    </Animated.View>
+  );
 
   function confirmBulkMove(folderId) {
     const destination = folderId
@@ -319,24 +382,22 @@ export default function HomeScreen() {
           </EmptyState>
         ) : searching ? (
           <>
-            {matchedFolders.length > 0 ? (
+            {matchedItems.length > 0 ? (
               <>
-                <SectionHeader title={`Folders · ${matchedFolders.length}`} fontSize={14} />
-                {matchedFolders.map((budget) => (
-                  <BudgetCard
-                    key={budget.id}
-                    budget={budget}
-                    currency={currency}
-                    pinned={pinnedIds.includes(budget.id)}
-                    onTogglePin={togglePinned}
-                    onPress={openFolder}
-                  />
-                ))}
+                <SectionHeader
+                  title={`Folders & Budgets · ${matchedItems.length}`}
+                  fontSize={14}
+                />
+                <Card padded={false} style={{ marginBottom: spacing.lg }}>
+                  {matchedItems.map((item, index) =>
+                    renderRow(item, index, matchedItems.length, true)
+                  )}
+                </Card>
               </>
             ) : null}
 
             {txMatches.length > 0 ? (
-              <View style={matchedFolders.length > 0 ? styles.txSection : null}>
+              <View style={matchedItems.length > 0 ? styles.txSection : null}>
                 <SectionHeader
                   title={`Transactions · ${txMatches.length}`}
                   fontSize={14}
@@ -388,7 +449,7 @@ export default function HomeScreen() {
               </View>
             ) : null}
 
-            {matchedFolders.length === 0 && txMatches.length === 0 ? (
+            {matchedItems.length === 0 && txMatches.length === 0 ? (
               <EmptyState
                 icon="search"
                 title="No results found"
@@ -406,89 +467,40 @@ export default function HomeScreen() {
           </>
         ) : (
           <>
-            {folders.length > 0 ? (
-              <>
-                <SectionHeader
-                  title={`Budget folders · ${folders.length}`}
-                  fontSize={14}
-                  action={
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel="Create a new budget folder"
-                      onPress={() => router.push("/folder/form")}
-                      hitSlop={8}
-                    >
-                      <Text variant="label" tone="primary">
-                        New folder
-                      </Text>
-                    </Pressable>
-                  }
-                />
-                {folders.map((folder, index) => (
-                  <Animated.View
-                    key={folder.id}
-                    entering={introEnter(2 + Math.min(index, 4))}
-                  >
-                    <FolderGroupCard
-                      folder={folder}
-                      budgetCount={folderCounts.get(folder.id) ?? 0}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/folder/[id]",
-                          params: { id: folder.id },
-                        })
-                      }
-                    />
-                  </Animated.View>
-                ))}
-                {ungrouped.length > 0 ? (
-                  <SectionHeader title={`Ungrouped · ${ungrouped.length}`} fontSize={14} />
-                ) : (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Create a new budget"
-                    onPress={() => router.push("/budget/form")}
-                    hitSlop={8}
-                    style={{ marginBottom: spacing.lg, marginTop: spacing.sm }}
-                  >
-                    <Text variant="label" tone="primary">
-                      + New budget
-                    </Text>
-                  </Pressable>
-                )}
-              </>
-            ) : (
-              // No folders yet: keep the entry point visible above the budget
-              // list so the first folder can be created from Home.
+            <Card padded={false} style={{ marginBottom: spacing.sm }}>
+              {listItems.map((item, index) =>
+                renderRow(item, index, listItems.length, false)
+              )}
+            </Card>
+
+            {/* The Plus actions: same create entries Home offered before,
+                now sitting under the single unified list. */}
+            <View style={styles.listActions}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Create a new budget folder"
                 onPress={() => router.push("/folder/form")}
                 hitSlop={8}
-                style={{ marginBottom: spacing.sm }}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
               >
                 <Text variant="label" tone="primary">
                   + New folder
                 </Text>
               </Pressable>
-            )}
-
-            {ungrouped.map((budget, index) => (
-              <Animated.View
-                key={budget.id}
-                entering={introEnter(2 + Math.min(index, 4))}
-              >
-                <BudgetCard
-                  budget={budget}
-                  currency={currency}
-                  pinned={selecting ? false : pinnedIds.includes(budget.id)}
-                  onTogglePin={selecting ? undefined : togglePinned}
-                  selected={selectedIds.includes(budget.id)}
-                  onLongPress={selecting ? undefined : startSelect}
-                  onPress={handlePressBudget}
-                />
-              </Animated.View>
-            ))}
+              {ungrouped.length === 0 ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Create a new budget"
+                  onPress={() => router.push("/budget/form")}
+                  hitSlop={8}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+                >
+                  <Text variant="label" tone="primary">
+                    + New budget
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           </>
         )}
       </Screen>
@@ -571,6 +583,13 @@ const styles = StyleSheet.create({
   },
   txSection: {
     marginTop: 8,
+  },
+  listActions: {
+    flexDirection: "row",
+    gap: 16,
+    marginBottom: 24,
+    marginTop: 4,
+    paddingHorizontal: 4,
   },
   txGroup: {
     marginTop: 8,

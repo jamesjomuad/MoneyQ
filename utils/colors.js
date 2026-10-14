@@ -88,3 +88,40 @@ export function resolveFolderPalette(customColor, colors) {
     folderInk: inkIsLight ? LIGHT_INK : darkInk,
   };
 }
+
+/**
+ * Resolve the softly tinted icon-chip colors for the compact Home rows.
+ *
+ * A custom hex color becomes a pale (light theme) or deep (dark theme) chip by
+ * mixing toward the theme surface; the icon then takes whichever of the base
+ * color, a lightened, or a darkened variant reads best against that chip.
+ * Items without a custom color fall back to the theme's primary tokens, so
+ * the row stays quietly tinted rather than a heavy solid block in every theme.
+ *
+ * @param {string|null|undefined} customColor user-selected hex, if any
+ * @param {object} colors active theme colors
+ * @param {string} scheme 'light' or 'dark' from the theme provider
+ * @returns {{ tint: string, icon: string }}
+ */
+export function resolveRowTint(customColor, colors, scheme) {
+  if (!isHexColor(customColor)) {
+    return { tint: colors.primarySoft, icon: colors.primary };
+  }
+
+  const base = customColor.toUpperCase();
+  const tint = mixHex(base, colors.surface, scheme === 'light' ? 0.85 : 0.7);
+  const lightInk = mixHex(base, LIGHT_INK, 0.4);
+  const darkInk = mixHex(base, DARK_INK_BASE, 0.6);
+
+  let icon = base;
+  let best = contrastRatio(base, tint);
+  for (const candidate of [lightInk, darkInk]) {
+    const ratio = contrastRatio(candidate, tint);
+    if (ratio > best) {
+      best = ratio;
+      icon = candidate;
+    }
+  }
+
+  return { tint, icon };
+}

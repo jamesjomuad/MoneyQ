@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-nat
 
 import { BudgetCard } from '../../components/budgets/BudgetCard';
 import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { FAB_SIZE, Fab } from '../../components/ui/Fab';
 import { Icon } from '../../components/ui/Icon';
@@ -190,16 +191,19 @@ export default function FolderDetailScreen() {
                 </Pressable>
               }
             />
-            {folderBudgets.map((budget) => (
-              <BudgetCard
-                key={budget.id}
-                budget={budget}
-                currency={currency}
-                pinned={pinnedIds.includes(budget.id)}
-                onTogglePin={togglePinned}
-                onPress={openBudget}
-              />
-            ))}
+            <Card padded={false}>
+              {folderBudgets.map((budget, index) => (
+                <BudgetCard
+                  key={budget.id}
+                  budget={budget}
+                  currency={currency}
+                  pinned={pinnedIds.includes(budget.id)}
+                  onTogglePin={togglePinned}
+                  onPress={openBudget}
+                  isLast={index === folderBudgets.length - 1}
+                />
+              ))}
+            </Card>
           </>
         )}
       </Screen>

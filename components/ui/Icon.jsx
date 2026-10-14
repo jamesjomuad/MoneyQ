@@ -8,7 +8,7 @@ const ICONS = {
   home: { ios: 'house', android: 'home', web: 'home' },
   list: { ios: 'list.bullet.rectangle', android: 'list', web: 'list' },
   pie: { ios: 'chart.pie', android: 'pie_chart', web: 'pie_chart' },
-  wallet: { ios: 'building.columns', android: 'account_balance', web: 'account_balance' },
+  wallet: { ios: 'wallet.pass', android: 'account_balance_wallet', web: 'account_balance_wallet' },
   settings: { ios: 'gearshape', android: 'settings', web: 'settings' },
   add: { ios: 'plus', android: 'add', web: 'add' },
   folder: { ios: 'folder', android: 'folder', web: 'folder' },
