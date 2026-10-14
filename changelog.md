@@ -2,6 +2,34 @@
 
 All notable changes to Budgetarian. Dates are local calendar days; newest first.
 
+## 2026-10-14
+
+### Added
+- Drag-to-reorder for lists: long-press a row on Home or inside a folder to
+  lift it (subtle scale, shadow and haptic), then drop it anywhere in the
+  list — the rows around it slide open a gap under your finger, the scroll
+  view auto-scrolls at the edges, and the release animates straight into the
+  persisted order. Taps, scrolling and search are untouched: any early
+  movement is never captured, so the row still opens or the list still
+  scrolls exactly as before. Folders and budgets each keep their own block
+  on Home, and only those two lists participate — transactions always stay
+  date-ordered. Backups carry the manual order along automatically.
+- Budgets now store a manual per-scope position. Until you reorder anything,
+  the familiar order (newest period first) is preserved untouched; new
+  budgets simply append at the end of their list.
+
+### Changed
+- The floating tab bar marks the active tab with a single rounded-square
+  chip that glides between icons (300 ms, with a subtle mid-travel squash)
+  instead of painting a separate background per tab. The chip centers itself
+  on each icon's measured zone, so it stays aligned through font loads and
+  layout changes, and the active icon scales up gently. Reduced-motion users
+  get instant placement.
+- Multi-select on Home now uses a Gmail-style checkbox that fades in to the
+  left of each budget row while selection mode is on; the row itself is the
+  toggle target and the chevron never moves. Long-press — the old way into
+  selection — is now reserved entirely for starting a drag.
+
 ## 2026-10-13
 
 ### Added
