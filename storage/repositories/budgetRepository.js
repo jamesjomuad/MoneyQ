@@ -43,6 +43,15 @@ async function resolveFolderId(folderId) {
 export async function createBudget({ name, startDate, endDate, color = null, folderId = null }) {
   const id = createId('budget');
   const timestamp = nowIso();
+  const folder_id = await resolveFolderId(folderId);
+
+  // New budgets join at the end of their scope's manual order (root list or
+  // the chosen folder), mirroring how new folders append. Position only ever
+  // orders the list; it carries no financial meaning.
+  const all = await storage.listBudgets();
+  const position = all
+    .filter((budget) => (budget.folder_id ?? null) === folder_id)
+    .reduce((highest, budget) => Math.max(highest, (budget.position ?? 0) + 1), 0);
 
   await storage.insertBudget({
     id,
@@ -50,7 +59,8 @@ export async function createBudget({ name, startDate, endDate, color = null, fol
     start_date: startDate,
     end_date: endDate,
     color: normalizeFolderColor(color),
-    folder_id: await resolveFolderId(folderId),
+    folder_id,
+    position,
     created_at: timestamp,
     updated_at: timestamp,
   });
@@ -82,6 +92,9 @@ export async function updateBudget(id, { name, startDate, endDate, color = null,
  * Moves one budget into a folder (or back to the root when `folderId` is
  * null). Touches only the folder assignment and `updated_at` — never the
  * budget's name, period, colors, transactions, or any derived figure.
+ * Its manual `position` rides along: inside the new scope it simply ranks
+ * against that scope's own order (date tie-break on ties), and users can
+ * drag it wherever they like there.
  */
 export async function setBudgetFolder(id, folderId = null) {
   const current = await storage.getBudget(id);
@@ -138,4 +151,41 @@ export async function setBudgetsFolder(ids, folderId = null) {
 /** Cascades to the budget's transactions; callers must confirm with the user. */
 export async function deleteBudget(id) {
   return storage.deleteBudget(id);
+}
+
+/**
+ * Moves a budget to a new slot among its scope's siblings (0-based, clamped)
+ * — root list or its folder, never across. The rest shift so each scope keeps
+ * a contiguous 0..n-1 manual order. Order is the only thing this touches:
+ * ids, folder assignments, periods, colors, and every transaction stay
+ * exactly as they were.
+ */
+export async function reorderBudget(id, targetIndex) {
+  const budgets = await storage.listBudgets();
+  const moved = budgets.find((budget) => budget.id === id);
+  if (!moved) throw new Error('That budget no longer exists.');
+
+  // Siblings in display order (listBudgets already sorts by position, then
+  // the historical date default within equal ranks).
+  const scope = moved.folder_id ?? null;
+  const siblings = budgets.filter((budget) => (budget.folder_id ?? null) === scope);
+  const from = siblings.findIndex((budget) => budget.id === id);
+  if (from < 0) return getBudget(id); // defensive: row vanished mid-read
+
+  const to = Math.min(Math.max(0, Math.trunc(Number(targetIndex) || 0)), siblings.length - 1);
+  if (to === from) return getBudget(id);
+
+  const ordered = [...siblings];
+  const [item] = ordered.splice(from, 1);
+  ordered.splice(to, 0, item);
+
+  const timestamp = nowIso();
+  const entries = [];
+  for (const [index, budget] of ordered.entries()) {
+    if ((budget.position ?? 0) === index) continue;
+    entries.push({ id: budget.id, position: index });
+  }
+  if (entries.length) await storage.updateBudgetPositions(entries, timestamp);
+
+  return getBudget(id);
 }

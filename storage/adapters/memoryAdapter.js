@@ -56,9 +56,15 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     });
   };
 
-  /** SQLite's `ORDER BY start_date DESC, created_at DESC`. */
+  /**
+   * SQLite's `ORDER BY position, start_date DESC, created_at DESC`. Untouched
+   * scopes share position 0, so the date tie-break reproduces the historical
+   * default order exactly (mirrors migration 012's materialised ranks).
+   */
   const byBudgetPeriod = (a, b) =>
-    b.start_date.localeCompare(a.start_date) || b.created_at.localeCompare(a.created_at);
+    (a.position ?? 0) - (b.position ?? 0) ||
+    b.start_date.localeCompare(a.start_date) ||
+    b.created_at.localeCompare(a.created_at);
 
   /** SQLite's folder order: `ORDER BY position, created_at, id`. */
   const byFolderPosition = (a, b) =>
@@ -156,13 +162,28 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
 
     async insertBudget(row) {
       // Mirror the SQLite schema: `color` and `folder_id` always exist on the
-      // row (NULL when the budget keeps theme colors / stays ungrouped).
-      store.budgets.push({ color: null, folder_id: null, ...row });
+      // row (NULL when the budget keeps theme colors / stays ungrouped), and
+      // `position` defaults to the scope's rank 0 like the column default.
+      store.budgets.push({ color: null, folder_id: null, position: 0, ...row });
     },
 
     async updateBudget(row) {
       const index = store.budgets.findIndex((budget) => budget.id === row.id);
       if (index >= 0) store.budgets[index] = { ...store.budgets[index], ...row };
+    },
+
+    /**
+     * Bulk rank rewrite backing manual budget order. Mirrors the SQLite
+     * adapter's transactional version: the journal snapshot means a caller
+     * that wraps this in begin/commit gets all-or-nothing on both engines.
+     */
+    async updateBudgetPositions(entries, timestamp) {
+      for (const entry of entries) {
+        const index = store.budgets.findIndex((budget) => budget.id === entry.id);
+        if (index >= 0) {
+          store.budgets[index] = { ...store.budgets[index], position: entry.position, updated_at: timestamp };
+        }
+      }
     },
 
     /**
@@ -755,6 +776,7 @@ function seedDemoData(store, timestamp) {
     created_at: timestamp,
     updated_at: timestamp,
     folder_id: null,
+    position: 0,
   }));
 
   store.budgets.push(...budgets);

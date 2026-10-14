@@ -124,6 +124,7 @@ const subTransactionsMigration = migrations.find((entry) => entry.version === 8)
 const datesMigration = migrations.find((entry) => entry.version === 9);
 const foldersMigration = migrations.find((entry) => entry.version === 10);
 const perfIndexesMigration = migrations.find((entry) => entry.version === 11);
+const budgetPositionMigration = migrations.find((entry) => entry.version === 12);
 for (const entry of migrations) {
   if (
     entry === paymentMigration ||
@@ -132,7 +133,8 @@ for (const entry of migrations) {
     entry === subTransactionsMigration ||
     entry === datesMigration ||
     entry === foldersMigration ||
-    entry === perfIndexesMigration
+    entry === perfIndexesMigration ||
+    entry === budgetPositionMigration
   ) {
     continue;
   }
@@ -178,6 +180,9 @@ await foldersMigration.up(adapter);
 // Indexes truly last: the rebuild migrations above drop them if applied first,
 // and runMigrations() would only ever apply version 11 after version 10.
 await perfIndexesMigration.up(adapter);
+// Budget manual order last: its backfill ranks rows by folder_id, which only
+// exists after migration 10, and must run over real pre-existing budgets.
+await budgetPositionMigration.up(adapter);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -219,6 +224,11 @@ check(
   budgetColumns.includes('folder_id'),
   budgetColumns.join(','),
 );
+check(
+  'budgets gained a manual position column',
+  budgetColumns.includes('position'),
+  budgetColumns.join(','),
+);
 const folderColumns = columnsOf('folders');
 check(
   'folders carry name, color, position and timestamps',
@@ -228,6 +238,10 @@ check(
 check(
   'the v4 budget row survived the folder ALTER with a null reference',
   (await adapter.getFirstAsync(`SELECT folder_id FROM budgets WHERE id = 'v4_budget'`))?.folder_id === null,
+);
+check(
+  'migration 012 materialised a rank on the pre-existing budget row',
+  (await adapter.getFirstAsync(`SELECT position FROM budgets WHERE id = 'v4_budget'`))?.position === 0,
 );
 
 const transactionColumns = columnsOf('transactions');
@@ -378,7 +392,7 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 11, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 12, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -750,6 +764,49 @@ async function runScenario(store) {
 
   const snapshot = {};
   snapshot.budgets = await store.listBudgets();
+
+  // Manual budget order: insertBudget defaults the rank, listBudgets sorts
+  // position ahead of the date default, and updateBudgetPositions rewrites
+  // ranks (with updated_at) identically on both engines.
+  await store.insertBudget({
+    id: 'p_budget_two',
+    name: 'Parity Two',
+    start_date: '2026-09-01',
+    end_date: '2026-09-30',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertBudget({
+    id: 'p_budget_three',
+    name: 'Parity Three',
+    start_date: '2026-08-01',
+    end_date: '2026-08-31',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.budgetsDefaultOrder = (await store.listBudgets()).map((budget) => budget.id);
+  await store.updateBudgetPositions(
+    [
+      { id: 'p_budget', position: 2 },
+      { id: 'p_budget_two', position: 0 },
+      { id: 'p_budget_three', position: 1 },
+    ],
+    '2026-10-06T01:00:00.000Z',
+  );
+  snapshot.budgetsAfterReorder = (await store.listBudgets()).map((budget) => budget.id);
+  snapshot.budgetRanksAfterReorder = (await store.listBudgets()).map(
+    (budget) => `${budget.id}:${budget.position}:${budget.updated_at}`,
+  );
+  // An unrelated edit (no position in the row) must not disturb the rank.
+  await store.updateBudget({
+    id: 'p_budget_two',
+    name: 'Parity Two Renamed',
+    start_date: '2026-09-01',
+    end_date: '2026-09-30',
+    color: null,
+    updated_at: STAMP,
+  });
+  snapshot.budgetsAfterEdit = (await store.listBudgets()).map((budget) => `${budget.id}:${budget.position}`);
   snapshot.transactions = await store.listTransactionsByBudget('p_budget');
   snapshot.transactionsInRange = await store.listTransactionsInRange('2026-10-01', '2026-10-31');
   snapshot.transactionsOutRange = await store.listTransactionsInRange('2026-11-01', '2026-11-30');
@@ -1355,7 +1412,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 11);
+check('both adapters report the same schema version', LATEST_VERSION === 12);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -1570,7 +1627,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has ten pending migrations', pending.length === 10, String(pending.length));
+check('legacy database has eleven pending migrations', pending.length === 11, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -1613,6 +1670,55 @@ try {
   legacyInsertWorked = false;
 }
 check('create budget works on a rebuilt legacy database', legacyInsertWorked);
+
+console.log('\n--- budget manual order (migration 012) ---');
+
+/**
+ * A v10-shaped database (position absent, folder_id present) with rows that
+ * span two scopes. Migration 012 must rank each scope by exactly the old
+ * default ORDER BY so the upgrade changes nothing on screen.
+ */
+const orderDb = new DatabaseSync(':memory:');
+const orderAdapter = createAdapter(orderDb);
+orderDb.exec(`
+  CREATE TABLE budgets (
+    id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    color TEXT, folder_id TEXT);
+  INSERT INTO budgets (id, name, start_date, end_date, created_at, updated_at, color, folder_id) VALUES
+    ('root_new', 'Root new', '2026-03-01', '2026-03-31', '2026-01-01', '2026-01-01', NULL, NULL),
+    ('root_mid', 'Root mid', '2026-02-01', '2026-02-28', '2026-01-01', '2026-01-01', NULL, NULL),
+    ('root_old', 'Root old', '2026-01-01', '2026-01-31', '2026-01-01', '2026-01-01', NULL, NULL),
+    ('fold_b', 'Folder B', '2025-12-01', '2025-12-31', '2025-12-01', '2025-12-01', NULL, 'f1'),
+    ('fold_a', 'Folder A', '2025-11-01', '2025-11-30', '2025-11-01', '2025-11-01', NULL, 'f1');
+`);
+await budgetPositionMigration.up(orderAdapter);
+
+const rankedRoot = await orderAdapter.getAllAsync(`
+  SELECT id FROM budgets WHERE folder_id IS NULL
+   ORDER BY position ASC, start_date DESC, created_at DESC
+`);
+const rankedFolder = await orderAdapter.getAllAsync(`
+  SELECT id FROM budgets WHERE folder_id = 'f1'
+   ORDER BY position ASC, start_date DESC, created_at DESC
+`);
+check(
+  'root scope keeps its default order after materialising ranks',
+  rankedRoot.map((row) => row.id).join(',') === 'root_new,root_mid,root_old',
+  rankedRoot.map((row) => row.id).join(','),
+);
+check(
+  'folder scope ranks independently of the root scope',
+  rankedFolder.map((row) => row.id).join(',') === 'fold_b,fold_a',
+  rankedFolder.map((row) => row.id).join(','),
+);
+const rankValues = await orderAdapter.getAllAsync('SELECT id, position FROM budgets ORDER BY id');
+check(
+  'ranks are contiguous per scope starting at zero',
+  rankValues.map((row) => `${row.id}:${row.position}`).join(',') ===
+    'fold_a:1,fold_b:0,root_mid:1,root_new:0,root_old:2',
+  rankValues.map((row) => `${row.id}:${row.position}`).join(','),
+);
 
 console.log('\n--- payment status rules ---');
 check('only two statuses exist', JSON.stringify(PAYMENT_STATUSES) === '["unpaid","paid"]');

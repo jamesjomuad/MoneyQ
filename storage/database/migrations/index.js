@@ -9,6 +9,7 @@ import { migration as subTransactions } from './008_sub_transactions';
 import { migration as breakdownDates } from './009_breakdown_dates';
 import { migration as folders } from './010_folders';
 import { migration as performanceIndexes } from './011_performance_indexes';
+import { migration as budgetPosition } from './012_budget_position';
 
 /**
  * Append-only list. Never edit a shipped migration — add a new one so existing
@@ -26,6 +27,7 @@ export const migrations = [
   breakdownDates,
   folders,
   performanceIndexes,
+  budgetPosition,
 ];
 
 export const LATEST_VERSION = migrations.reduce(

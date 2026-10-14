@@ -78,7 +78,7 @@ export function createSqliteAdapter(getDb) {
           (SELECT COUNT(*) FROM transactions t
             WHERE t.budget_id = b.id) AS transaction_count
         FROM budgets b
-        ORDER BY b.start_date DESC, b.created_at DESC
+        ORDER BY b.position ASC, b.start_date DESC, b.created_at DESC
       `);
     },
 
@@ -88,13 +88,14 @@ export function createSqliteAdapter(getDb) {
 
     async insertBudget(row) {
       await run(
-        'INSERT INTO budgets (id, name, start_date, end_date, color, folder_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO budgets (id, name, start_date, end_date, color, folder_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         row.id,
         row.name,
         row.start_date,
         row.end_date,
         row.color ?? null,
         row.folder_id ?? null,
+        row.position ?? 0,
         row.created_at,
         row.updated_at,
       );
@@ -111,6 +112,30 @@ export function createSqliteAdapter(getDb) {
         row.updated_at,
         row.id,
       );
+    },
+
+    /**
+     * Bulk rank rewrite backing manual budget order. One engine-side
+     * transaction so a reorder never persists half a shuffled scope; the
+     * FIFO chain guarantees nothing interleaves between BEGIN and COMMIT.
+     */
+    async updateBudgetPositions(entries, timestamp) {
+      if (!entries.length) return;
+      await exec('BEGIN IMMEDIATE');
+      try {
+        for (const entry of entries) {
+          await run(
+            'UPDATE budgets SET position = ?, updated_at = ? WHERE id = ?',
+            entry.position,
+            timestamp,
+            entry.id,
+          );
+        }
+        await exec('COMMIT');
+      } catch (error) {
+        await exec('ROLLBACK');
+        throw error;
+      }
     },
 
     /** Cascades to the budget's transactions through the foreign key. */

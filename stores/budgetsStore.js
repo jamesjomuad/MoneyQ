@@ -5,6 +5,7 @@ import {
   deleteBudget,
   getBudget,
   getBudgets,
+  reorderBudget,
   setBudgetFolder,
   setBudgetsFolder,
   updateBudget,
@@ -96,5 +97,16 @@ export const useBudgetsStore = create((set, get) => ({
   moveManyToFolder: async (ids, folderId = null) => {
     await setBudgetsFolder(ids, folderId);
     await get().load();
+  },
+
+  /**
+   * Manual drag order within a budget's scope (root list or its folder).
+   * The repository owns the rank rewrite; this stays a read-through cache —
+   * reload so the store mirrors SQLite, and a failed write changes nothing.
+   */
+  reorderBudget: async (id, targetIndex) => {
+    const budget = await reorderBudget(id, targetIndex);
+    await get().load();
+    return budget;
   },
 }));
