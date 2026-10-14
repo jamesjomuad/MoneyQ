@@ -15,7 +15,7 @@ const HANDLE_MIN_HEIGHT = 56;
 /**
  * Ordered list of breakdown items inside the transaction form, wrapped in the
  * same Card shell the Reminder section uses: quiet rows separated by hairline
- * dividers, a Total line at the bottom, and a centred circular add button
+ * dividers, and a centred circular add button
  * under it. When there are no items the empty state shows the same circular
  * add affordance instead. Rows are dragged by the dedicated handle: the list
  * is measured per row (onLayout), so the drop position follows the finger at
@@ -86,8 +86,6 @@ export function BreakdownSection({
     if (onDragStateChange) onDragStateChange(false);
   }
 
-  const total = items.reduce((sum, item) => sum + item.amount, 0);
-
   if (items.length === 0) {
     return (
       <Card>
@@ -140,22 +138,8 @@ export function BreakdownSection({
         />
       ))}
 
-      <View
-        style={[
-          styles.totalRow,
-          {
-            borderTopColor: colors.border,
-            marginTop: spacing.sm,
-            paddingTop: spacing.sm,
-          },
-        ]}
-      >
-        <Text variant="label">Total</Text>
-        <Text variant="body" style={{ fontVariant: ['tabular-nums'] }}>
-          {formatCurrency(total, { currency })}
-        </Text>
-      </View>
-
+      {/* No Total line here: the sticky Amount card already shows the same
+          calculated sum right above this section. */}
       <View style={[styles.addAction, { marginTop: spacing.md }]}>
         <Pressable
           accessibilityRole="button"
@@ -291,12 +275,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingVertical: 6,
-  },
-  totalRow: {
-    alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
   },
   addCircle: {
     alignItems: 'center',
