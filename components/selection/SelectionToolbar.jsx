@@ -14,7 +14,7 @@ import { useTheme } from '../ui/ThemeProvider';
  * confirmations stay in the screen.
  */
 export function SelectionToolbar({ count, onCancel, actions = [], cancelLabel = 'Cancel' }) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   return (
     <View
       style={[
@@ -34,7 +34,16 @@ export function SelectionToolbar({ count, onCancel, actions = [], cancelLabel = 
         accessibilityLabel="Cancel selection"
         onPress={onCancel}
         hitSlop={8}
-        style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+        style={({ pressed }) => [
+          styles.cancel,
+          {
+            backgroundColor: pressed ? colors.surfaceMuted : 'transparent',
+            borderColor: colors.border,
+            borderRadius: radius.pill,
+            paddingHorizontal: spacing.md,
+            paddingVertical: spacing.xs,
+          },
+        ]}
       >
         <Text variant="label" tone="muted">
           {cancelLabel}
@@ -62,6 +71,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
+  },
+  cancel: {
+    borderWidth: 1,
   },
   count: {
     flex: 1,
