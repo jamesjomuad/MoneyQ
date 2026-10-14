@@ -4,6 +4,21 @@ All notable changes to Budgetarian. Dates are local calendar days; newest first.
 
 ## 2026-10-13
 
+### Added
+- Share e-wallet receipts into Budgetarian from any Android app: Budgetarian
+  now appears in the system Sharesheet for images and plain text (expo-sharing's
+  share-target config, ACTION_SEND and ACTION_SEND_MULTIPLE). A new
+  Import Receipt screen previews the shared image (copied into the app's cache
+  so the temporary share grant is never relied on), shows the shared text,
+  and hands off to the existing transaction form with a chosen budget.
+  A deterministic, offline parser prefills amount and date only when the
+  receipt text states them unambiguously — labeled or currency-marked totals,
+  real calendar dates with a year, and refusal of ambiguous day/month pairs —
+  and every remaining line is preserved verbatim in Description. No OCR, AI,
+  or network processing; nothing is saved until the user confirms, and
+  cancelling leaves no trace. Receiving shares requires a development build
+  or EAS APK (not Expo Go).
+
 ### Changed
 - App renamed from MoneyQ to **Budgetarian**: the Expo display name, the
   branded theme label, on-device copy, backup file names
