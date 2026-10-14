@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,14 +32,25 @@ import { useTheme } from '../ui/ThemeProvider';
  * the backdrop, or Android's back button collapses the menu first. Both
  * actions reuse the existing /folder/form and /budget/form routes; the menu
  * always restores to its collapsed state before navigating.
+ *
+ * The active tab background is a single rounded-square chip shared by all
+ * tabs: it glides (300 ms ease-in-out) to whichever tab `state.index` points
+ * at, with a subtle squash-and-stretch morph, while the icon itself gently
+ * scales up. Tabs report their layout once; the chip follows the navigation
+ * state, so programmatic tab changes animate identically.
  */
 
 const CARD_H = 74; // capsule height (excludes the safe-area spacing below it)
 const CARD_PAD = 8; // horizontal padding inside the capsule
-const ICON_SIZE = 24;
+const ICON_SIZE = 24; // regular glyph; the active tab scales it ×1.10 (~26 px)
 const LABEL_SIZE = 11;
-const INDICATOR_W = 56; // active pill width behind the icon
-const INDICATOR_H = 30; // active pill height (and true pill radius = H / 2)
+const ZONE_W = 56; // shared icon + label container width: fixed, so a long
+//                   label can never stretch a tab; it truncates instead
+const CHIP_SIZE = 34; // active rounded-square wrapper (zone height matches it)
+const CHIP_RADIUS = 11; // moderate corner radius (never circular or pill-shaped)
+const TAB_PAD_V = 4; // tab vertical padding (icon zone position is measured,
+//                    never inferred from this)
+const TRAVEL_MS = 300; // chip glide duration between tabs (ease-in-out)
 
 const FAB_GREEN = 54; // green action diameter
 const FAB_RING = 3; // surface ring that separates it from the card
@@ -48,12 +61,20 @@ const FAB_SLOT = FAB_OUTER + 16; // center slot: action + clearance from tabs
 const MENU_H = 48; // create-menu pill height (comfortable Android touch target)
 
 /**
- * One tab: icon inside a soft pill, short label below. Only the indicator pill
- * animates (opacity + slight scale, 180 ms); the color swap is a plain
- * re-render, so nothing animates per-frame for every tab. Every slot shares the
- * same fixed heights, so all icons center and all labels sit on one baseline.
+ * One tab: a prominent icon over a short label, inside a fixed-size slot.
+ * The active-state background is NOT rendered here — a single shared chip in
+ * BottomTabBar glides between tabs and sits behind whichever icon is active.
+ * This slot reports the ICON ZONE's layout, not the tab's: the tab's total
+ * height depends on the label (which reflows when fonts load or weights
+ * change), so inferring the icon's position from it drifts. Instead both the
+ * tab (relative to the card) and the icon zone (relative to the tab) are
+ * measured, and their offsets are summed — the chip then centers on the exact
+ * zone the icon lives in, never on the label. The slot also gently scales its
+ * own icon up when focused (~1.10 over 180 ms); the color swap is a plain
+ * re-render. Every slot shares the same fixed sizes, so nothing shifts while
+ * the chip morphs between tabs.
  */
-function TabButton({ descriptor, route, focused, navigate }) {
+function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
   const { colors } = useTheme();
   const reduced = useReducedMotion();
   const options = descriptor?.options ?? route.options ?? {};
@@ -64,48 +85,73 @@ function TabButton({ descriptor, route, focused, navigate }) {
     focus.value = withTiming(focused ? 1 : 0, { duration: reduced ? 0 : 180 });
   }, [focused, reduced, focus]);
 
-  const indicatorStyle = useAnimatedStyle(() => ({
-    opacity: 0.5 + 0.5 * focus.value,
-    transform: [{ scale: 0.9 + 0.1 * focus.value }],
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + 0.1 * focus.value }],
   }));
+
+  const tabLayout = useRef(null);
+  const zoneLayout = useRef(null);
+
+  // Report the icon zone's position in CARD coordinates: zone offset within
+  // the tab + tab offset within the card. Either layout event re-reports the
+  // pair, so late label reflows (font loads) keep the chip's target exact.
+  const reportZone = useCallback(() => {
+    if (!tabLayout.current || !zoneLayout.current) return;
+    onMeasure(route.key, {
+      height: zoneLayout.current.height,
+      width: zoneLayout.current.width,
+      x: tabLayout.current.x + zoneLayout.current.x,
+      y: tabLayout.current.y + zoneLayout.current.y,
+    });
+  }, [onMeasure, route.key]);
+
+  const handleTabLayout = useCallback(
+    (event) => {
+      tabLayout.current = event.nativeEvent.layout;
+      reportZone();
+    },
+    [reportZone],
+  );
+
+  const handleZoneLayout = useCallback(
+    (event) => {
+      zoneLayout.current = event.nativeEvent.layout;
+      reportZone();
+    },
+    [reportZone],
+  );
 
   return (
     <Pressable
       accessibilityRole="tab"
       accessibilityLabel={label}
       accessibilityState={{ selected: focused }}
+      onLayout={handleTabLayout}
       onPress={() => {
         if (!focused) navigate(route.name);
       }}
       style={({ pressed }) => [styles.tab, { opacity: pressed ? 0.7 : 1 }]}
     >
-      <View style={styles.iconWrap}>
-        <Animated.View
-          style={[
-            styles.indicator,
-            {
-              pointerEvents: 'none',
-              backgroundColor: colors.primarySoft,
-              borderRadius: INDICATOR_H / 2,
-            },
-            indicatorStyle,
-          ]}
-        />
-        {options.tabBarIcon?.({
-          focused,
-          color: focused ? colors.primary : colors.textMuted,
-          size: ICON_SIZE,
-        })}
+      <View onLayout={handleZoneLayout} style={styles.iconWrap}>
+        <Animated.View style={iconStyle}>
+          {options.tabBarIcon?.({
+            focused,
+            color: focused ? colors.primary : colors.textMuted,
+            size: ICON_SIZE,
+          })}
+        </Animated.View>
       </View>
       <Text
         variant="caption"
         tone={focused ? 'primary' : 'muted'}
         numberOfLines={1}
-        style={{
-          fontSize: LABEL_SIZE,
-          fontFamily: focused ? 'Manrope_600SemiBold' : 'Manrope_500Medium',
-          marginTop: 3,
-        }}
+        style={[
+          styles.label,
+          {
+            fontFamily: focused ? 'Manrope_600SemiBold' : 'Manrope_500Medium',
+            fontSize: LABEL_SIZE,
+          },
+        ]}
       >
         {label}
       </Text>
@@ -163,13 +209,84 @@ export function BottomTabBar({ state, descriptors, navigation }) {
 
   const routes = state.routes;
   const middle = Math.ceil(routes.length / 2);
+  const activeKey = routes[state.index]?.key;
+
+  // The shared active chip: one Animated.View that glides to whichever tab
+  // is selected. Each TabButton reports its ICON ZONE's position in card
+  // coordinates into measuresRef; the effect below places the chip's center
+  // exactly on that zone's center — including when the route changes from
+  // another screen, because it follows `state.index`, not press callbacks.
+  const measuresRef = useRef({});
+  const placedRef = useRef(false);
+  const [measuredTick, setMeasuredTick] = useState(0);
+  const chipX = useSharedValue(0);
+  const chipTop = useSharedValue(0);
+  const chipVisible = useSharedValue(0);
+  const morph = useSharedValue(0);
+
+  const handleMeasure = useCallback((key, layout) => {
+    const prev = measuresRef.current[key];
+    measuresRef.current[key] = layout;
+    if (
+      !prev ||
+      prev.x !== layout.x ||
+      prev.y !== layout.y ||
+      prev.width !== layout.width ||
+      prev.height !== layout.height
+    ) {
+      setMeasuredTick((tick) => tick + 1);
+    }
+  }, []);
+
+  useEffect(() => {
+    const zone = activeKey ? measuresRef.current[activeKey] : undefined;
+    if (!zone) return;
+    // Center-to-center: the chip's geometric center lands on the measured
+    // icon zone's center. No padding or label assumptions — the zone's own
+    // x/y/width/height (summed up to card coordinates) fully decide it, so
+    // the first and last tabs align like every other one.
+    const left = zone.x + (zone.width - CHIP_SIZE) / 2;
+    const top = zone.y + (zone.height - CHIP_SIZE) / 2;
+    chipTop.value = top;
+    if (!placedRef.current) {
+      // First layout: snap into place unseen, then fade in.
+      placedRef.current = true;
+      chipX.value = left;
+      chipVisible.value = withTiming(1, { duration: reduced ? 0 : 180 });
+      return;
+    }
+    if (Math.abs(chipX.value - left) < 0.5) {
+      return; // x unchanged (e.g., label reflow moved only `top`) — no travel
+    }
+    chipX.value = withTiming(left, {
+      duration: reduced ? 0 : TRAVEL_MS,
+      easing: Easing.inOut(Easing.ease),
+    });
+    // Subtle squash-and-stretch + softer corners mid-travel: reads as one
+    // shape morphing between slots, without bouncing past either tab.
+    morph.value = withSequence(
+      withTiming(1, { duration: reduced ? 0 : 130, easing: Easing.out(Easing.quad) }),
+      withTiming(0, { duration: reduced ? 0 : 170, easing: Easing.in(Easing.quad) }),
+    );
+  }, [activeKey, measuredTick, reduced, chipX, chipTop, chipVisible, morph]);
+
+  const chipStyle = useAnimatedStyle(() => ({
+    borderRadius: CHIP_RADIUS + 3 * morph.value,
+    opacity: chipVisible.value,
+    top: chipTop.value,
+    transform: [
+      { translateX: chipX.value },
+      { scaleX: 1 + 0.12 * morph.value },
+      { scaleY: 1 - 0.08 * morph.value },
+    ],
+  }));
 
   const [expanded, setExpanded] = useState(false);
   const open = useSharedValue(0);
   const pushingRef = useRef(false);
 
   // The shared 0→1 value follows `expanded` through one effect (same pattern
-  // as TabButton's focus pill), so no callback ever mutates a hook value.
+  // as TabButton's focus value), so no callback ever mutates a hook value.
   useEffect(() => {
     open.value = withTiming(expanded ? 1 : 0, { duration: reduced ? 0 : 220 });
   }, [expanded, reduced, open]);
@@ -260,12 +377,22 @@ export function BottomTabBar({ state, descriptors, navigation }) {
             },
           ]}
         >
+          {/* The single shared active chip. Rendered FIRST so every tab's
+              icon paints on top of it; it never intercepts touches. */}
+          <Animated.View
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+            pointerEvents="none"
+            style={[styles.chip, { backgroundColor: colors.primarySoft }, chipStyle]}
+          />
+
           {routes.slice(0, middle).map((route, i) => (
             <TabButton
               key={route.key}
               descriptor={descriptors[route.key]}
               focused={state.index === i}
               navigate={navigate}
+              onMeasure={handleMeasure}
               route={route}
             />
           ))}
@@ -286,6 +413,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
                 descriptor={descriptors[route.key]}
                 focused={state.index === index}
                 navigate={navigate}
+                onMeasure={handleMeasure}
                 route={route}
               />
             );
@@ -390,16 +518,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: TAB_PAD_V,
   },
   iconWrap: {
     alignItems: 'center',
-    height: INDICATOR_H,
+    // Square zone sized exactly to the chip, so the wrapper never overhangs
+    // into the label and the icon centers with even air on all sides.
+    height: CHIP_SIZE,
     justifyContent: 'center',
-    width: INDICATOR_W,
+    width: ZONE_W,
   },
-  indicator: {
-    ...StyleSheet.absoluteFillObject,
+  chip: {
+    // Anchored at the card's origin; translateX/top in the animated style
+    // steer it to the active tab's measured icon zone.
+    height: CHIP_SIZE,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+    width: CHIP_SIZE,
+  },
+  label: {
+    // Same fixed width as the icon container: labels center under the icon
+    // and a long one truncates rather than stretching the tab.
+    marginTop: 4,
+    textAlign: 'center',
+    width: ZONE_W,
   },
   fab: {
     alignItems: 'center',
