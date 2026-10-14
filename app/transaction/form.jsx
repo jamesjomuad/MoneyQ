@@ -12,10 +12,12 @@ import {
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { DatePicker } from '../../components/dates/DatePicker';
 import { AmountInput } from '../../components/ui/AmountInput';
@@ -312,7 +314,6 @@ export default function TransactionFormScreen() {
       : toIsoDate(new Date())),
   );
   const [description, setDescription] = useState(imported?.notes ?? '');
-  const [query, setQuery] = useState('');
   const [pendingReminders, setPendingReminders] = useState([]);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -542,11 +543,36 @@ export default function TransactionFormScreen() {
     ];
   }, [editing]);
 
-  const visibleTags = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return tags;
-    return tags.filter((tag) => tag.name.toLowerCase().includes(needle));
-  }, [tags, query]);
+  // Horizontal tag row edge fades: track the scroll position, the total tag
+  // row width, and the visible viewport width. A fade only appears while
+  // there is real overflow hidden behind its edge — no scroll overflow means
+  // no fades, at the start means no left fade, at the end no right fade.
+  const tagMetricsRef = useRef({ x: 0, contentWidth: 0, viewportWidth: 0 });
+  const [tagFades, setTagFades] = useState({ left: false, right: false });
+
+  function refreshTagFades() {
+    const { x, contentWidth, viewportWidth } = tagMetricsRef.current;
+    const overflow = contentWidth > viewportWidth + 1;
+    const next = { left: overflow && x > 1, right: overflow && x + viewportWidth < contentWidth - 1 };
+    setTagFades((current) =>
+      current.left === next.left && current.right === next.right ? current : next,
+    );
+  }
+
+  function handleTagScroll(event) {
+    tagMetricsRef.current.x = event.nativeEvent.contentOffset.x;
+    refreshTagFades();
+  }
+
+  function handleTagContentSize(width) {
+    tagMetricsRef.current.contentWidth = width;
+    refreshTagFades();
+  }
+
+  function handleTagLayout(event) {
+    tagMetricsRef.current.viewportWidth = event.nativeEvent.layout.width;
+    refreshTagFades();
+  }
 
   const stillLoading = Boolean(transactionId) && (isLoadingBudget || storeBudgetId !== budgetId);
 
@@ -883,31 +909,29 @@ export default function TransactionFormScreen() {
           </EmptyState>
         ) : (
           <>
-            <TextField
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search tags"
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              style={{ marginBottom: spacing.sm }}
-            />
-            <View style={styles.wrap}>
-              {visibleTags.map((tag) => (
-                <Chip
-                  key={tag.id}
-                  label={tag.name}
-                  emoji={tag.emoji}
-                  active={tag.id === tagId}
-                  onPress={() => setTagId(tag.id === tagId ? '' : tag.id)}
-                />
-              ))}
+            <View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                scrollEventThrottle={16}
+                onScroll={handleTagScroll}
+                onContentSizeChange={handleTagContentSize}
+                onLayout={handleTagLayout}
+                contentContainerStyle={styles.tagRow}
+              >
+                {tags.map((tag) => (
+                  <Chip
+                    key={tag.id}
+                    label={tag.name}
+                    emoji={tag.emoji}
+                    active={tag.id === tagId}
+                    onPress={() => setTagId(tag.id === tagId ? '' : tag.id)}
+                  />
+                ))}
+              </ScrollView>
+              {tagFades.left ? <TagEdgeFade side="left" color={colors.background} /> : null}
+              {tagFades.right ? <TagEdgeFade side="right" color={colors.background} /> : null}
             </View>
-            {visibleTags.length === 0 ? (
-              <Text variant="caption" tone="faint">
-                No tag matches “{query.trim()}”.
-              </Text>
-            ) : null}
             {errors.tag ? (
               <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
                 {errors.tag}
@@ -1205,10 +1229,59 @@ export default function TransactionFormScreen() {
 }
 
 function SecondaryLink({ label, onPress, icon }) {
-  const { spacing } = useTheme();
+  const { radius, spacing } = useTheme();
   return (
-    <View style={{ marginTop: spacing.xs }}>
-      <Button label={label} icon={icon} variant="secondary" onPress={onPress} />
+    <View style={{ marginTop: spacing.xs, alignItems: 'center' }}>
+      {/* Auto-sized to its label and pill-rounded like the tag chips above,
+          so it doesn't read as a square-cornered outlier on this screen. */}
+      <Button
+        label={label}
+        icon={icon}
+        variant="primary"
+        onPress={onPress}
+        style={{ borderRadius: radius.pill }}
+      />
+    </View>
+  );
+}
+
+/** Narrow gradient overlay hinting at off-screen tags at one edge of the row. */
+const TAG_FADE_WIDTH = 24;
+
+/**
+ * SVG edge gradient (react-native-svg, already a dependency) fading the
+ * section background into transparency over the horizontal tag row. It paints
+ * above the scroll content but forwards every touch (`pointerEvents="none"`),
+ * so tag taps and swipes never hit the fade. `color` comes from the theme, so
+ * light and dark modes blend exactly like the screen behind it.
+ */
+function TagEdgeFade({ side, color }) {
+  const leading = side === 'left';
+  const gradientId = `tag-fade-${side}`;
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.tagFade,
+        { width: TAG_FADE_WIDTH },
+        leading ? { left: 0 } : { right: 0 },
+      ]}
+    >
+      <Svg width="100%" height="100%">
+        <Defs>
+          <LinearGradient
+            id={gradientId}
+            x1={leading ? '0%' : '100%'}
+            y1="0%"
+            x2={leading ? '100%' : '0%'}
+            y2="0%"
+          >
+            <Stop offset="0" stopColor={color} stopOpacity={1} />
+            <Stop offset="1" stopColor={color} stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradientId})`} />
+      </Svg>
     </View>
   );
 }
@@ -1217,4 +1290,6 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap' },
+  tagRow: { alignItems: 'center', paddingRight: 6 },
+  tagFade: { bottom: 0, position: 'absolute', top: 0 },
 });
