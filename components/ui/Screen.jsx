@@ -38,6 +38,11 @@ export function Screen({
   // responder regardless of termination refusals, so the only reliable way to
   // keep a child drag alive is to stop the scroll container from scrolling.
   scrollEnabled = true,
+  // Attach the ScrollView instance so a child drag (DraggableRows) can lock
+  // scrolling and drive edge auto-scroll via scrollTo/measureInWindow.
+  scrollRef,
+  // Forwarded for auto-scroll bookkeeping; throttled like the RN docs suggest.
+  onScroll,
 }) {
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
@@ -74,11 +79,14 @@ export function Screen({
 
   return (
     <Animated.ScrollView
+      ref={scrollRef}
       entering={entering}
       style={[styles.fill, { backgroundColor: colors.background }]}
       contentContainerStyle={contentStyle}
       keyboardShouldPersistTaps="handled"
       scrollEnabled={scrollEnabled}
+      onScroll={onScroll}
+      scrollEventThrottle={onScroll ? 16 : 0}
       refreshing={refreshing}
       onRefresh={onRefresh}
     >

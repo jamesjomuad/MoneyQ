@@ -1,8 +1,10 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { BudgetCard } from '../../components/budgets/BudgetCard';
+import { DraggableRows } from '../../components/lists/DraggableRows';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -15,6 +17,7 @@ import { resolveFolderPalette } from '../../utils/colors';
 import { useBudgetsStore } from '../../stores/budgetsStore';
 import { useFoldersStore } from '../../stores/foldersStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { showToast } from '../../stores/toastStore';
 
 /**
  * One budget folder's contents: only the budgets assigned to it. The folder
@@ -37,6 +40,7 @@ export default function FolderDetailScreen() {
   const loadBudgets = useBudgetsStore((state) => state.load);
   const togglePinned = useBudgetsStore((state) => state.togglePinned);
   const pinnedIds = useBudgetsStore((state) => state.pinnedIds);
+  const reorderBudget = useBudgetsStore((state) => state.reorderBudget);
 
   const folders = useFoldersStore((state) => state.folders);
   const isLoadingFolders = useFoldersStore((state) => state.isLoading);
@@ -52,6 +56,44 @@ export default function FolderDetailScreen() {
 
   const folder = folders.find((entry) => entry.id === folderId) ?? null;
   const folderBudgets = budgets.filter((budget) => budget.folder_id === folderId);
+
+  // Drag-and-drop reordering (same contract as Home): lock the scroll while a
+  // row is lifted and drive edge auto-scroll programmatically through
+  // scrollRef. This list IS the budget's scope, so the drop index goes
+  // straight to the repository — no per-kind translation needed.
+  const [liftedKey, setLiftedKey] = useState(null);
+  const scrollRef = useRef(null);
+  const offsetRef = useRef(0);
+  const handleScroll = useCallback((event) => {
+    offsetRef.current = event.nativeEvent.contentOffset.y;
+  }, []);
+  const dragScroll = useMemo(
+    () => ({
+      scrollTo: (y) =>
+        scrollRef.current?.scrollTo({ x: 0, y: Math.max(0, y), animated: false }),
+      getOffset: () => offsetRef.current,
+      getViewport: (report) =>
+        scrollRef.current?.measureInWindow((_x, y, _w, h) => report({ y, h })),
+    }),
+    [],
+  );
+  const dragItems = useMemo(
+    () => folderBudgets.map((budget) => ({ budget, key: `b_${budget.id}` })),
+    [folderBudgets],
+  );
+  const handleReorder = useCallback(
+    async (item, targetIndex) => {
+      try {
+        await reorderBudget(item.budget.id, targetIndex);
+      } catch (error) {
+        showToast(
+          error?.message ?? 'Could not reorder. Please try again.',
+          'error',
+        );
+      }
+    },
+    [reorderBudget],
+  );
 
   // One stable press handler for every card so memoized cards can skip
   // re-renders; BudgetCard passes the budget it was given.
@@ -120,7 +162,7 @@ export default function FolderDetailScreen() {
   }
 
   return (
-    <View style={styles.fill}>
+    <GestureHandlerRootView style={styles.fill}>
       <Stack.Screen
         options={{
           title: folder.name,
@@ -147,7 +189,13 @@ export default function FolderDetailScreen() {
         }}
       />
 
-      <Screen topInset={false} bottomSpace={FAB_SIZE + spacing.xl}>
+      <Screen
+        topInset={false}
+        bottomSpace={FAB_SIZE + spacing.xl}
+        scrollRef={scrollRef}
+        onScroll={handleScroll}
+        scrollEnabled={liftedKey === null}
+      >
         <View style={[styles.metaRow, { gap: spacing.sm }]}>
           <View
             style={[
@@ -165,7 +213,7 @@ export default function FolderDetailScreen() {
           <EmptyState
             icon="folder"
             title="No budgets in this folder yet"
-            description="Create a new budget here, or move an existing one in from Home with a long press."
+            description="Create a new budget here, or move an existing one in from Home with Select."
           >
             <Button
               label="New budget in this folder"
@@ -192,24 +240,30 @@ export default function FolderDetailScreen() {
               }
             />
             <Card padded={false}>
-              {folderBudgets.map((budget, index) => (
-                <BudgetCard
-                  key={budget.id}
-                  budget={budget}
-                  currency={currency}
-                  pinned={pinnedIds.includes(budget.id)}
-                  onTogglePin={togglePinned}
-                  onPress={openBudget}
-                  isLast={index === folderBudgets.length - 1}
-                />
-              ))}
+              <DraggableRows
+                items={dragItems}
+                scroll={dragScroll}
+                onLiftChange={setLiftedKey}
+                onReorder={handleReorder}
+                renderItem={(item, index, total, lifted) => (
+                  <BudgetCard
+                    key={item.key}
+                    budget={item.budget}
+                    currency={currency}
+                    pinned={pinnedIds.includes(item.budget.id)}
+                    onTogglePin={togglePinned}
+                    onPress={lifted ? undefined : openBudget}
+                    isLast={index === total - 1}
+                  />
+                )}
+              />
             </Card>
           </>
         )}
       </Screen>
 
       <Fab onPress={openCreateBudget} accessibilityLabel="Create a new budget in this folder" />
-    </View>
+    </GestureHandlerRootView>
   );
 }
 

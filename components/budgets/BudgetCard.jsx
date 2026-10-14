@@ -1,5 +1,6 @@
 import { memo, useCallback } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
@@ -20,9 +21,16 @@ import { formatDateRange } from '../../utils/dates';
  * Handlers receive the budget (or its id for the pin), so list screens pass
  * one stable callback instead of a fresh closure per card — the memo below
  * only pays off when props stay referentially equal between renders.
+ *
+ * Selection mode: `selectable` reveals a Gmail-style checkbox to the LEFT of
+ * the chip (fading in subtly), and `selected` fills it. The row's own press
+ * owns the toggle — the checkbox is not a second target, so it can never
+ * race or start a drag. The chevron stays in place so rows don't jump.
+ * Folders have no checkbox: only budgets are ever eligible to move.
  */
-export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, onLongPress, selected = false, isLast = false }) {
+export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, selected = false, selectable = false, isLast = false }) {
   const { colors, radius, spacing } = useTheme();
+  const reduced = useReducedMotion();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
   // A user-selected color paints the chip exactly in every theme; budgets
   // without one fall back to the theme's primary tokens.
@@ -30,7 +38,6 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
   const period = formatDateRange(budget.start_date, budget.end_date);
 
   const handlePress = useCallback(() => onPress?.(budget), [onPress, budget]);
-  const handleLongPress = useCallback(() => onLongPress?.(budget), [onLongPress, budget]);
   const handleTogglePin = useCallback(() => onTogglePin?.(budget.id), [onTogglePin, budget.id]);
 
   return (
@@ -39,7 +46,6 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
       accessibilityLabel={`${budget.name}, ${formatCurrency(budget.spent, { currency })} spent, ${formatCurrency(balance, { currency })} balance`}
       accessibilityState={{ selected }}
       onPress={handlePress}
-      onLongPress={onLongPress ? handleLongPress : undefined}
       style={({ pressed }) => [
         styles.row,
         {
@@ -52,6 +58,23 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
         pressed ? { opacity: 0.7 } : null,
       ]}
     >
+      {selectable ? (
+        <Animated.View entering={reduced ? undefined : FadeIn.duration(180)}>
+          <View
+            style={[
+              styles.checkbox,
+              {
+                borderRadius: radius.pill,
+                borderColor: selected ? colors.primary : colors.border,
+                backgroundColor: selected ? colors.primary : 'transparent',
+              },
+            ]}
+          >
+            {selected ? <Icon name="check" size={14} color={colors.onPrimary} /> : null}
+          </View>
+        </Animated.View>
+      ) : null}
+
       <View
         style={[
           styles.iconChip,
@@ -102,18 +125,7 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
         </Pressable>
       ) : null}
 
-      {selected ? (
-        <View
-          style={[
-            styles.checkmark,
-            { backgroundColor: colors.primary, borderRadius: radius.pill },
-          ]}
-        >
-          <Icon name="check" size={14} color={colors.onPrimary} />
-        </View>
-      ) : (
-        <Icon name="chevronRight" size={16} color={colors.textFaint} />
-      )}
+      <Icon name="chevronRight" size={16} color={colors.textFaint} />
     </Pressable>
   );
 });
@@ -149,8 +161,9 @@ const styles = StyleSheet.create({
   pinDimmed: {
     opacity: 0.45,
   },
-  checkmark: {
+  checkbox: {
     alignItems: 'center',
+    borderWidth: 2,
     height: 22,
     justifyContent: 'center',
     width: 22,

@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import { BudgetCard } from "../../components/budgets/BudgetCard";
 import { FolderGroupCard } from "../../components/budgets/FolderGroupCard";
 import { FolderPickerSheet } from "../../components/budgets/FolderPickerSheet";
 import { PinnedFolders } from "../../components/budgets/PinnedFolders";
+import { DraggableRows } from "../../components/lists/DraggableRows";
 import { TransactionRow } from "../../components/transactions/TransactionRow";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -43,15 +44,52 @@ export default function HomeScreen() {
   const load = useBudgetsStore((state) => state.load);
   const togglePinned = useBudgetsStore((state) => state.togglePinned);
   const moveManyToFolder = useBudgetsStore((state) => state.moveManyToFolder);
+  const reorderBudget = useBudgetsStore((state) => state.reorderBudget);
   const folders = useFoldersStore((state) => state.folders);
   const loadFolders = useFoldersStore((state) => state.load);
+  const moveFolder = useFoldersStore((state) => state.moveFolder);
   const currency = useSettingsStore((state) => state.currency);
 
-  // Bulk move: a long press picks up the first budget, taps then add or
-  // remove; the bottom bar shows the count and opens the destination sheet.
+  // Bulk move lives in an explicit Gmail-style selection mode entered from the
+  // "Select" header action (never a gesture — long-press belongs to drag
+  // alone). Checkboxes appear on budget rows; the bottom bar shows the count,
+  // a Cancel that clears everything, and the disabled-until-something-is-
+  // picked Move to Folder action.
+  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const selecting = selectedIds.length > 0;
+  const selecting = selectionMode;
+
+  const enterSelection = useCallback(() => {
+    setSelectionMode(true);
+    setSelectedIds([]);
+  }, []);
+
+  const exitSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds([]);
+  }, []);
+
+  // Drag-and-drop reordering: `liftedKey` is the row currently held by a
+  // long-press drag (null while idle). The list scroll locks while it is set
+  // — the sanctioned Android pattern — and edge auto-scroll drives the list
+  // programmatically through scrollRef, which keeps working while locked.
+  const [liftedKey, setLiftedKey] = useState(null);
+  const scrollRef = useRef(null);
+  const offsetRef = useRef(0);
+  const handleScroll = useCallback((event) => {
+    offsetRef.current = event.nativeEvent.contentOffset.y;
+  }, []);
+  const dragScroll = useMemo(
+    () => ({
+      scrollTo: (y) =>
+        scrollRef.current?.scrollTo({ x: 0, y: Math.max(0, y), animated: false }),
+      getOffset: () => offsetRef.current,
+      getViewport: (report) =>
+        scrollRef.current?.measureInWindow((_x, y, _w, h) => report({ y, h })),
+    }),
+    [],
+  );
 
   // Intro state: `playIntro` freezes at mount so re-renders never restart it;
   // the module flag flips once the first settled content (not the loading
@@ -200,10 +238,8 @@ export default function HomeScreen() {
     );
   }, []);
 
-  const startSelect = useCallback((budget) => setSelectedIds([budget.id]), []);
-
-  // One press handler for every card: its behavior only changes when the
-  // screen flips in or out of selection mode, not per keystroke or per card.
+  // One press handler for every card: entering selection mode flips rows from
+  // "open" to "toggle checkbox"; tapping a checkbox is tapping its row.
   const handlePressBudget = useCallback(
     (budget) => {
       if (selecting) toggleSelected(budget);
@@ -222,10 +258,59 @@ export default function HomeScreen() {
     });
   }, []);
 
+  // Mixed-list guard for drag: the unified list is folders-then-budgets, and
+  // each kind persists positions only within its own scope. A dragged row
+  // may therefore only land inside its own block — folders stay above the
+  // divider, budgets below — so the candidate splice index gets clamped to
+  // the block boundaries before the drop commits.
+  const resolveMixedTarget = useCallback(
+    (item, fromIndex, candidateIndex, list) => {
+      const firstBudget = list.findIndex((x) => x.kind === 'budget');
+      if (firstBudget === -1) return candidateIndex; // folders only
+      if (item.kind === 'folder') {
+        return Math.min(candidateIndex, firstBudget - 1);
+      }
+      return Math.max(candidateIndex, firstBudget);
+    },
+    [],
+  );
+
+  // The drop target is an index in the mixed list; translate it into the
+  // row's index within its own kind in the FINAL ordering, which is exactly
+  // what the per-scope repositories (moveFolder / reorderBudget) expect.
+  const handleReorder = useCallback(
+    async (item, targetIndex) => {
+      const from = listItems.findIndex((x) => x.key === item.key);
+      if (from === -1 || targetIndex === from) return;
+      const next = [...listItems];
+      const [moved] = next.splice(from, 1);
+      next.splice(targetIndex, 0, moved);
+      try {
+        if (moved.kind === 'folder') {
+          const idx = next
+            .filter((x) => x.kind === 'folder')
+            .findIndex((x) => x.key === moved.key);
+          await moveFolder(moved.folder.id, idx);
+        } else {
+          const idx = next
+            .filter((x) => x.kind === 'budget')
+            .findIndex((x) => x.key === moved.key);
+          await reorderBudget(moved.budget.id, idx);
+        }
+      } catch (error) {
+        showToast(
+          error?.message ?? 'Could not reorder. Please try again.',
+          'error',
+        );
+      }
+    },
+    [listItems, moveFolder, reorderBudget],
+  );
+
   // One row renderer for both the unified Home list and search results, so
   // folder and budget rows stay pixel-identical in every context. Search
   // rows keep pinning but never enter bulk-move selection.
-  const renderRow = (item, index, total, forSearch) => (
+  const renderRow = (item, index, total, forSearch, lifted = false) => (
     <Animated.View
       key={item.key}
       entering={introEnter(2 + Math.min(index, 4))}
@@ -235,11 +320,14 @@ export default function HomeScreen() {
           folder={item.folder}
           budgetCount={folderCounts.get(item.folder.id) ?? 0}
           isLast={index === total - 1}
-          onPress={() =>
-            router.push({
-              pathname: "/folder/[id]",
-              params: { id: item.folder.id },
-            })
+          onPress={
+            lifted || selecting
+              ? undefined
+              : () =>
+                  router.push({
+                    pathname: "/folder/[id]",
+                    params: { id: item.folder.id },
+                  })
           }
         />
       ) : (
@@ -248,9 +336,11 @@ export default function HomeScreen() {
           currency={currency}
           pinned={selecting && !forSearch ? false : pinnedIds.includes(item.budget.id)}
           onTogglePin={selecting && !forSearch ? undefined : togglePinned}
+          selectable={selecting && !forSearch}
           selected={!forSearch && selectedIds.includes(item.budget.id)}
-          onLongPress={forSearch || selecting ? undefined : startSelect}
-          onPress={forSearch ? openFolder : handlePressBudget}
+          onPress={
+            lifted ? undefined : forSearch ? openFolder : handlePressBudget
+          }
           isLast={index === total - 1}
         />
       )}
@@ -274,7 +364,7 @@ export default function HomeScreen() {
           onPress: async () => {
             try {
               await moveManyToFolder(selectedIds, folderId);
-              setSelectedIds([]);
+              exitSelection();
               showToast(
                 destination ? `Moved to ${destination}` : 'Moved to Home',
                 'success',
@@ -293,10 +383,33 @@ export default function HomeScreen() {
       {/* Home animates its own items, so the scroll body stays put. */}
       {/* The tab bar is in normal flow, so no large reserved clearance is
           needed; a modest gap keeps the last card off the pinned strip. */}
-      <Screen topInset enter={false}>
+      <Screen
+        topInset
+        enter={false}
+        scrollRef={scrollRef}
+        onScroll={handleScroll}
+        scrollEnabled={liftedKey === null}
+      >
         {budgets.length > 0 && !searching ? (
           <Animated.View entering={introEnter(1)}>
-            <SectionHeader title={`Your Budgets · ${budgets.length}`} />
+            <SectionHeader
+              title={`Your Budgets · ${budgets.length}`}
+              action={
+                selecting ? null : (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Select budgets to move"
+                    onPress={enterSelection}
+                    hitSlop={8}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+                  >
+                    <Text variant="label" tone="primary">
+                      Select
+                    </Text>
+                  </Pressable>
+                )
+              }
+            />
           </Animated.View>
         ) : null}
 
@@ -468,9 +581,17 @@ export default function HomeScreen() {
         ) : (
           <>
             <Card padded={false} style={{ marginBottom: spacing.sm }}>
-              {listItems.map((item, index) =>
-                renderRow(item, index, listItems.length, false)
-              )}
+              <DraggableRows
+                items={listItems}
+                disabled={selecting}
+                scroll={dragScroll}
+                onLiftChange={setLiftedKey}
+                resolveTarget={resolveMixedTarget}
+                onReorder={handleReorder}
+                renderItem={(item, index, total, lifted) =>
+                  renderRow(item, index, total, false, lifted)
+                }
+              />
             </Card>
 
             {/* The Plus action: same create entry Home offered before,
@@ -511,7 +632,7 @@ export default function HomeScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Cancel selection"
-            onPress={() => setSelectedIds([])}
+            onPress={exitSelection}
             hitSlop={8}
             style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
           >
@@ -523,8 +644,9 @@ export default function HomeScreen() {
             {selectedIds.length} selected
           </Text>
           <Button
-            label={`Move ${selectedIds.length} to…`}
+            label="Move to Folder"
             icon="folder"
+            disabled={selectedIds.length === 0}
             onPress={() => setPickerOpen(true)}
             style={styles.moveButton}
           />
