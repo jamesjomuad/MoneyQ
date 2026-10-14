@@ -1,20 +1,20 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { resolveRowTint } from '../../utils/colors';
+import { resolveRowChip } from '../../utils/colors';
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
 /**
- * A budget folder on Home as a compact list row: a softly tinted folder chip,
- * the name over a "Folder · N budgets" detail line, and a muted chevron. Rows
- * live inside a shared rounded card and are separated by hairlines, so a
- * folder and a budget read as one family. Folders hold no money — there are
- * deliberately no totals here.
+ * A budget folder on Home as a compact list row: a chip painted with the
+ * folder's exact saved color, the name over a "Folder · N budgets" detail
+ * line, and a muted chevron. Rows live inside a shared rounded card and are
+ * separated by hairlines, so a folder and a budget read as one family.
+ * Folders hold no money — there are deliberately no totals here.
  */
 export function FolderGroupCard({ folder, budgetCount, onPress, isLast = false }) {
-  const { colors, radius, scheme, spacing } = useTheme();
-  const tint = resolveRowTint(folder.color, colors, scheme);
+  const { colors, radius, spacing } = useTheme();
+  const chip = resolveRowChip(folder.color, colors);
 
   return (
     <Pressable
@@ -36,10 +36,10 @@ export function FolderGroupCard({ folder, budgetCount, onPress, isLast = false }
       <View
         style={[
           styles.iconChip,
-          { backgroundColor: tint.tint, borderRadius: radius.md },
+          { backgroundColor: chip.background, borderRadius: radius.md },
         ]}
       >
-        <Icon name="folder" size={20} color={tint.icon} />
+        <Icon name="folder" size={20} color={chip.icon} />
       </View>
 
       <View style={styles.copy}>

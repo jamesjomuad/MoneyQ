@@ -473,21 +473,10 @@ export default function HomeScreen() {
               )}
             </Card>
 
-            {/* The Plus actions: same create entries Home offered before,
+            {/* The Plus action: same create entry Home offered before,
                 now sitting under the single unified list. */}
-            <View style={styles.listActions}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Create a new budget folder"
-                onPress={() => router.push("/folder/form")}
-                hitSlop={8}
-                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-              >
-                <Text variant="label" tone="primary">
-                  + New folder
-                </Text>
-              </Pressable>
-              {ungrouped.length === 0 ? (
+            {ungrouped.length === 0 ? (
+              <View style={styles.listActions}>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Create a new budget"
@@ -499,8 +488,8 @@ export default function HomeScreen() {
                     + New budget
                   </Text>
                 </Pressable>
-              ) : null}
-            </View>
+              </View>
+            ) : null}
           </>
         )}
       </Screen>

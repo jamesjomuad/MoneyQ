@@ -5,27 +5,28 @@ import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 import { formatCurrency } from '../../utils/currency';
-import { resolveRowTint } from '../../utils/colors';
+import { resolveRowChip } from '../../utils/colors';
 import { computeBudgetBalance } from '../../utils/calculations';
 import { formatDateRange } from '../../utils/dates';
 
 /**
- * A Budget on Home as a compact list row: a softly tinted wallet chip, the
- * name over a "Budget · period" detail line, and a muted chevron. Rows live
- * inside a shared rounded card and are separated by hairlines, matching the
- * folder rows above them. There is no progress bar or limit, because a budget
- * only holds transactions rather than capping them.
+ * A Budget on Home as a compact list row: a chip painted with the budget's
+ * exact saved color, the name over a "Budget · period" detail line, the
+ * remaining amount, and a muted chevron. Rows live inside a shared rounded
+ * card and are separated by hairlines, matching the folder rows above them.
+ * There is no progress bar or limit, because a budget only holds transactions
+ * rather than capping them.
  *
  * Handlers receive the budget (or its id for the pin), so list screens pass
  * one stable callback instead of a fresh closure per card — the memo below
  * only pays off when props stay referentially equal between renders.
  */
 export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, onLongPress, selected = false, isLast = false }) {
-  const { colors, radius, scheme, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
-  // A user-selected folder color tints the chip identically in every theme;
-  // budgets without one fall back to the theme's primary tokens.
-  const tint = resolveRowTint(budget.color, colors, scheme);
+  // A user-selected color paints the chip exactly in every theme; budgets
+  // without one fall back to the theme's primary tokens.
+  const chip = resolveRowChip(budget.color, colors);
   const period = formatDateRange(budget.start_date, budget.end_date);
 
   const handlePress = useCallback(() => onPress?.(budget), [onPress, budget]);
@@ -54,10 +55,10 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
       <View
         style={[
           styles.iconChip,
-          { backgroundColor: tint.tint, borderRadius: radius.md },
+          { backgroundColor: chip.background, borderRadius: radius.md },
         ]}
       >
-        <Icon name="wallet" size={20} color={tint.icon} />
+        <Icon name="wallet" size={20} color={chip.icon} />
       </View>
 
       <View style={styles.copy}>
@@ -97,7 +98,7 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
           hitSlop={8}
           style={pinned ? null : styles.pinDimmed}
         >
-          <Icon name={pinned ? 'pinFilled' : 'pin'} size={16} color={tint.icon} />
+          <Icon name={pinned ? 'pinFilled' : 'pin'} size={16} color={chip.onSurface} />
         </Pressable>
       ) : null}
 

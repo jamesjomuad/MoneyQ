@@ -90,38 +90,48 @@ export function resolveFolderPalette(customColor, colors) {
 }
 
 /**
- * Resolve the softly tinted icon-chip colors for the compact Home rows.
+ * Resolve the icon-chip colors for the compact Home rows.
  *
- * A custom hex color becomes a pale (light theme) or deep (dark theme) chip by
- * mixing toward the theme surface; the icon then takes whichever of the base
- * color, a lightened, or a darkened variant reads best against that chip.
- * Items without a custom color fall back to the theme's primary tokens, so
- * the row stays quietly tinted rather than a heavy solid block in every theme.
+ * The chip paints with the item's exact saved hex — no lightening, fading,
+ * or theme substitution — so the row mirrors the color chosen in the item's
+ * color settings. Only the icon foreground adapts: it takes whichever of a
+ * light or dark ink reads better against that exact background, keeping the
+ * glyph accessible in light and dark themes alike. Items without a saved
+ * color fall back to the theme's primary tokens.
  *
  * @param {string|null|undefined} customColor user-selected hex, if any
- * @param {object} colors active theme colors
- * @param {string} scheme 'light' or 'dark' from the theme provider
- * @returns {{ tint: string, icon: string }}
+ * @param {object} colors active theme colors (fallback source)
+ * @returns {{ background: string, icon: string, onSurface: string }}
  */
-export function resolveRowTint(customColor, colors, scheme) {
+export function resolveRowChip(customColor, colors) {
   if (!isHexColor(customColor)) {
-    return { tint: colors.primarySoft, icon: colors.primary };
+    return {
+      background: colors.primarySoft,
+      icon: colors.primary,
+      onSurface: colors.primary,
+    };
   }
 
   const base = customColor.toUpperCase();
-  const tint = mixHex(base, colors.surface, scheme === 'light' ? 0.85 : 0.7);
-  const lightInk = mixHex(base, LIGHT_INK, 0.4);
-  const darkInk = mixHex(base, DARK_INK_BASE, 0.6);
+  const darkInk = mixHex(base, DARK_INK_BASE, 0.78);
+  const icon =
+    contrastRatio(base, LIGHT_INK) >= contrastRatio(base, darkInk)
+      ? LIGHT_INK
+      : darkInk;
 
-  let icon = base;
-  let best = contrastRatio(base, tint);
-  for (const candidate of [lightInk, darkInk]) {
-    const ratio = contrastRatio(candidate, tint);
+  // Trailing icons (pin) sit on the row surface, not on the exact-color chip,
+  // so they need a step of the saved hue that stays readable against it.
+  const lightStep = mixHex(base, LIGHT_INK, 0.45);
+  const darkStep = mixHex(base, DARK_INK_BASE, 0.45);
+  let onSurface = base;
+  let best = contrastRatio(base, colors.surface);
+  for (const candidate of [lightStep, darkStep]) {
+    const ratio = contrastRatio(candidate, colors.surface);
     if (ratio > best) {
       best = ratio;
-      icon = candidate;
+      onSurface = candidate;
     }
   }
 
-  return { tint, icon };
+  return { background: base, icon, onSurface };
 }
