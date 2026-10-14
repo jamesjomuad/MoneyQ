@@ -315,8 +315,8 @@ export function createSqliteAdapter(getDb) {
         `INSERT INTO transactions
            (id, budget_id, type, amount, tag_id, account_id, to_account_id, description,
             transaction_date, payment_status, has_breakdown, payment_due_date,
-            receipt_path, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         row.id,
         row.budget_id,
         row.type,
@@ -329,7 +329,6 @@ export function createSqliteAdapter(getDb) {
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
         row.payment_due_date ?? null,
-        row.receipt_path ?? null,
         row.created_at,
         row.updated_at,
       );
@@ -340,7 +339,7 @@ export function createSqliteAdapter(getDb) {
         `UPDATE transactions
             SET type = ?, amount = ?, tag_id = ?, description = ?,
                 transaction_date = ?, payment_status = ?, has_breakdown = ?,
-                payment_due_date = ?, receipt_path = ?, updated_at = ?
+                payment_due_date = ?, updated_at = ?
           WHERE id = ?`,
         row.type,
         row.amount,
@@ -350,7 +349,6 @@ export function createSqliteAdapter(getDb) {
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
         row.payment_due_date ?? null,
-        row.receipt_path ?? null,
         row.updated_at,
         row.id,
       );
@@ -358,7 +356,71 @@ export function createSqliteAdapter(getDb) {
     },
 
     async deleteTransaction(id) {
+      // attachments cascade with the parent (mirrored manually in the
+      // memory adapter); the files themselves are cleaned up by the store.
       const result = await run('DELETE FROM transactions WHERE id = ?', id);
+      return result.changes ?? 0;
+    },
+
+    // --- attachments (receipt images) ------------------------------------
+
+    /** Images of one transaction, oldest first — the stable gallery order. */
+    async listAttachmentsByTransaction(transactionId) {
+      return query(
+        `SELECT * FROM attachments
+          WHERE transaction_id = ?
+          ORDER BY created_at ASC, id ASC`,
+        transactionId,
+      );
+    },
+
+    /**
+     * Attachment rows of many parents in one read — chunked like the
+     * breakdown lookup so a large budget never serializes one query per
+     * transaction. Ordering within each parent matches
+     * listAttachmentsByTransaction (created_at, id).
+     */
+    async listAttachmentsForParents(ids) {
+      const unique = [...new Set(ids)];
+      const rows = [];
+      for (let i = 0; i < unique.length; i += 400) {
+        const chunk = unique.slice(i, i + 400);
+        rows.push(
+          ...(await query(
+            `SELECT * FROM attachments
+              WHERE transaction_id IN (${chunk.map(() => '?').join(', ')})
+              ORDER BY transaction_id, created_at ASC, id ASC`,
+            ...chunk,
+          )),
+        );
+      }
+      return rows;
+    },
+
+    async getAttachment(id) {
+      return first('SELECT * FROM attachments WHERE id = ?', id);
+    },
+
+    async insertAttachment(row) {
+      await run(
+        `INSERT INTO attachments (id, transaction_id, path, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        row.id,
+        row.transaction_id,
+        row.path,
+        row.created_at,
+        row.updated_at,
+      );
+    },
+
+    async deleteAttachment(id) {
+      const result = await run('DELETE FROM attachments WHERE id = ?', id);
+      return result.changes ?? 0;
+    },
+
+    /** Bulk removal before a rewrite; mirrors the FK cascade for a parent. */
+    async deleteAttachmentsForTransaction(transactionId) {
+      const result = await run('DELETE FROM attachments WHERE transaction_id = ?', transactionId);
       return result.changes ?? 0;
     },
 
@@ -691,7 +753,7 @@ export function createSqliteAdapter(getDb) {
             SET budget_id = ?, type = ?, amount = ?, tag_id = ?, account_id = ?,
                 to_account_id = ?, description = ?, transaction_date = ?,
                 payment_status = ?, has_breakdown = ?, payment_due_date = ?,
-                receipt_path = ?, created_at = ?, updated_at = ?
+                created_at = ?, updated_at = ?
           WHERE id = ?`,
         row.budget_id,
         row.type,
@@ -704,7 +766,6 @@ export function createSqliteAdapter(getDb) {
         row.payment_status ?? null,
         row.has_breakdown ? 1 : 0,
         row.payment_due_date ?? null,
-        row.receipt_path ?? null,
         row.created_at,
         row.updated_at,
         row.id,
@@ -740,6 +801,7 @@ export function createSqliteAdapter(getDb) {
     async clearAllData() {
       await exec(
         `DELETE FROM sub_transactions;
+         DELETE FROM attachments;
          DELETE FROM transactions;
          DELETE FROM reminders;
          DELETE FROM budgets;

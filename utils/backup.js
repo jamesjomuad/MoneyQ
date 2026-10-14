@@ -501,9 +501,10 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
       payment_status: paymentStatus,
       has_breakdown: hasBreakdown,
       payment_due_date: row.payment_due_date || null,
-      // receipt_path is deliberately not carried over: receipt image files
-      // live only on this device and never travel inside a JSON backup, so
-      // a restored transaction must not reference a file that is not there.
+      // Receipt attachments are deliberately not carried over: the
+      // `attachments` table is never exported and its image files live only
+      // on this device, so a restored transaction can never reference a
+      // file that is not there.
       created_at: coerceTimestamp(row.created_at, warnings, label, id, nowStamp, 'created_at'),
       updated_at: coerceTimestamp(row.updated_at, warnings, label, id, nowStamp, 'updated_at'),
     });

@@ -126,6 +126,7 @@ const foldersMigration = migrations.find((entry) => entry.version === 10);
 const perfIndexesMigration = migrations.find((entry) => entry.version === 11);
 const budgetPositionMigration = migrations.find((entry) => entry.version === 12);
 const receiptPathMigration = migrations.find((entry) => entry.version === 13);
+const attachmentsMigration = migrations.find((entry) => entry.version === 14);
 for (const entry of migrations) {
   if (
     entry === paymentMigration ||
@@ -136,7 +137,8 @@ for (const entry of migrations) {
     entry === foldersMigration ||
     entry === perfIndexesMigration ||
     entry === budgetPositionMigration ||
-    entry === receiptPathMigration
+    entry === receiptPathMigration ||
+    entry === attachmentsMigration
   ) {
     continue;
   }
@@ -185,11 +187,38 @@ await perfIndexesMigration.up(adapter);
 // Budget manual order last: its backfill ranks rows by folder_id, which only
 // exists after migration 10, and must run over real pre-existing budgets.
 await budgetPositionMigration.up(adapter);
-// Receipt attachments truly last: migration 8 rebuilds the transactions
-// table, so an ALTER applied before it would be dropped again — on a real
-// install runMigrations() applies version 13 after everything else, and the
-// receipt_path column must survive onto the rows older installs held.
+// Receipt attachments: migration 8 rebuilds the transactions table, so an
+// ALTER applied before it would be dropped again. Version 13 then 14 run
+// together at the very end, exactly as runMigrations() would apply them on
+// a device upgrading through both at once.
 await receiptPathMigration.up(adapter);
+// Before the attachments rebuild: a receipt reference in the legacy column
+// and a breakdown row, so the fold-in and the table swap are exercised on
+// real pre-existing data, not just declared.
+await adapter.runAsync(
+  `UPDATE transactions SET receipt_path = 'receipts/test-legacy.jpg' WHERE id = 'v4_expense'`,
+);
+await adapter.runAsync(
+  `INSERT INTO sub_transactions
+     (id, transaction_id, description, amount, position, created_at, updated_at)
+   VALUES ('v4_legacy_item', 'v4_expense', 'Legacy item', 500, 0, '2026-10-05', '2026-10-05')`,
+);
+await attachmentsMigration.up(adapter);
+check(
+  'migration 014 folds legacy receipt references into attachment rows',
+  (await adapter.getFirstAsync(
+    `SELECT path FROM attachments WHERE transaction_id = 'v4_expense'`,
+  ))?.path === 'receipts/test-legacy.jpg',
+);
+check(
+  'the attachments rebuild carries breakdown items through the table swap',
+  Boolean(
+    await adapter.getFirstAsync(`SELECT id FROM sub_transactions WHERE id = 'v4_legacy_item'`),
+  ),
+);
+// The later sections assume the fixtures never existed, so both go back out.
+await adapter.runAsync(`DELETE FROM sub_transactions WHERE id = 'v4_legacy_item'`);
+await adapter.runAsync(`DELETE FROM attachments WHERE transaction_id = 'v4_expense'`);
 
 // Same bookkeeping runMigrations() performs after applying a migration.
 db.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
@@ -200,6 +229,7 @@ const tables = (
 
 for (const expected of [
   'accounts',
+  'attachments',
   'budgets',
   'folders',
   'reminders',
@@ -269,9 +299,23 @@ check(
   transactionColumns.join(','),
 );
 check(
-  'transactions gained an optional receipt_path column',
-  transactionColumns.includes('receipt_path'),
+  'transactions lost the legacy receipt_path column',
+  !transactionColumns.includes('receipt_path'),
   transactionColumns.join(','),
+);
+const attachmentColumns = columnsOf('attachments');
+check(
+  'attachments carry parent, path and timestamps',
+  ['id', 'transaction_id', 'path', 'created_at', 'updated_at'].every((name) =>
+    attachmentColumns.includes(name),
+  ),
+  attachmentColumns.join(','),
+);
+const attachmentIndexes = db.prepare(`PRAGMA index_list(attachments)`).all();
+check(
+  'attachment reads by parent are indexed',
+  attachmentIndexes.some((index) => index.name === 'idx_attachments_transaction'),
+  attachmentIndexes.map((index) => index.name).join(','),
 );
 const v4AfterBreakdown = await adapter.getFirstAsync(
   `SELECT id, amount, has_breakdown FROM transactions WHERE id = 'v4_expense'`,
@@ -404,7 +448,7 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 13, String(LATEST_VERSION));
+check('LATEST_VERSION matches the migration list', LATEST_VERSION === 14, String(LATEST_VERSION));
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -1190,7 +1234,17 @@ async function runScenario(store) {
   });
   snapshot.dueEventsAfterClear = await store.listTransactionsByDueDateRange('2026-10-19', '2026-10-21');
   snapshot.dueParentAfterClear = await store.getTransaction('p_due');
+  // An attachment on the row about to be deleted: removing the transaction
+  // must take its attachment rows with it on both engines.
+  await store.insertAttachment({
+    id: 'p_att_due',
+    transaction_id: 'p_due',
+    path: 'receipts/due.jpg',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
   await store.deleteTransaction('p_due');
+  snapshot.attachmentsAfterParentDelete = await store.listAttachmentsByTransaction('p_due');
 
   // A zero-total breakdown parent must store and read back identically.
   await store.insertTransaction({
@@ -1239,9 +1293,19 @@ async function runScenario(store) {
   snapshot.zeroParentDeleteChanges = await store.deleteTransaction('p_zero_break');
   snapshot.subsAfterParentDelete = await store.listSubTransactionsByParent('p_zero_break');
 
+  // One more attachment, this time on a child of the budget about to go:
+  // exercises the budget → transaction → attachment two-level cascade.
+  await store.insertAttachment({
+    id: 'p_att_budget',
+    transaction_id: 'p_expense',
+    path: 'receipts/gone.png',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
   snapshot.deletedBudgets = await store.deleteBudget('p_budget');
   snapshot.budgetAfterDelete = await store.getBudget('p_budget');
   snapshot.transactionsAfterDelete = await store.listTransactionsByBudget('p_budget');
+  snapshot.attachmentsAfterBudgetDelete = await store.listAttachmentsByTransaction('p_expense');
   snapshot.subsAfterBudgetDelete = await store.listSubTransactionsByParent('p_expense');
   snapshot.remindersAfterDelete = await store.listReminders();
 
@@ -1354,6 +1418,35 @@ async function runScenario(store) {
   });
   snapshot.transactionAfterReplace = await store.getTransaction('p_merge_tx');
 
+  // --- attachments (receipt images) --------------------------------------
+  // Two rows on one parent, then read back the whole operations surface:
+  // stable (created_at, id) order, the parent-grouped read, single lookups,
+  // and the delete's change count must agree on both engines.
+  await store.insertAttachment({
+    id: 'p_att_a',
+    transaction_id: 'p_merge_tx',
+    path: 'receipts/a.jpg',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertAttachment({
+    id: 'p_att_b',
+    transaction_id: 'p_merge_tx',
+    path: 'receipts/b.png',
+    created_at: '2026-10-06T01:00:00.000Z',
+    updated_at: '2026-10-06T01:00:00.000Z',
+  });
+  snapshot.attachmentsByParent = await store.listAttachmentsByTransaction('p_merge_tx');
+  snapshot.attachmentsForParents = await store.listAttachmentsForParents([
+    'p_merge_tx',
+    'p_merge_tx',
+    'p_missing_parent',
+  ]);
+  snapshot.attachment = await store.getAttachment('p_att_a');
+  snapshot.attachmentMissing = await store.getAttachment('no_such_attachment');
+  snapshot.attachmentDeleteChanges = await store.deleteAttachment('p_att_b');
+  snapshot.attachmentsAfterSingleDelete = await store.listAttachmentsByTransaction('p_merge_tx');
+
   await store.insertReminder({
     id: 'p_merge_rem',
     enabled: 1,
@@ -1391,6 +1484,7 @@ async function runScenario(store) {
     tag: await store.getTag('p_merge_tag'),
     transaction: await store.getTransaction('p_merge_tx'),
     reminder: await store.getReminder('p_merge_rem'),
+    attachment: await store.getAttachment('p_att_a'),
     budgetCount: (await store.listBudgets()).length,
     tagCount: (await store.listTags({ includeArchived: true })).length,
     reminderCount: (await store.listReminders()).length,
@@ -1406,6 +1500,7 @@ async function runScenario(store) {
     tags: await store.listTags({ includeArchived: true }),
     transactions: await store.listTransactionsInRange('2026-11-01', '2026-11-30'),
     subTransactions: await store.listSubTransactionsInRange('0000-01-01', '9999-12-31'),
+    attachment: await store.getAttachment('p_att_a'),
     reminders: await store.listReminders(),
     settings: await store.getAllSettings(),
   };
@@ -1424,7 +1519,7 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 13);
+check('both adapters report the same schema version', LATEST_VERSION === 14);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -1600,6 +1695,22 @@ check(
     Object.keys(sqliteResult.afterFullWipe.settings).length === 0 &&
     JSON.stringify(sqliteResult.afterFullWipe) === JSON.stringify(memoryResult.afterFullWipe),
 );
+check(
+  'deleting a transaction or budget cascades its attachments on both engines',
+  sqliteResult.attachmentsAfterParentDelete.length === 0 &&
+    sqliteResult.attachmentsAfterBudgetDelete.length === 0 &&
+    sqliteResult.attachmentDeleteChanges === 1 &&
+    memoryResult.attachmentsAfterParentDelete.length === 0 &&
+    memoryResult.attachmentsAfterBudgetDelete.length === 0 &&
+    memoryResult.attachmentDeleteChanges === 1,
+);
+check(
+  'attachment rows survive a rolled-back wipe and vanish on a committed one',
+  sqliteResult.afterWipeRollback.attachment?.id === 'p_att_a' &&
+    memoryResult.afterWipeRollback.attachment?.id === 'p_att_a' &&
+    sqliteResult.afterFullWipe.attachment === null &&
+    memoryResult.afterFullWipe.attachment === null,
+);
 
 console.log('\n--- legacy milestone-1 upgrade ---');
 
@@ -1639,7 +1750,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has twelve pending migrations', pending.length === 12, String(pending.length));
+check('legacy database has thirteen pending migrations', pending.length === 13, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }
@@ -1652,7 +1763,16 @@ const legacyTables = legacyDb
 for (const removed of ['budget_categories', 'categories']) {
   check(`legacy table ${removed} was dropped`, !legacyTables.includes(removed));
 }
-for (const expected of ['accounts', 'budgets', 'folders', 'reminders', 'settings', 'tags', 'transactions']) {
+for (const expected of [
+  'accounts',
+  'attachments',
+  'budgets',
+  'folders',
+  'reminders',
+  'settings',
+  'tags',
+  'transactions',
+]) {
   check(`rebuilt table ${expected} exists`, legacyTables.includes(expected));
 }
 

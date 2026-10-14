@@ -83,3 +83,19 @@ export async function pickBackup() {
   const text = await result.text();
   return { name: result.name || 'backup.json', text };
 }
+
+/**
+ * System image picker for receipt attachments, or null when the user cancels.
+ * Same expo-file-system picker rationale as `pickBackup`: the File objects
+ * returned on Android carry persistable READ grants, so `persistReceipt`
+ * can copy each one into app storage straight away. Resolves an array of
+ * URIs (never an empty array).
+ */
+export async function pickImagesAsync() {
+  const { result, canceled } = await File.pickFileAsync({
+    mimeTypes: ['image/*'],
+    multipleFiles: true,
+  });
+  if (canceled || !result) return null;
+  return result.map((file) => file.uri);
+}

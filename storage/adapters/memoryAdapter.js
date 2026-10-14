@@ -22,6 +22,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     tags: [],
     transactions: [],
     subTransactions: [],
+    attachments: [],
     reminders: [],
     settings: new Map(),
   };
@@ -92,6 +93,10 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
   /** SQLite's per-parent ordering: `ORDER BY position ASC, id ASC`. */
   const bySubTransactionPosition = (a, b) => a.position - b.position || a.id.localeCompare(b.id);
 
+  /** SQLite's gallery ordering: `ORDER BY created_at ASC, id ASC`. */
+  const byAttachment = (a, b) =>
+    String(a.created_at).localeCompare(String(b.created_at)) || a.id.localeCompare(b.id);
+
   return {
     source: 'memory',
 
@@ -112,6 +117,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         tags: store.tags.map((row) => ({ ...row })),
         transactions: store.transactions.map((row) => ({ ...row })),
         subTransactions: store.subTransactions.map((row) => ({ ...row })),
+        attachments: store.attachments.map((row) => ({ ...row })),
         reminders: store.reminders.map((row) => ({ ...row })),
         settings: new Map(store.settings),
       };
@@ -131,6 +137,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       store.tags = journal.tags;
       store.transactions = journal.transactions;
       store.subTransactions = journal.subTransactions;
+      store.attachments = journal.attachments;
       store.reminders = journal.reminders;
       store.settings = journal.settings;
       journal = null;
@@ -203,6 +210,9 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       );
       store.subTransactions = store.subTransactions.filter(
         (item) => !doomed.has(item.transaction_id),
+      );
+      store.attachments = store.attachments.filter(
+        (attachment) => !doomed.has(attachment.transaction_id),
       );
       for (const reminder of store.reminders) {
         if (doomed.has(reminder.transaction_id)) reminder.transaction_id = null;
@@ -381,7 +391,6 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         created_at: row.created_at,
         updated_at: row.updated_at,
         payment_due_date: row.payment_due_date ?? null,
-        receipt_path: row.receipt_path ?? null,
       });
     },
 
@@ -396,7 +405,6 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       existing.payment_status = row.payment_status ?? null;
       existing.has_breakdown = row.has_breakdown ? 1 : 0;
       existing.payment_due_date = row.payment_due_date ?? null;
-      existing.receipt_path = row.receipt_path ?? null;
       existing.updated_at = row.updated_at;
       return 1;
     },
@@ -404,8 +412,8 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     /**
      * Mirrors `ON DELETE SET NULL` on reminders: the transaction goes, the
      * reminder survives as a standalone record. Mirrors `ON DELETE CASCADE`
-     * on sub_transactions: the breakdown belongs to its parent and goes with
-     * it, never orphaned.
+     * on sub_transactions and attachments: the breakdown and the receipt
+     * images belong to their parent and go with it, never orphaned.
      */
     async deleteTransaction(id) {
       const before = store.transactions.length;
@@ -413,10 +421,62 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       store.subTransactions = store.subTransactions.filter(
         (item) => item.transaction_id !== id,
       );
+      store.attachments = store.attachments.filter(
+        (attachment) => attachment.transaction_id !== id,
+      );
       for (const reminder of store.reminders) {
         if (reminder.transaction_id === id) reminder.transaction_id = null;
       }
       return before - store.transactions.length;
+    },
+
+    // --- attachments (receipt images) ------------------------------------
+
+    /** Mirror of the SQLite read: oldest first, (created_at, id) order. */
+    async listAttachmentsByTransaction(transactionId) {
+      return store.attachments
+        .filter((attachment) => attachment.transaction_id === transactionId)
+        .sort(byAttachment)
+        .map(copy);
+    },
+
+    /** Mirror of the SQLite batch read; grouped rows keep (created_at, id) order. */
+    async listAttachmentsForParents(ids) {
+      const wanted = new Set(ids);
+      return store.attachments
+        .filter((attachment) => wanted.has(attachment.transaction_id))
+        .sort((a, b) => a.transaction_id.localeCompare(b.transaction_id) || byAttachment(a, b))
+        .map(copy);
+    },
+
+    async getAttachment(id) {
+      return copy(store.attachments.find((attachment) => attachment.id === id) ?? null);
+    },
+
+    async insertAttachment(row) {
+      store.attachments.push({
+        id: row.id,
+        transaction_id: row.transaction_id,
+        path: row.path,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      });
+    },
+
+    async deleteAttachment(id) {
+      const index = store.attachments.findIndex((attachment) => attachment.id === id);
+      if (index === -1) return 0;
+      store.attachments.splice(index, 1);
+      return 1;
+    },
+
+    /** Bulk removal before a rewrite; mirrors the FK cascade for a parent. */
+    async deleteAttachmentsForTransaction(transactionId) {
+      const before = store.attachments.length;
+      store.attachments = store.attachments.filter(
+        (attachment) => attachment.transaction_id !== transactionId,
+      );
+      return before - store.attachments.length;
     },
 
     // --- sub-transactions (breakdown items) ------------------------------
@@ -697,7 +757,6 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         payment_status: row.payment_status ?? null,
         has_breakdown: row.has_breakdown ? 1 : 0,
         payment_due_date: row.payment_due_date ?? null,
-        receipt_path: row.receipt_path ?? null,
         created_at: row.created_at,
         updated_at: row.updated_at,
       });
@@ -732,6 +791,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       store.tags = [];
       store.transactions = [];
       store.subTransactions = [];
+      store.attachments = [];
       store.reminders = [];
       store.settings.clear();
     },

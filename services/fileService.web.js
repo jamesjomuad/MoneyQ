@@ -20,3 +20,7 @@ export async function saveBackup() {
 export async function pickBackup() {
   throw new Error(UNSUPPORTED);
 }
+
+export async function pickImagesAsync() {
+  throw new Error('Picking images is not available in the browser preview.');
+}

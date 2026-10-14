@@ -51,7 +51,9 @@ import { createId } from '../../utils/id';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { showToast } from '../../stores/toastStore';
 import { removeStagedFile } from '../../services/receiptShareService';
-import { deleteReceiptFile, persistReceipt, receiptFileUri } from '../../services/receiptFiles';
+import { deleteReceiptFile, persistReceipt } from '../../services/receiptFiles';
+import { pickImagesAsync } from '../../services/fileService';
+import { useAttachmentStore } from '../../stores/attachmentStore';
 
 const TYPE_OPTIONS = [
   { value: 'expense', label: 'Expense', icon: 'expense' },
@@ -125,7 +127,6 @@ function formSnapshot(values) {
         ? values.dueDate || null
         : null,
     description: values.description?.trim() ? values.description.trim() : null,
-    receiptPath: values.receiptPath ?? null,
     breakdown: breakdownSnapshot(values.breakdownActive, values.items),
   });
 }
@@ -140,7 +141,6 @@ function snapshotOfRow(row) {
     date: row.transaction_date,
     dueDate: row.payment_due_date ?? null,
     description: row.description,
-    receiptPath: row.receipt_path ?? null,
     breakdownActive: row.has_breakdown === 1,
     items: row.subTransactions ?? [],
   });
@@ -218,7 +218,6 @@ function buildPayload(f, currency) {
     paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
     paymentDueDate:
       f.type === 'expense' && f.paymentStatus === 'unpaid' ? f.dueDate || null : null,
-    receiptPath: f.receiptPath ?? null,
     ...(f.breakdownActive
       ? {
           hasBreakdown: true,
@@ -237,6 +236,74 @@ function buildPayload(f, currency) {
 
 function openDeviceSettings() {
   if (Platform.OS !== 'web') Linking.openSettings();
+}
+
+/** File-type phrase for a stored receipt, e.g. `receipts/x.jpg` → 'JPG image'. */
+function receiptTypeLabel(path) {
+  const guess = /\.(png|jpe?g|webp|gif|bmp|heic|heif)(?=($|[?#]))/i.exec(String(path ?? ''));
+  return guess ? `${guess[1].toUpperCase()} image` : 'Image';
+}
+
+/**
+ * The receipt image card shared by the create-mode import preview and the
+ * saved transaction's Attachments section: one aspect-preserved thumbnail
+ * inside a capped frame, a full-screen viewer behind the tap, an optional
+ * label line, and the Remove action. `uri` is either the staged import
+ * copy or the resolved persistent document file — they render the same.
+ * A missing or unreadable image degrades to the fallback text, keeping
+ * Remove available so the dead reference can be unlinked.
+ */
+function ReceiptPreview({ caption, failed, onFail, onRemove, onView, uri }) {
+  const { radius, spacing } = useTheme();
+  return (
+    <>
+      <Pressable
+        onPress={() => uri && onView()}
+        accessibilityRole="imagebutton"
+        accessibilityLabel="View receipt"
+      >
+        <Card padded={false} style={{ overflow: 'hidden', borderRadius: radius.lg }}>
+          {failed || !uri ? (
+            <View style={styles.receiptFallback}>
+              <Text variant="body" tone="muted">
+                The receipt image could not be displayed.
+              </Text>
+            </View>
+          ) : (
+            <Image
+              source={{ uri }}
+              style={styles.receiptPreview}
+              resizeMode="contain"
+              onError={onFail}
+            />
+          )}
+        </Card>
+      </Pressable>
+      {caption ? (
+        <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+          {caption}
+        </Text>
+      ) : null}
+      <View style={styles.receiptActions}>
+        {uri && !failed ? (
+          <Button
+            label="View receipt"
+            icon="eye"
+            variant="secondary"
+            onPress={onView}
+            style={{ borderRadius: radius.pill }}
+          />
+        ) : null}
+        <Button
+          label="Remove"
+          icon="trash"
+          variant="secondary"
+          onPress={onRemove}
+          style={{ borderRadius: radius.pill }}
+        />
+      </View>
+    </>
+  );
 }
 
 /** The device cannot deliver a reminder — never a reason to lose the save. */
@@ -273,7 +340,7 @@ function announceReminderOutcomes(outcomes) {
 
 export default function TransactionFormScreen() {
   const params = useLocalSearchParams();
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
   const tags = useTagsStore((state) => state.tags);
   const loadTags = useTagsStore((state) => state.load);
@@ -308,18 +375,26 @@ export default function TransactionFormScreen() {
   );
   const imported = importRef.current?.parsed ?? null;
 
-  // Receipt attachment state. `receiptUri` is what the preview renders: the
-  // staged cache copy in create mode, the persistent document file resolved
-  // from the row's reference in edit mode. `receiptPath` is the stored
-  // document-relative reference (`receipts/<name>.<ext>`) — null until a
-  // save writes it. `receiptRemovedRef` queues the persistent files a
-  // Remove unlinked; they are deleted only after the save that drops their
-  // reference has actually landed, never before.
+  // Receipt attachment state (create mode): `receiptUri` is the staged
+  // cache copy the share-import screen handed over, previewed until the
+  // user discards it or a successful save promotes it to a permanent
+  // attachment row. `viewerUri` opens the full-screen viewer for either
+  // the staged copy or any saved attachment tile.
   const [receiptUri, setReceiptUri] = useState(() => importRef.current?.imageUri ?? null);
-  const [receiptPath, setReceiptPath] = useState(null);
   const [receiptFailed, setReceiptFailed] = useState(false);
-  const [receiptViewer, setReceiptViewer] = useState(false);
-  const receiptRemovedRef = useRef([]);
+  const [viewerUri, setViewerUri] = useState(null);
+
+  // Attachments of a saved transaction live in their own store: adding or
+  // removing an image is an immediate, self-contained write (like
+  // reminders), deliberately outside the form's dirty-check/autosave.
+  // Tiles whose image fails to decode are remembered locally for this
+  // session; a missing file arrives from the store with uri === null.
+  const attachments = useAttachmentStore((state) => state.attachments);
+  const loadAttachments = useAttachmentStore((state) => state.load);
+  const attachImage = useAttachmentStore((state) => state.addImage);
+  const detachAttachment = useAttachmentStore((state) => state.remove);
+  const [addingAttachments, setAddingAttachments] = useState(false);
+  const [failedAttachmentIds, setFailedAttachmentIds] = useState(() => new Set());
 
   const [type, setType] = useState('expense');
   const [paymentStatus, setPaymentStatus] = useState('paid');
@@ -410,19 +485,8 @@ export default function TransactionFormScreen() {
   // Discarding the receipt hides the section and leaves every other value
   // untouched. A staged (unsaved) import loses its cache copy right away —
   // the store record is updated first so the unmount cleanup above does
-  // not try to remove the same file twice. A persistent attachment is only
-  // unlinked: its file is queued and deleted once the save that drops the
-  // reference has landed, so a failed or abandoned save can never strand
-  // the stored image or break the stored reference.
+  // not try to remove the same file twice.
   const handleRemoveReceipt = () => {
-    if (receiptPath) {
-      receiptRemovedRef.current.push(receiptPath);
-      setReceiptPath(null);
-      setReceiptUri(null);
-      setReceiptViewer(false);
-      setReceiptFailed(false);
-      return;
-    }
     const uri = receiptUri;
     if (!uri) return;
     const { pending, setPending } = useReceiptImportStore.getState();
@@ -431,9 +495,52 @@ export default function TransactionFormScreen() {
     }
     removeStagedFile(uri);
     setReceiptUri(null);
-    setReceiptViewer(false);
+    setViewerUri(null);
     setReceiptFailed(false);
   };
+
+  // Attachments are immediate writes outside the autosave: pick images,
+  // copy each into permanent storage, attach its row. Partial success is
+  // kept (the images that landed stay attached) and only the failures are
+  // announced — the picker already gave the user their choice.
+  const handleAddAttachments = async () => {
+    let uris;
+    try {
+      uris = await pickImagesAsync();
+    } catch (error) {
+      Alert.alert('Could not open the picker', error?.message ?? 'Please try again.');
+      return;
+    }
+    if (!uris || uris.length === 0) return;
+    setAddingAttachments(true);
+    let failed = 0;
+    for (const uri of uris) {
+      try {
+        await attachImage(transactionId, uri);
+      } catch {
+        failed += 1;
+      }
+    }
+    setAddingAttachments(false);
+    if (failed > 0) {
+      Alert.alert(
+        'Some receipts could not be attached',
+        failed === uris.length
+          ? 'None of the picked images could be saved. Please try again.'
+          : `${failed} of ${uris.length} picked images could not be saved.`,
+      );
+    }
+  };
+
+  const markAttachmentFailed = (id) =>
+    setFailedAttachmentIds((previous) => new Set(previous).add(id));
+
+  // Saved attachments are fetched once per form session; the store's add
+  // and remove actions reload internally, so the tiles always mirror the
+  // committed rows without touching the field autosave.
+  useEffect(() => {
+    if (transactionId) void loadAttachments(transactionId);
+  }, [transactionId, loadAttachments]);
 
   // A transaction can be opened without its budget screen in front of it —
   // from a tapped notification — so make sure the store actually holds this
@@ -478,15 +585,6 @@ export default function TransactionFormScreen() {
     setDate(editing.transaction_date);
     setDueDate(editing.payment_due_date ?? '');
     setDescription(editing.description ?? '');
-    // Reopening a saved transaction resolves its stored receipt reference
-    // to the persistent file — independent of any pending import state.
-    // A reference whose file is gone still shows the section (fallback
-    // text) so it can be removed instead of haunting the row forever.
-    const attachedPath = editing.receipt_path ?? null;
-    setReceiptPath(attachedPath);
-    setReceiptUri(attachedPath ? receiptFileUri(attachedPath) : null);
-    setReceiptFailed(false);
-    receiptRemovedRef.current = [];
     setBreakdownActive(editing.has_breakdown === 1);
     setItems(
       (editing.subTransactions ?? []).map((item) => ({
@@ -675,7 +773,6 @@ export default function TransactionFormScreen() {
       date,
       dueDate,
       description,
-      receiptPath,
       breakdownActive,
       items,
     };
@@ -687,7 +784,6 @@ export default function TransactionFormScreen() {
       date,
       dueDate,
       description,
-      receiptPath,
       breakdownActive,
       items,
     });
@@ -718,12 +814,6 @@ export default function TransactionFormScreen() {
           id: transactionId,
           ...buildPayload(fields, currency),
         });
-        // The save that dropped a receipt reference has landed — only now
-        // can the unlinked files be deleted (never before the write).
-        if (receiptRemovedRef.current.length > 0) {
-          for (const path of receiptRemovedRef.current) deleteReceiptFile(path);
-          receiptRemovedRef.current = [];
-        }
         rowSnapshotRef.current = snapshot;
         showToast('Changes saved successfully', 'success');
         return 'saved';
@@ -800,7 +890,6 @@ export default function TransactionFormScreen() {
     date,
     dueDate,
     description,
-    receiptPath,
     breakdownActive,
     items,
     currency,
@@ -844,13 +933,13 @@ export default function TransactionFormScreen() {
     // save with everything (staged import included) left in place.
     let freshReceiptPath = null;
     try {
-      if (receiptUri && !receiptPath) {
+      if (receiptUri) {
         freshReceiptPath = await persistReceipt(receiptUri);
       }
-      const { transaction } = await addTransaction({
+      const { transaction, attachmentError } = await addTransaction({
         budgetId,
         ...buildPayload(fields, currency),
-        receiptPath: receiptPath ?? freshReceiptPath,
+        receiptPath: freshReceiptPath,
       });
       // Reminders staged in this form are created now, linked to the row that
       // was just written. The transaction is already saved, so a single
@@ -872,6 +961,10 @@ export default function TransactionFormScreen() {
       }
       router.back();
       announceReminderOutcomes(outcomes);
+      if (attachmentError) {
+        // The financial record is safe; only the image reference was lost.
+        showToast('The transaction saved without its receipt image.', 'warning');
+      }
     } catch (error) {
       // The row never committed: the receipt copy made for it would be an
       // orphan no transaction references, so it goes back out with the
@@ -933,49 +1026,20 @@ export default function TransactionFormScreen() {
             paddingBottom: (transactionId ? 48 : barHeight) + keyboardHeight,
           }}
         >
-        {receiptUri || receiptPath ? (
+        {/* The share-import preview belongs at the top of a NEW transaction:
+            it shows the staged copy the import handed over. Once the row is
+            saved the image lives in the Attachments section of the detail
+            view below instead. */}
+        {!transactionId && receiptUri ? (
           <>
             <SectionHeader title="Receipt" />
-            <Pressable
-              onPress={() => receiptUri && setReceiptViewer(true)}
-              accessibilityRole="imagebutton"
-              accessibilityLabel="View receipt"
-            >
-              <Card padded={false} style={{ overflow: 'hidden', borderRadius: radius.lg }}>
-                {receiptFailed || !receiptUri ? (
-                  <View style={styles.receiptFallback}>
-                    <Text variant="body" tone="muted">
-                      The receipt image could not be displayed.
-                    </Text>
-                  </View>
-                ) : (
-                  <Image
-                    source={{ uri: receiptUri }}
-                    style={styles.receiptPreview}
-                    resizeMode="contain"
-                    onError={() => setReceiptFailed(true)}
-                  />
-                )}
-              </Card>
-            </Pressable>
-            <View style={styles.receiptActions}>
-              {receiptUri && !receiptFailed ? (
-                <Button
-                  label="View receipt"
-                  icon="eye"
-                  variant="secondary"
-                  onPress={() => setReceiptViewer(true)}
-                  style={{ borderRadius: radius.pill }}
-                />
-              ) : null}
-              <Button
-                label="Remove"
-                icon="trash"
-                variant="secondary"
-                onPress={handleRemoveReceipt}
-                style={{ borderRadius: radius.pill }}
-              />
-            </View>
+            <ReceiptPreview
+              failed={receiptFailed}
+              uri={receiptUri}
+              onFail={() => setReceiptFailed(true)}
+              onRemove={handleRemoveReceipt}
+              onView={() => setViewerUri(receiptUri)}
+            />
             <View style={{ height: spacing.lg }} />
           </>
         ) : null}
@@ -1127,6 +1191,94 @@ export default function TransactionFormScreen() {
                 </Text>
               </Pressable>
             ) : null}
+          </>
+        ) : null}
+
+        {/* Attachments — every image attached to this saved transaction,
+            read from permanent document storage (never the share-import
+            cache). Adding and removing are immediate, committed writes of
+            their own — like reminders — independent of the field autosave.
+            The section is the transaction's photo library: always present
+            while editing on a device that can pick images, so a receipt
+            that has none yet is one tap from having one. */}
+        {transactionId && (Platform.OS !== 'web' || attachments.length > 0) ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <SectionHeader
+              title={
+                attachments.length > 0
+                  ? `Attachments · ${attachments.length}`
+                  : 'Attachments'
+              }
+              fontSize={14}
+            />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.attachmentRow}
+            >
+              {attachments.map((attachment) => {
+                const broken =
+                  !attachment.uri || failedAttachmentIds.has(attachment.id);
+                return (
+                  <View key={attachment.id} style={styles.attachmentTile}>
+                    <View style={styles.attachmentFrame}>
+                      {broken ? (
+                        <View style={styles.attachmentMissing}>
+                          <Text variant="caption" tone="muted">
+                            Missing
+                          </Text>
+                        </View>
+                      ) : (
+                        <Pressable
+                          accessibilityRole="imagebutton"
+                          accessibilityLabel="View attachment"
+                          onPress={() => setViewerUri(attachment.uri)}
+                          style={StyleSheet.absoluteFill}
+                        >
+                          <Image
+                            source={{ uri: attachment.uri }}
+                            style={styles.attachmentImage}
+                            resizeMode="cover"
+                            onError={() => markAttachmentFailed(attachment.id)}
+                          />
+                        </Pressable>
+                      )}
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove attachment"
+                        hitSlop={6}
+                        onPress={() => void detachAttachment(attachment.id)}
+                        style={styles.attachmentRemove}
+                      >
+                        <Icon name="close" size={12} color="#fff" />
+                      </Pressable>
+                    </View>
+                    <Text variant="caption" tone="faint" numberOfLines={1}>
+                      {receiptTypeLabel(attachment.path)}
+                    </Text>
+                  </View>
+                );
+              })}
+              {Platform.OS !== 'web' ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add receipt image"
+                  disabled={addingAttachments}
+                  onPress={handleAddAttachments}
+                  style={[
+                    styles.attachmentAdd,
+                    { borderColor: colors.border },
+                  ]}
+                >
+                  {addingAttachments ? (
+                    <ActivityIndicator size="small" color={colors.muted} />
+                  ) : (
+                    <Icon name="add" size={22} color={colors.muted} />
+                  )}
+                </Pressable>
+              ) : null}
+            </ScrollView>
           </>
         ) : null}
 
@@ -1350,8 +1502,12 @@ export default function TransactionFormScreen() {
         />
       ) : null}
 
-      {receiptViewer && receiptUri ? (
-        <ReceiptViewer failed={receiptFailed} uri={receiptUri} onClose={() => setReceiptViewer(false)} />
+      {viewerUri ? (
+        <ReceiptViewer
+          failed={Boolean(receiptFailed && viewerUri === receiptUri)}
+          uri={viewerUri}
+          onClose={() => setViewerUri(null)}
+        />
       ) : null}
     </View>
   );
@@ -1470,6 +1626,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   receiptActions: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 12 },
+  attachmentRow: { gap: 10, paddingRight: 6 },
+  attachmentTile: { width: 120 },
+  attachmentFrame: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  attachmentImage: { width: '100%', height: '100%' },
+  attachmentMissing: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(128,128,128,0.15)',
+  },
+  attachmentRemove: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentAdd: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   viewerBackdrop: { flex: 1 },
   viewerClose: {
     alignItems: 'center',

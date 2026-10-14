@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { getAttachments, createAttachment } from '../storage/repositories/attachmentRepository';
 import { getBudget } from '../storage/repositories/budgetRepository';
 import { getReminders } from '../storage/repositories/reminderRepository';
 import { getTags } from '../storage/repositories/tagRepository';
@@ -7,7 +8,6 @@ import {
   createTransaction,
   deleteTransaction,
   getSubTransactionsForBudget,
-  getTransaction,
   getTransactionsForBudget,
   updateTransaction,
 } from '../storage/repositories/transactionRepository';
@@ -159,13 +159,28 @@ export const useBudgetDetailStore = create((set, get) => {
      * for the form to explain (permission denied, browser preview, …).
      */
     addTransaction: async (input) => {
-      const transaction = await createTransaction(input);
+      const { receiptPath, ...transactionInput } = input;
+      const transaction = await createTransaction(transactionInput);
+      // A shared receipt arrives as a persisted file path alongside the
+      // financial fields: the row commits first, the attachment reference
+      // second. A failed attachment write costs the receipt but never the
+      // transaction — the orphan file goes back out and the form reports
+      // the loss on top of a save that succeeded.
+      let attachmentError = null;
+      if (receiptPath) {
+        try {
+          await createAttachment({ transactionId: transaction.id, path: receiptPath });
+        } catch (error) {
+          deleteReceiptFile(receiptPath);
+          attachmentError = error;
+        }
+      }
       const reminder =
         input.reminder === undefined
           ? null
           : await applyReminder({ transaction, reminder: input.reminder });
       await get().load(get().budgetId ?? transaction.budget_id);
-      return { transaction, reminder };
+      return { transaction, reminder, attachmentError };
     },
 
     updateTransaction: async (input) => {
@@ -181,12 +196,12 @@ export const useBudgetDetailStore = create((set, get) => {
     removeTransaction: async (transactionId) => {
       // The transaction goes; its reminders survive as standalone records
       // (the foreign key clears the link), keeping their schedules.
-      const row = await getTransaction(transactionId);
+      // Attachment rows are read first: the row delete cascades them out of
+      // the database, and their files may only be removed once that delete
+      // has actually landed — a failed delete leaves rows and files intact.
+      const attachments = await getAttachments(transactionId);
       await deleteTransaction(transactionId);
-      // Only once the row is gone: its receipt image goes too. Each receipt
-      // file has a unique name, so no other row can reference it — and a
-      // failed delete above throws first, leaving file and row untouched.
-      if (row?.receipt_path) deleteReceiptFile(row.receipt_path);
+      for (const attachment of attachments) deleteReceiptFile(attachment.path);
       await get().load(get().budgetId);
     },
 

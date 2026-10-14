@@ -11,6 +11,7 @@ import { migration as folders } from './010_folders';
 import { migration as performanceIndexes } from './011_performance_indexes';
 import { migration as budgetPosition } from './012_budget_position';
 import { migration as receiptPath } from './013_receipt_path';
+import { migration as attachments } from './014_attachments';
 
 /**
  * Append-only list. Never edit a shipped migration — add a new one so existing
@@ -30,6 +31,7 @@ export const migrations = [
   performanceIndexes,
   budgetPosition,
   receiptPath,
+  attachments,
 ];
 
 export const LATEST_VERSION = migrations.reduce(
