@@ -1,6 +1,12 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { FolderPickerSheet } from '../../components/budgets/FolderPickerSheet';
 import { TagSpendRow } from '../../components/tags/TagSpendRow';
@@ -62,6 +68,226 @@ function maskAmountText(text) {
   return text.replace(/\d/g, '•').replace(/[,.]/g, '');
 }
 
+/** Height of the drawer's handle strip that stays visible below the card. */
+const DRAWER_PEEK = 32;
+
+/**
+ * Rows of the tag grid the expanded drawer shows. The first rendered row is
+ * measured live (onLayout) so three REAL rows fit at any device font scale;
+ * TAG_ROW_FALLBACK (12+12 padding + 32-high badge header + 8 gap + 16-high
+ * caption row ≈ 80) only covers the very first frame before the measurement
+ * lands.
+ */
+const TAG_DRAWER_ROWS = 3;
+const TAG_ROW_FALLBACK = 80;
+
+/**
+ * Tags drawer: the budget's tag filter, parked in the pinned overlay directly
+ * beneath the Remaining card instead of at the head of the scroll body. Its
+ * top is pulled UNDER the card by a negative margin (spacing.lg), so it always
+ * sits attached to the card's bottom edge — emerging from behind it, never
+ * floating below it with a gap — and the drawer's rounded top corners stay
+ * concealed behind the card's opaque surface (a lower zIndex keeps the card in
+ * front). Collapsed by default: only the rounded handle strip shows below the
+ * card, most of the content still hidden behind it. Tapping the chevron
+ * slides the whole drawer further downward on a pure transform animation,
+ * keeping the top overlap, so the Remaining figure never moves or gets
+ * covered. A clip window sitting in the card's shadow cuts the drawer off at
+ * the card's bottom edge, so the drawer may always grow to its real height —
+ * three full rows even on a short card — and whatever is taller than the
+ * card is simply clipped behind it, never poking out. Tag selection,
+ * filtering, the capped inner scroll, and the empty state are the section's
+ * original markup, relocated untouched.
+ */
+function TagsDrawer({
+  activeTagId,
+  currency,
+  onManageTags,
+  onSetActiveTag,
+  onToggle,
+  open,
+  tagSummaries,
+}) {
+  const { colors, spacing } = useTheme();
+  // How deep the drawer's top is tucked behind the card at rest. A spacing
+  // token (not a screen coordinate): it hides the drawer's radius-lg top
+  // corners exactly and scales with the theme.
+  const overlap = spacing.lg;
+  const reduced = useReducedMotion();
+  const progress = useSharedValue(0); // 0 = collapsed behind the card, 1 = expanded
+  const drawerHeight = useSharedValue(0); // measured on first layout
+  // Live-measured height of one grid row and of the Clear-filter strip, so
+  // the expanded drawer reserves exactly TAG_DRAWER_ROWS real rows on any
+  // device font scale (the strip unmounts -> back to 0).
+  const [rowHeight, setRowHeight] = useState(TAG_ROW_FALLBACK);
+  const [filterHeight, setFilterHeight] = useState(0);
+  const rowsHeight = TAG_DRAWER_ROWS * rowHeight + (TAG_DRAWER_ROWS - 1) * spacing.sm;
+
+  useEffect(() => {
+    progress.value = withTiming(open ? 1 : 0, { duration: reduced ? 0 : 220 });
+  }, [open, reduced, progress]);
+
+  // The rest position (expanded) already tucks `overlap` behind the card via
+  // the negative margin, so translateY stays 0. Collapsed rides further up,
+  // (DRAWER_PEEK + overlap - height), until only the handle strip clears the
+  // card's bottom edge. Before the first measurement a flat -400 hides it
+  // completely, so nothing ever flashes expanded on arrival.
+  const drawerStyle = useAnimatedStyle(() => {
+    const collapsed =
+      drawerHeight.value === 0
+        ? -400
+        : Math.min(0, DRAWER_PEEK + overlap - drawerHeight.value);
+    return { transform: [{ translateY: collapsed * (1 - progress.value) }] };
+  });
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${progress.value * 180}deg` }],
+  }));
+
+  const activeTag =
+    tagSummaries.find((entry) => entry.tag.id === activeTagId)?.tag ?? null;
+
+  return (
+    // Clip window: a transparent overflow-hidden box whose top edge sits
+    // `overlap` above the card's bottom (the tuck now lives on this margin).
+    // Whatever the drawer rides up into when collapsed is cut at that edge —
+    // squarely behind the opaque card, invisible — so the drawer is free to
+    // grow taller than the card itself. paddingBottom restores the handle's
+    // hitSlop room below the clipped box.
+    <View
+      pointerEvents="box-none"
+      style={{ marginTop: -overlap, paddingBottom: 16, overflow: 'hidden', zIndex: 1 }}
+    >
+      <Animated.View
+        onLayout={(e) => {
+          drawerHeight.value = e.nativeEvent.layout.height;
+        }}
+        style={[styles.tagsDrawer, drawerStyle, { marginHorizontal: spacing.sm }]}
+      >
+      <Card
+        padded={false}
+        style={{
+          // Room for the three measured grid rows, the Clear-filter strip if
+          // it's showing, and the drawer's own chrome (top pad = overlap +
+          // spacing.sm, bottom pad, handle strip). No card-height ceiling
+          // any more: the clip window hides whatever extends above the card,
+          // so three real rows always fit.
+          maxHeight:
+            rowsHeight +
+            (activeTag ? filterHeight : 0) +
+            overlap +
+            spacing.lg +
+            spacing.sm +
+            DRAWER_PEEK +
+            10, // slack for hairline borders and font rounding
+          overflow: 'hidden',
+          boxShadow: `0 4px 12px ${colors.shadow}`,
+        }}
+      >
+        <View
+          style={[
+            styles.drawerBody,
+            {
+              paddingBottom: spacing.sm,
+              paddingHorizontal: spacing.md,
+              // The drawer's top `overlap` hides behind the Remaining card,
+              // so add it back before the first content row, with a generous
+              // spacing.lg gap under the card's bottom edge.
+              paddingTop: overlap + spacing.lg,
+            },
+          ]}
+        >
+          {/* The strip's onLayout reserves it (plus margin) in the drawer
+              height; the max-height math only counts it while activeTag is
+              set, so no reset is needed when the strip unmounts. */}
+          {activeTag ? (
+            <View
+              style={{ alignItems: 'flex-end', marginBottom: spacing.xs }}
+              onLayout={(e) =>
+                setFilterHeight(e.nativeEvent.layout.height + spacing.xs)
+              }
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Clear tag filter for ${activeTag.name}`}
+                onPress={() => onSetActiveTag(null)}
+                hitSlop={8}
+              >
+                <Text variant="label" tone="primary">
+                  Clear filter
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          <ScrollView
+            style={styles.tagScroll}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+          >
+            {tagSummaries.length === 0 ? (
+              <EmptyState
+                icon="tag"
+                title="No tags used yet"
+                description="Tags appear here once an income or expense in this budget references one."
+              >
+                <Button label="Manage tags" icon="tag" onPress={onManageTags} />
+              </EmptyState>
+            ) : (
+              <View style={[styles.tagGrid, { gap: spacing.sm }]}>
+                {tagSummaries.map(({ tag, spent, expensePercent }, index) => (
+                  <View
+                    key={tag.id}
+                    style={styles.tagGridItem}
+                    onLayout={
+                      index === 0
+                        ? (e) => setRowHeight(e.nativeEvent.layout.height)
+                        : undefined
+                    }
+                  >
+                    <TagSpendRow
+                      tag={tag}
+                      spent={spent}
+                      expensePercent={expensePercent}
+                      currency={currency}
+                      active={tag.id === activeTagId}
+                      onPress={() =>
+                        onSetActiveTag(tag.id === activeTagId ? null : tag.id)
+                      }
+                    />
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        </View>
+
+        {/* Handle strip: the drawer's bottom edge — the Tags label sits
+            beside the chevron, both horizontally centered. It rides with
+            the drawer, so collapsed it is the only part in view and also
+            the toggle. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={open ? 'Collapse tags drawer' : 'Expand tags drawer'}
+          accessibilityState={{ expanded: open }}
+          hitSlop={6}
+          onPress={onToggle}
+          style={({ pressed }) => [
+            styles.drawerHandle,
+            { borderTopColor: colors.border, opacity: pressed ? 0.6 : 1 },
+          ]}
+        >
+          <Text variant="label">{`Tags · ${tagSummaries.length}`}</Text>
+          <Animated.View style={chevronStyle}>
+            <Icon name="chevronDown" size={18} color={colors.textMuted} />
+          </Animated.View>
+        </Pressable>
+      </Card>
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function BudgetDetailScreen() {
   const { id: routeBudgetId } = useLocalSearchParams();
   const budgetId =
@@ -90,8 +316,9 @@ export default function BudgetDetailScreen() {
   const loadFolders = useFoldersStore((state) => state.load);
 
   // Fold long lists so the summary card stays in reach; the headers remain so
-  // a folded section can be reopened.
-  const [tagsOpen, setTagsOpen] = useState(true);
+  // a folded section can be reopened. The tag drawer beneath the pinned card
+  // is a separate, collapsed-by-default surface.
+  const [tagsDrawerOpen, setTagsDrawerOpen] = useState(false);
   const [transactionsOpen, setTransactionsOpen] = useState(true);
   // Measured height of the floating summary card, so the scroll body can
   // reserve exactly the space it occupies (same trick as the transaction
@@ -110,6 +337,8 @@ export default function BudgetDetailScreen() {
       if (budgetId) {
         load(budgetId);
         loadFolders();
+        // Every time this budget is opened the drawer starts collapsed.
+        setTagsDrawerOpen(false);
       }
     }, [budgetId, load, loadFolders]),
   );
@@ -261,10 +490,13 @@ export default function BudgetDetailScreen() {
       />
 
       {/* Pinned summary: floats over the scroll body like the transaction
-          form's sticky Amount card — the tag and transaction lists scroll
-          beneath the card's opaque surface instead of clipping against a
-          full-width band. */}
+          form's sticky Amount card — the transaction list scrolls beneath the
+          card's opaque surface instead of clipping against a full-width band.
+          box-none keeps the band's transparent padding and the area around
+          the collapsed drawer touch-through, so the list below still scrolls
+          and rows stay tappable. */}
       <View
+        pointerEvents="box-none"
         style={[
           styles.pinned,
           {
@@ -282,10 +514,12 @@ export default function BudgetDetailScreen() {
               : null),
             // Mirror of the transaction form's sticky Amount card: a floating,
             // borderless, generously rounded surface with a soft drop shadow.
+            // zIndex 2 keeps it in front of the tags drawer it hides.
             borderRadius: 25,
             borderWidth: 0,
             padding: spacing.md,
             boxShadow: `0 6px 16px ${colors.shadow}`,
+            zIndex: 2,
           }}
         >
           <SectionHeader title="Remaining" color={folderInk} />
@@ -425,64 +659,28 @@ export default function BudgetDetailScreen() {
             />
           </View>
         </Card>
+
+        <TagsDrawer
+          activeTagId={activeTagId}
+          currency={currency}
+          onManageTags={() => router.push('/tags')}
+          onSetActiveTag={setActiveTag}
+          onToggle={() => setTagsDrawerOpen((value) => !value)}
+          open={tagsDrawerOpen}
+          tagSummaries={tagSummaries}
+        />
       </View>
 
       {/* Reserve room for the floating add button: its own bottom offset plus
-          the button height, so the last transaction row scrolls clear of it. */}
+          the button height, so the last transaction row scrolls clear of it.
+          The top padding clears the pinned card plus the collapsed drawer's
+          visible handle strip, so transactions start below the peek. */}
       <Screen
         bottomSpace={FAB_SIZE + spacing.xl}
-        contentContainerStyle={{ paddingTop: spacing.md + cardHeight + spacing.xl }}
+        contentContainerStyle={{
+          paddingTop: spacing.md + cardHeight + DRAWER_PEEK + spacing.lg,
+        }}
       >
-        <SectionHeader
-          title={`Tags · ${tagSummaries.length}`}
-          fontSize={14}
-          collapsed={!tagsOpen}
-          onToggle={() => setTagsOpen((open) => !open)}
-          action={
-            activeTag ? (
-              <Pressable accessibilityRole="button" onPress={() => setActiveTag(null)} hitSlop={8}>
-                <Text variant="label" tone="primary">
-                  Clear filter
-                </Text>
-              </Pressable>
-            ) : null
-          }
-        />
-
-        {tagsOpen &&
-          (tagSummaries.length === 0 ? (
-            <EmptyState
-              icon="tag"
-              title="No tags used yet"
-              description="Tags appear here once an income or expense in this budget references one."
-            >
-              <Button label="Manage tags" icon="tag" onPress={() => router.push('/tags')} />
-            </EmptyState>
-          ) : (
-            <ScrollView
-              style={styles.tagScroll}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-            >
-              <View style={[styles.tagGrid, { gap: spacing.sm }]}>
-                {tagSummaries.map(({ tag, spent, expensePercent }) => (
-                  <View key={tag.id} style={styles.tagGridItem}>
-                    <TagSpendRow
-                      tag={tag}
-                      spent={spent}
-                      expensePercent={expensePercent}
-                      currency={currency}
-                      active={tag.id === activeTagId}
-                      onPress={() => setActiveTag(tag.id === activeTagId ? null : tag.id)}
-                    />
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-          ))}
-
-        <View style={{ height: spacing.lg }} />
-
         <SectionHeader
           title={`Transactions · ${transactions.length}`}
           fontSize={14}
@@ -579,6 +777,20 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
+  // The tags drawer sits behind the Remaining card in the pinned band: the
+  // card's zIndex 2 wins, so the drawer reads as sliding out from under it.
+  tagsDrawer: { zIndex: 1 },
+  // Shrinks when the Card's maxHeight caps the drawer so the grid ScrollView
+  // gives up height, never the fixed-height handle strip at the bottom edge.
+  drawerBody: { flexShrink: 1 },
+  drawerHandle: {
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 6,
+    height: DRAWER_PEEK,
+    justifyContent: 'center',
+  },
   // Remaining amount with its privacy toggle: the figure keeps the left edge
   // and the eye button sits flush with the card's right edge, optically
   // centered against the 40px display text.
@@ -609,7 +821,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tagGridItem: { flexGrow: 0, flexShrink: 0, width: '48%' },
-  // Capped height keeps the section compact and scrolls independently inside
-  // the page ScrollView. ~5 rows of chips before the tags start scrolling.
-  tagScroll: { flexGrow: 0, maxHeight: 260 },
+  // No fixed cap anymore: the drawer's measured maxHeight (three real grid
+  // rows plus chrome) bounds it, and flexShrink trims the viewport when the
+  // Remaining card clamps the drawer. Keeps the grid scrolling independently
+  // inside the drawer.
+  tagScroll: { flexGrow: 0, flexShrink: 1 },
 });
