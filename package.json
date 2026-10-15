@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo-google-fonts/manrope": "^0.4.2",
+    "@react-native-ml-kit/text-recognition": "^2.0.0",
     "expo": "~57.0.28",
     "expo-constants": "~57.0.20",
     "expo-document-picker": "~57.0.3",
@@ -41,6 +42,15 @@
   },
   "private": true,
   "license": "MIT",
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "@react-native-ml-kit/text-recognition"
+        ]
+      }
+    }
+  },
   "devDependencies": {
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2"

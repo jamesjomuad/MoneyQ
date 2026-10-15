@@ -50,7 +50,22 @@ import { formatDateRange, formatShortDate, parseFlexibleDate, toIsoDate } from '
 import { createId } from '../../utils/id';
 import { PAYMENT_OPTIONS, effectivePaymentStatus } from '../../utils/paymentStatus';
 import { showToast } from '../../stores/toastStore';
-import { removeStagedFile } from '../../services/receiptShareService';
+import {
+  receiptShareService,
+  removeStagedFile,
+  stageSharedImage,
+} from '../../services/receiptShareService';
+import { isOcrAvailable, recognizeReceiptLines } from '../../services/ocrService';
+import {
+  autoPrefill,
+  buildChips,
+  findChipForAmount,
+  findChipForDate,
+  findChipForText,
+  parseChipAmount,
+  parseChipDate,
+} from '../../utils/receiptOcr';
+import { RecognizedTextSection } from '../../components/receipts/RecognizedTextSection';
 import { deleteReceiptFile, persistReceipt } from '../../services/receiptFiles';
 import { pickImagesAsync } from '../../services/fileService';
 import { useAttachmentStore } from '../../stores/attachmentStore';
@@ -65,6 +80,18 @@ const DATE_CHIPS = [
   { label: 'Yesterday', offset: 1 },
   { label: 'Tomorrow', offset: -1 },
 ];
+
+/**
+ * Session-only receipt OCR state. Recognized chips, the current scan status,
+ * and which chip fed which field live exactly as long as this form does:
+ * nothing here is ever written to storage or persisted across screens.
+ */
+const OCR_IDLE = {
+  status: 'idle',
+  chips: [],
+  error: null,
+  assignments: { description: null, amount: null, date: null },
+};
 
 /** Today minus `offset` days, as a local 'YYYY-MM-DD' value. */
 function offsetIso(offset) {
@@ -384,6 +411,15 @@ export default function TransactionFormScreen() {
   const [receiptFailed, setReceiptFailed] = useState(false);
   const [viewerUri, setViewerUri] = useState(null);
 
+  // Live OCR state for the staged receipt (create mode only). The scanned-
+  // uri ref stops a rerender or StrictMode remount from firing a second scan
+  // of the same image; the generation counter makes a scan that finished
+  // after its receipt was replaced or removed simply evaporate.
+  const [ocr, setOcr] = useState(OCR_IDLE);
+  const [ocrNonce, setOcrNonce] = useState(0);
+  const ocrScannedUriRef = useRef(null);
+  const ocrGenRef = useRef(0);
+
   // Attachments of a saved transaction live in their own store: adding or
   // removing an image is an immediate, self-contained write (like
   // reminders), deliberately outside the form's dirty-check/autosave.
@@ -498,6 +534,140 @@ export default function TransactionFormScreen() {
     setReceiptUri(null);
     setViewerUri(null);
     setReceiptFailed(false);
+    // The scan belonged to this image: drop its chips, cancel anything the
+    // native module might still be reading.
+    ocrGenRef.current += 1;
+    ocrScannedUriRef.current = null;
+    setOcr(OCR_IDLE);
+  };
+
+  // The freshest field values, read only when a scan lands: automatic
+  // prefill may fill a field exclusively when the user has left it alone.
+  const ocrValuesRef = useRef({ amount: '', description: '', dateEdited: false });
+  useEffect(() => {
+    ocrValuesRef.current = { amount, description, dateEdited: dateEditedRef.current };
+  });
+
+  // Auto-start on-device OCR the moment a receipt image is staged or attached
+  // (and never for the same image twice). Recognition is local only — the
+  // image never leaves the device — and a missing native module (Expo Go)
+  // degrades to the 'unavailable' state without touching the receipt or any
+  // entered value. A failed or empty scan likewise keeps everything usable
+  // for manual entry; only an explicit 'Scan again' retries — no loops.
+  useEffect(() => {
+    if (transactionId || !receiptUri) return undefined;
+    if (ocrScannedUriRef.current === receiptUri) return undefined;
+    ocrScannedUriRef.current = receiptUri;
+    const generation = ++ocrGenRef.current;
+    setOcr({ ...OCR_IDLE, status: 'scanning' });
+
+    // Stale results (receipt replaced or removed mid-scan) are dropped.
+    const finish = (next) => {
+      if (generation === ocrGenRef.current) setOcr(next);
+    };
+
+    (async () => {
+      if (!isOcrAvailable()) {
+        finish({ ...OCR_IDLE, status: 'unavailable' });
+        return;
+      }
+      try {
+        const lines = await recognizeReceiptLines(receiptUri);
+        const chips = buildChips(lines);
+        if (chips.length === 0) {
+          finish({ ...OCR_IDLE, status: 'empty' });
+          return;
+        }
+        // Conservative automatic prefill: only amounts/dates the deterministic
+        // parser itself is confident in, only into fields still untouched.
+        // The OCR text is never dumped into any field wholesale.
+        const suggested = autoPrefill(lines);
+        const fresh = ocrValuesRef.current;
+        const assignments = { description: null, amount: null, date: null };
+        if (suggested.amount && String(fresh.amount).trim() === '') {
+          setAmount(suggested.amount);
+          assignments.amount = findChipForAmount(chips, suggested.amount);
+        }
+        if (suggested.description && String(fresh.description).trim() === '') {
+          setDescription(suggested.description);
+          assignments.description = findChipForText(chips, suggested.description);
+        }
+        if (suggested.date && !fresh.dateEdited) {
+          dateEditedRef.current = true;
+          setDate(suggested.date);
+          assignments.date = findChipForDate(chips, suggested.date);
+        }
+        finish({ ...OCR_IDLE, status: 'done', chips, assignments });
+      } catch (error) {
+        finish({
+          ...OCR_IDLE,
+          status: 'failed',
+          error: error?.message ? String(error.message) : null,
+        });
+      }
+    })();
+    return undefined;
+  }, [receiptUri, transactionId, ocrNonce]);
+
+  const handleScanAgain = () => {
+    // Let the effect above see the same uri as unseen and rerun once.
+    ocrScannedUriRef.current = null;
+    setOcrNonce((nonce) => nonce + 1);
+  };
+
+  // A chip tap only becomes a field write through the same conservative
+  // validators the automatic path uses: an unparsable amount or ambiguous
+  // date explains itself and leaves the field exactly as it was. Description
+  // takes the chip text verbatim — there the user is the parser.
+  const handleOcrAssign = (fieldKey, chip) => {
+    if (fieldKey === 'amount') {
+      const parsed = parseChipAmount(chip.text);
+      if (!parsed.ok) return { ok: false, message: parsed.reason };
+      setAmount(parsed.value);
+      setOcr((prev) => ({
+        ...prev,
+        assignments: { ...prev.assignments, amount: chip.id },
+      }));
+      return { ok: true };
+    }
+    if (fieldKey === 'date') {
+      const parsed = parseChipDate(chip.text);
+      if (!parsed.ok) return { ok: false, message: parsed.reason };
+      dateEditedRef.current = true;
+      setDate(parsed.value);
+      setOcr((prev) => ({
+        ...prev,
+        assignments: { ...prev.assignments, date: chip.id },
+      }));
+      return { ok: true };
+    }
+    setDescription(chip.text);
+    setOcr((prev) => ({
+      ...prev,
+      assignments: { ...prev.assignments, description: chip.id },
+    }));
+    return { ok: true };
+  };
+
+  // Attaching an image from the gallery reuses the share-import staging:
+  // the picked file is copied under <cache>/receipt-imports, so preview,
+  // remove, cleanup on exit, and persistReceipt on save all work exactly as
+  // they do for a shared receipt.
+  const handleAttachReceiptImage = async () => {
+    let uris;
+    try {
+      uris = await pickImagesAsync();
+    } catch (error) {
+      Alert.alert('Could not open the picker', error?.message ?? 'Please try again.');
+      return;
+    }
+    if (!uris || uris.length === 0) return;
+    const staged = await stageSharedImage(uris[0], null);
+    if (!staged) {
+      Alert.alert('Could not attach the image', 'The picked image could not be read. Please try again.');
+      return;
+    }
+    setReceiptUri(staged);
   };
 
   // Attachments are immediate writes outside the autosave: pick images,
@@ -1030,18 +1200,52 @@ export default function TransactionFormScreen() {
         {/* The share-import preview belongs at the top of a NEW transaction:
             it shows the staged copy the import handed over. Once the row is
             saved the image lives in the Attachments section of the detail
-            view below instead. */}
-        {!transactionId && receiptUri ? (
+            view below instead. Without a receipt yet, a gallery picker can
+            supply one through the same staging — and either way, whatever
+            OCR reads from it lands right below for review, never for saving. */}
+        {!transactionId ? (
           <>
-            <SectionHeader title="Receipt" />
-            <ReceiptPreview
-              failed={receiptFailed}
-              uri={receiptUri}
-              onFail={() => setReceiptFailed(true)}
-              onRemove={handleRemoveReceipt}
-              onView={() => setViewerUri(receiptUri)}
-            />
-            <View style={{ height: spacing.lg }} />
+            {receiptUri ? (
+              <>
+                <SectionHeader title="Receipt" />
+                <ReceiptPreview
+                  failed={receiptFailed}
+                  uri={receiptUri}
+                  onFail={() => setReceiptFailed(true)}
+                  onRemove={handleRemoveReceipt}
+                  onView={() => setViewerUri(receiptUri)}
+                />
+                <View style={{ height: spacing.lg }} />
+              </>
+            ) : null}
+
+            {!receiptUri && receiptShareService.supported ? (
+              <>
+                <SectionHeader title="Receipt" />
+                <Button
+                  label="Attach receipt image"
+                  variant="secondary"
+                  icon="bills"
+                  onPress={handleAttachReceiptImage}
+                />
+                <View style={{ height: spacing.lg }} />
+              </>
+            ) : null}
+
+            {receiptUri && ocr.status !== 'idle' ? (
+              <>
+                <RecognizedTextSection
+                  assignments={ocr.assignments}
+                  chips={ocr.chips}
+                  error={ocr.error}
+                  status={ocr.status}
+                  values={{ description, amount, date: formatShortDate(date) }}
+                  onAssign={handleOcrAssign}
+                  onScanAgain={handleScanAgain}
+                />
+                <View style={{ height: spacing.lg }} />
+              </>
+            ) : null}
           </>
         ) : null}
 

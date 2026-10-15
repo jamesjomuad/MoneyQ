@@ -207,3 +207,10 @@ export function parseReceiptText(text) {
 
   return { amount, date, notes: buildNotes(lines, consumed) };
 }
+
+/**
+ * Reused by the OCR chip validator (utils/receiptOcr). A tapped chip is one
+ * recognized line: the exact same money and date rules must decide whether it
+ * is safe to apply, so nothing here is duplicated over there.
+ */
+export { AMOUNT_EXCLUDE, NUMBER_IN_TEXT, centsOf, dateCandidatesFromLine, normalizeNumber };
