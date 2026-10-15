@@ -15,13 +15,16 @@ import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
 /**
- * The unified 'Recognized Text' section. Every line ML Kit read from the
- * receipt appears once, verbatim, as a tappable chip — no categories, no
- * separate lists, and no chip is ever consumed: used chips stay visible and
- * reusable, only marked with a small check. Tapping a chip opens a bottom
- * sheet offering exactly the form fields that can hold it (Description,
- * Amount, Date — the transaction model has no notes field on the parent).
- * All selection state here is session-only UI state; nothing is stored.
+ * The collapsible 'Recognized Text' area inside the New Transaction form's
+ * Attachments section. Every line ML Kit read from the receipt appears once,
+ * verbatim, as a tappable chip — no categories, no separate lists, and no
+ * chip is ever consumed: used chips stay visible and reusable, only marked
+ * with a small check. Tapping a chip opens a bottom sheet offering exactly
+ * the form fields that can hold it (Description, Amount, Date — the
+ * transaction model has no notes field on the parent). The whole body folds
+ * behind its header so the section stays uncluttered; 'Scan again' lives in
+ * the header and unfolds a fresh result automatically. All selection state
+ * here is session-only UI state; nothing is stored.
  */
 
 const FIELDS = [
@@ -40,8 +43,15 @@ export function RecognizedTextSection({
   onAssign,
 }) {
   const { colors, radius, spacing, typography } = useTheme();
+  const [collapsed, setCollapsed] = useState(false);
   const [selected, setSelected] = useState(null);
   const [sheetError, setSheetError] = useState(null);
+
+  // A fresh scan is worth looking at: unfold before re-running it.
+  const scanAgain = () => {
+    setCollapsed(false);
+    onScanAgain();
+  };
 
   const openChip = (chip) => {
     setSheetError(null);
@@ -84,7 +94,7 @@ export function RecognizedTextSection({
         accessibilityRole="button"
         accessibilityLabel="Scan the receipt again"
         hitSlop={8}
-        onPress={onScanAgain}
+        onPress={scanAgain}
         style={({ pressed }) => [
           styles.action,
           { opacity: pressed ? 0.7 : 1 },
@@ -99,93 +109,103 @@ export function RecognizedTextSection({
 
   return (
     <View>
-      <SectionHeader title="Recognized Text" action={action} />
+      <SectionHeader
+        action={action}
+        collapsed={collapsed}
+        fontSize={14}
+        onToggle={() => setCollapsed((value) => !value)}
+        title="Recognized Text"
+      />
 
-      {status === 'scanning' ? (
-        <View style={styles.statusRow}>
-          <ActivityIndicator size="small" color={colors.primary} />
-          <Text variant="caption" tone="muted">
-            Reading the receipt…
-          </Text>
-        </View>
-      ) : null}
-
-      {status === 'unavailable' ? (
-        <Text variant="caption" tone="muted" style={styles.caption}>
-          On-device text recognition needs a development build, so this receipt
-          waits for you to enter the details by hand. Nothing else about the
-          import changes.
-        </Text>
-      ) : null}
-
-      {status === 'failed' ? (
-        <View style={styles.statusBlock}>
-          <Text variant="caption" tone="warning" style={styles.caption}>
-            {error ||
-              'The scan could not read this image. Your receipt and any entries are untouched.'}
-          </Text>
-          <Button
-            label="Scan again"
-            variant="secondary"
-            icon="refresh"
-            onPress={onScanAgain}
-            style={styles.scanButton}
-          />
-        </View>
-      ) : null}
-
-      {status === 'empty' ? (
-        <View style={styles.statusBlock}>
-          <Text variant="caption" tone="muted" style={styles.caption}>
-            No text could be read from this image. Use “Scan again”, or fill the
-            fields below by hand — the receipt is still attached.
-          </Text>
-        </View>
-      ) : null}
-
-      {status === 'done' ? (
+      {!collapsed ? (
         <>
-          <Text variant="caption" tone="muted" style={styles.caption}>
-            Tap any line to place it in a field. Suggestions are never saved —
-            review them before you tap Save.
-          </Text>
-          <View style={[styles.chips, { gap: spacing.sm }]}>
-            {chips.map((chip) => {
-              const isSelected = selected?.id === chip.id;
-              const isUsed = usedIds.has(chip.id);
-              return (
-                <Pressable
-                  key={chip.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Use recognized text: ${chip.text}`}
-                  onPress={() => openChip(chip)}
-                  style={({ pressed }) => [
-                    styles.chip,
-                    {
-                      backgroundColor: isSelected ? colors.primarySoft : colors.surfaceMuted,
-                      borderColor: isSelected ? colors.primary : colors.border,
-                      borderRadius: radius.md,
-                      paddingHorizontal: spacing.md,
-                      paddingVertical: spacing.sm,
-                      opacity: pressed ? 0.8 : 1,
-                    },
-                    isUsed && !isSelected ? styles.usedChip : null,
-                  ]}
-                >
-                  {isUsed ? (
-                    <Icon name="check" size={13} color={colors.primary} />
-                  ) : null}
-                  <Text
-                    variant="label"
-                    tone={isSelected ? 'primary' : 'default'}
-                    style={styles.chipText}
-                  >
-                    {chip.text}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          {status === 'scanning' ? (
+            <View style={styles.statusRow}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text variant="caption" tone="muted">
+                Reading the receipt…
+              </Text>
+            </View>
+          ) : null}
+
+          {status === 'unavailable' ? (
+            <Text variant="caption" tone="muted" style={styles.caption}>
+              On-device text recognition needs a development build, so this receipt
+              waits for you to enter the details by hand. Nothing else about the
+              import changes.
+            </Text>
+          ) : null}
+
+          {status === 'failed' ? (
+            <View style={styles.statusBlock}>
+              <Text variant="caption" tone="warning" style={styles.caption}>
+                {error ||
+                  'The scan could not read this image. Your receipt and any entries are untouched.'}
+              </Text>
+              <Button
+                label="Scan again"
+                variant="secondary"
+                icon="refresh"
+                onPress={scanAgain}
+                style={styles.scanButton}
+              />
+            </View>
+          ) : null}
+
+          {status === 'empty' ? (
+            <View style={styles.statusBlock}>
+              <Text variant="caption" tone="muted" style={styles.caption}>
+                No text could be read from this image. Use “Scan again”, or fill the
+                fields below by hand — the receipt is still attached.
+              </Text>
+            </View>
+          ) : null}
+
+          {status === 'done' ? (
+            <>
+              <Text variant="caption" tone="muted" style={styles.caption}>
+                Tap any line to place it in a field. Suggestions are never saved —
+                review them before you tap Save.
+              </Text>
+              <View style={[styles.chips, { gap: spacing.sm }]}>
+                {chips.map((chip) => {
+                  const isSelected = selected?.id === chip.id;
+                  const isUsed = usedIds.has(chip.id);
+                  return (
+                    <Pressable
+                      key={chip.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Use recognized text: ${chip.text}`}
+                      onPress={() => openChip(chip)}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        {
+                          backgroundColor: isSelected ? colors.primarySoft : colors.surfaceMuted,
+                          borderColor: isSelected ? colors.primary : colors.border,
+                          borderRadius: radius.md,
+                          paddingHorizontal: spacing.md,
+                          paddingVertical: spacing.sm,
+                          opacity: pressed ? 0.8 : 1,
+                        },
+                        isUsed && !isSelected ? styles.usedChip : null,
+                      ]}
+                    >
+                      {isUsed ? (
+                        <Icon name="check" size={13} color={colors.primary} />
+                      ) : null}
+                      <Text
+                        variant="label"
+                        tone={isSelected ? 'primary' : 'default'}
+                        style={styles.chipText}
+                      >
+                        {chip.text}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          ) : null}
         </>
       ) : null}
 

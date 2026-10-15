@@ -1197,43 +1197,37 @@ export default function TransactionFormScreen() {
             paddingBottom: (transactionId ? 48 : barHeight) + keyboardHeight,
           }}
         >
-        {/* The share-import preview belongs at the top of a NEW transaction:
-            it shows the staged copy the import handed over. Once the row is
-            saved the image lives in the Attachments section of the detail
-            view below instead. Without a receipt yet, a gallery picker can
-            supply one through the same staging — and either way, whatever
-            OCR reads from it lands right below for review, never for saving. */}
-        {!transactionId ? (
+        {/* One section manages images on a new transaction: the staged
+            receipt — shared in or picked from the gallery — lives here,
+            titled and organized exactly like the saved transaction's
+            Attachments section, so the image never appears in two places.
+            Whatever OCR reads from it collapses directly beneath the
+            preview, for review only; nothing is applied or saved
+            automatically. Once the row is saved this staged copy becomes
+            a persistent attachment of the same name. */}
+        {!transactionId && (receiptUri || receiptShareService.supported) ? (
           <>
-            {receiptUri ? (
-              <>
-                <SectionHeader title="Receipt" />
-                <ReceiptPreview
-                  failed={receiptFailed}
-                  uri={receiptUri}
-                  onFail={() => setReceiptFailed(true)}
-                  onRemove={handleRemoveReceipt}
-                  onView={() => setViewerUri(receiptUri)}
-                />
-                <View style={{ height: spacing.lg }} />
-              </>
-            ) : null}
+            <SectionHeader title="Attachments" />
 
-            {!receiptUri && receiptShareService.supported ? (
-              <>
-                <SectionHeader title="Receipt" />
-                <Button
-                  label="Attach receipt image"
-                  variant="secondary"
-                  icon="bills"
-                  onPress={handleAttachReceiptImage}
-                />
-                <View style={{ height: spacing.lg }} />
-              </>
-            ) : null}
+            {receiptUri ? (
+              <ReceiptPreview
+                failed={receiptFailed}
+                uri={receiptUri}
+                onFail={() => setReceiptFailed(true)}
+                onRemove={handleRemoveReceipt}
+                onView={() => setViewerUri(receiptUri)}
+              />
+            ) : (
+              <Button
+                label="Attach receipt image"
+                variant="secondary"
+                icon="bills"
+                onPress={handleAttachReceiptImage}
+              />
+            )}
 
             {receiptUri && ocr.status !== 'idle' ? (
-              <>
+              <View style={{ marginTop: spacing.md }}>
                 <RecognizedTextSection
                   assignments={ocr.assignments}
                   chips={ocr.chips}
@@ -1243,9 +1237,10 @@ export default function TransactionFormScreen() {
                   onAssign={handleOcrAssign}
                   onScanAgain={handleScanAgain}
                 />
-                <View style={{ height: spacing.lg }} />
-              </>
+              </View>
             ) : null}
+
+            <View style={{ height: spacing.lg }} />
           </>
         ) : null}
 
