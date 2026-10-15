@@ -2,6 +2,74 @@
 
 All notable changes to Budgetarian. Dates are local calendar days; newest first.
 
+## 2026-10-15
+
+### Added
+- Receipt images now survive saving: on Save the shared or picked copy is
+  moved out of the app cache into persistent document storage and the
+  transaction records the relative path (migration 013, mirrored in both
+  storage adapters). Reopening the transaction — or restarting the device —
+  still shows the preview, and the full-screen viewer works for saved
+  receipts too. Removal deletes the file only once the database update
+  lands, deleting a transaction cleans up its receipts, and backups
+  deliberately exclude receipt images so a restore can never point at an
+  absent file.
+- A transaction can own several images: the single receipt column became an
+  attachments table (migration 014), with legacy references folded into
+  attachment rows during the rebuild and files on disk untouched. Adding
+  and removing are committed immediately, like reminders — outside the
+  form autosave — and deleting a transaction or budget cascades every
+  attachment file away.
+- The Attachments section follows the same idiom as Reminders: a plain
+  header with a plus action, one card of hairline-divided rows (thumbnail,
+  file type, trash), an empty state with the primary add circle, and a
+  loading row while the list is fetched. An unreadable file renders a gray
+  "File missing" row that can still be removed. Picking images uses
+  expo-file-system's own picker — no new dependency — and tiles open the
+  existing full-screen viewer.
+- On-device receipt OCR: a shared or attached receipt image is scanned
+  entirely on the device with ML Kit text recognition, and every
+  recognized line appears verbatim as a reusable chip in a collapsible
+  "Recognized Text" area inside the transaction's single Attachments
+  section. Tapping a chip offers the text for Description, Amount, or Date
+  through the exact same conservative money and date guards the share
+  parser uses — reference numbers, balances, fees, and ambiguous dates are
+  rejected inline with the field left exactly as it was — and replacing a
+  filled field always asks first. Auto-prefill stays deliberately
+  conservative: a confident amount and date plus a labeled or uniquely
+  name-like merchant line, and only into fields the user has not touched.
+  "Scan again" reruns against the currently attached image, an older
+  in-flight scan can never overwrite a newer one, and removing the
+  attachment clears its results and selection state. Nothing is ever saved
+  by the scanner — the existing explicit Save and the staged-receipt
+  lifecycle own that — and chip state is session-only with no schema
+  changes. In Expo Go the area degrades to a plain "needs a development
+  build" notice, and ML Kit never reaches the web bundle.
+- The Tags section becomes a compact drawer parked in the pinned overlay,
+  tucked behind the Remaining card with a negative top margin so it always
+  reads as attached. It opens collapsed — only the handle strip, now
+  carrying the Tags count beside the rotating chevron, peeks below the
+  card — and tapping slides it down on a pure transform animation to the
+  clear-filter strip plus exactly three live-measured tag rows at any font
+  scale, with nothing ever poking above the card. Transactions still
+  scroll and stay tappable under the closed band.
+
+### Changed
+- The app icon was refreshed again.
+
+### Fixed
+- The migration that introduced the attachments table could abort the
+  upgrade on real installs ("UNIQUE constraint failed:
+  sub_transactions.id"): orphaned child rows survived the transactions
+  rebuild and collided with the restock. Child rows are now emptied
+  explicitly before the swap and only rows whose parent survived are
+  restocked — invisible orphans are dropped, every valid row untouched.
+- Dark mode contrast: the tags drawer paints the elevated surface so it
+  reads as its own plane between the Remaining card and the background,
+  and unselected-tag share captions move from faint to muted — measured at
+  2.93:1 before, now clearing 4.5:1 on every surface pair in all three
+  themes. The same shared rows in the budget breakdown benefit too.
+
 ## 2026-10-14
 
 ### Added
@@ -29,6 +97,23 @@ All notable changes to Budgetarian. Dates are local calendar days; newest first.
   left of each budget row while selection mode is on; the row itself is the
   toggle target and the chevron never moves. Long-press — the old way into
   selection — is now reserved entirely for starting a drag.
+- The transaction tag row shows the full library in a single swipeable row
+  with narrow fading edges that appear only while tags overflow past that
+  side and never intercept taps — the search field is gone. The
+  Add-or-rename-tags button is centered, painted with the primary theme
+  color, and rounded into a pill to match the chips.
+- The breakdown section dropped its redundant Total line: the sticky Amount
+  card already shows the calculated sum while a breakdown is open.
+- Replaced the app icon and splash images, and updated the favicon and
+  notification icon to match.
+- Home and the folder views now share one reusable multi-select system
+  internally, keeping their toolbars and behavior identical as selection
+  features grow.
+
+### Fixed
+- Unchecked selection checkboxes have a darkened border and are now
+  visible, and the selection toolbar's cancel button got a border of its
+  own.
 
 ## 2026-10-13
 
