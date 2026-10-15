@@ -54,6 +54,13 @@ export const migration = {
              created_at, updated_at, purchase_date, purchase_time, notes
         FROM sub_transactions;
 
+      -- Empty the child table explicitly rather than trusting the DROP below to
+      -- cascade into it: where enforcement is not active, or a child row already
+      -- points at a transaction that is gone, the cascade never removes those rows
+      -- and restocking them from the stash would collide ('UNIQUE constraint
+      -- failed: sub_transactions.id' — seen on real installs).
+      DELETE FROM sub_transactions;
+
       CREATE TABLE receipt_seed_v14 (
         transaction_id TEXT NOT NULL,
         path           TEXT NOT NULL,
@@ -115,7 +122,13 @@ export const migration = {
          created_at, updated_at, purchase_date, purchase_time, notes)
       SELECT id, transaction_id, description, amount, position,
              created_at, updated_at, purchase_date, purchase_time, notes
-        FROM sub_transactions_v14;
+        FROM sub_transactions_v14
+        -- Rows whose parent transaction no longer exists (accumulated while
+        -- enforcement was off somewhere in the row's history) cannot come back
+        -- without violating the foreign key, and no screen ever shows them.
+        -- Dropping them leaves the rebuilt table identical to what every read
+        -- query already sees.
+        WHERE transaction_id IN (SELECT id FROM transactions);
 
       DROP TABLE sub_transactions_v14;
 
