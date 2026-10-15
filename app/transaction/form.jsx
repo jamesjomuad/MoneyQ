@@ -390,6 +390,7 @@ export default function TransactionFormScreen() {
   // Tiles whose image fails to decode are remembered locally for this
   // session; a missing file arrives from the store with uri === null.
   const attachments = useAttachmentStore((state) => state.attachments);
+  const isLoadingAttachments = useAttachmentStore((state) => state.isLoading);
   const loadAttachments = useAttachmentStore((state) => state.load);
   const attachImage = useAttachmentStore((state) => state.addImage);
   const detachAttachment = useAttachmentStore((state) => state.remove);
@@ -1194,94 +1195,6 @@ export default function TransactionFormScreen() {
           </>
         ) : null}
 
-        {/* Attachments — every image attached to this saved transaction,
-            read from permanent document storage (never the share-import
-            cache). Adding and removing are immediate, committed writes of
-            their own — like reminders — independent of the field autosave.
-            The section is the transaction's photo library: always present
-            while editing on a device that can pick images, so a receipt
-            that has none yet is one tap from having one. */}
-        {transactionId && (Platform.OS !== 'web' || attachments.length > 0) ? (
-          <>
-            <View style={{ height: spacing.lg }} />
-            <SectionHeader
-              title={
-                attachments.length > 0
-                  ? `Attachments · ${attachments.length}`
-                  : 'Attachments'
-              }
-              fontSize={14}
-            />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.attachmentRow}
-            >
-              {attachments.map((attachment) => {
-                const broken =
-                  !attachment.uri || failedAttachmentIds.has(attachment.id);
-                return (
-                  <View key={attachment.id} style={styles.attachmentTile}>
-                    <View style={styles.attachmentFrame}>
-                      {broken ? (
-                        <View style={styles.attachmentMissing}>
-                          <Text variant="caption" tone="muted">
-                            Missing
-                          </Text>
-                        </View>
-                      ) : (
-                        <Pressable
-                          accessibilityRole="imagebutton"
-                          accessibilityLabel="View attachment"
-                          onPress={() => setViewerUri(attachment.uri)}
-                          style={StyleSheet.absoluteFill}
-                        >
-                          <Image
-                            source={{ uri: attachment.uri }}
-                            style={styles.attachmentImage}
-                            resizeMode="cover"
-                            onError={() => markAttachmentFailed(attachment.id)}
-                          />
-                        </Pressable>
-                      )}
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Remove attachment"
-                        hitSlop={6}
-                        onPress={() => void detachAttachment(attachment.id)}
-                        style={styles.attachmentRemove}
-                      >
-                        <Icon name="close" size={12} color="#fff" />
-                      </Pressable>
-                    </View>
-                    <Text variant="caption" tone="faint" numberOfLines={1}>
-                      {receiptTypeLabel(attachment.path)}
-                    </Text>
-                  </View>
-                );
-              })}
-              {Platform.OS !== 'web' ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Add receipt image"
-                  disabled={addingAttachments}
-                  onPress={handleAddAttachments}
-                  style={[
-                    styles.attachmentAdd,
-                    { borderColor: colors.border },
-                  ]}
-                >
-                  {addingAttachments ? (
-                    <ActivityIndicator size="small" color={colors.muted} />
-                  ) : (
-                    <Icon name="add" size={22} color={colors.muted} />
-                  )}
-                </Pressable>
-              ) : null}
-            </ScrollView>
-          </>
-        ) : null}
-
         <View style={{ height: spacing.lg }} />
 
         {transactionId ? (
@@ -1294,6 +1207,137 @@ export default function TransactionFormScreen() {
             onOpenSettings={openDeviceSettings}
           />
         )}
+
+        {/* Attachments — every image attached to this saved transaction,
+            read from permanent document storage (never the share-import
+            cache). Adding and removing are immediate, committed writes of
+            their own — like reminders — independent of the field autosave.
+            The section is the transaction's photo library: always present
+            while editing on a device that can pick images, so a receipt
+            that has none yet is one tap from having one. */}
+        {transactionId && (Platform.OS !== 'web' || attachments.length > 0) ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <SectionHeader
+              title="Attachments"
+              action={
+                Platform.OS !== 'web' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Add receipt image"
+                    hitSlop={8}
+                    disabled={addingAttachments}
+                    onPress={handleAddAttachments}
+                    style={({ pressed }) => [
+                      styles.headerAction,
+                      { opacity: pressed || addingAttachments ? 0.55 : 1 },
+                    ]}
+                  >
+                    <Icon name="add" size={20} color={colors.primary} />
+                  </Pressable>
+                ) : null
+              }
+            />
+            <Card>
+              {isLoadingAttachments ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : attachments.length > 0 ? (
+                attachments.map((attachment, index) => {
+                  const broken =
+                    !attachment.uri || failedAttachmentIds.has(attachment.id);
+                  return (
+                    <Pressable
+                      key={attachment.id}
+                      accessibilityRole="button"
+                      accessibilityLabel="View attachment"
+                      disabled={broken}
+                      onPress={() => setViewerUri(attachment.uri)}
+                      style={({ pressed }) => [
+                        styles.attachmentRow,
+                        index > 0 && {
+                          marginTop: spacing.sm,
+                          borderTopColor: colors.border,
+                          borderTopWidth: StyleSheet.hairlineWidth,
+                          paddingTop: spacing.sm,
+                        },
+                        !broken && { opacity: pressed ? 0.6 : 1 },
+                      ]}
+                    >
+                      <View style={styles.attachmentThumb}>
+                        {broken ? (
+                          <View style={styles.attachmentMissing}>
+                            <Text variant="caption" tone="muted">
+                              ?
+                            </Text>
+                          </View>
+                        ) : (
+                          <Image
+                            source={{ uri: attachment.uri }}
+                            style={styles.attachmentImage}
+                            resizeMode="cover"
+                            onError={() => markAttachmentFailed(attachment.id)}
+                          />
+                        )}
+                      </View>
+                      <View style={styles.attachmentCopy}>
+                        <Text variant="body" numberOfLines={1}>
+                          {receiptTypeLabel(attachment.path)}
+                        </Text>
+                        {broken ? (
+                          <Text variant="caption" tone="muted">
+                            File missing
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove attachment"
+                        hitSlop={8}
+                        onPress={() => void detachAttachment(attachment.id)}
+                        style={({ pressed }) => [
+                          styles.attachmentRemove,
+                          { opacity: pressed ? 0.55 : 1 },
+                        ]}
+                      >
+                        <Icon name="trash" size={16} color={colors.textFaint} />
+                      </Pressable>
+                    </Pressable>
+                  );
+                })
+              ) : (
+                <EmptyState icon="bills" title="No attachments yet">
+                  <View style={styles.emptyAction}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Add receipt image"
+                      disabled={addingAttachments}
+                      onPress={handleAddAttachments}
+                      style={({ pressed }) => [
+                        styles.addCircle,
+                        { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
+                      ]}
+                    >
+                      {addingAttachments ? (
+                        <ActivityIndicator size="small" color={colors.onPrimary} />
+                      ) : (
+                        <Icon name="add" size={26} color={colors.onPrimary} />
+                      )}
+                    </Pressable>
+                    <Text
+                      variant="label"
+                      tone="primary"
+                      style={{ marginTop: spacing.sm, textAlign: 'center' }}
+                    >
+                      Add a receipt image
+                    </Text>
+                  </View>
+                </EmptyState>
+              )}
+            </Card>
+          </>
+        ) : null}
 
         {transactionId ? (
           <Text
@@ -1626,14 +1670,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   receiptActions: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 12 },
-  attachmentRow: { gap: 10, paddingRight: 6 },
-  attachmentTile: { width: 120 },
-  attachmentFrame: {
-    width: 120,
-    height: 120,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
+  attachmentRow: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingVertical: 2 },
+  attachmentThumb: { width: 48, height: 48, borderRadius: 8, overflow: 'hidden' },
   attachmentImage: { width: '100%', height: '100%' },
   attachmentMissing: {
     width: '100%',
@@ -1642,24 +1680,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(128,128,128,0.15)',
   },
-  attachmentRemove: {
-    position: 'absolute',
-    top: 5,
-    right: 5,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+  attachmentCopy: { flex: 1, minWidth: 0 },
+  attachmentRemove: { paddingLeft: 8 },
+  headerAction: { alignItems: 'center', height: 32, justifyContent: 'center', width: 32 },
+  loadingRow: { alignItems: 'center', paddingVertical: 12 },
+  emptyAction: { alignItems: 'center' },
+  addCircle: {
     alignItems: 'center',
+    height: 56,
     justifyContent: 'center',
-  },
-  attachmentAdd: {
-    width: 120,
-    height: 120,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 28,
+    width: 56,
   },
   viewerBackdrop: { flex: 1 },
   viewerClose: {
