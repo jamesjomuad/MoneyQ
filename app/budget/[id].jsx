@@ -169,9 +169,17 @@ function TagsDrawer({
         style={{
           // Room for the three measured grid rows, the Clear-filter strip if
           // it's showing, and the drawer's own chrome (top pad = overlap +
-          // spacing.sm, bottom pad, handle strip). No card-height ceiling
+          // spacing.lg, bottom pad, handle strip). No card-height ceiling
           // any more: the clip window hides whatever extends above the card,
           // so three real rows always fit.
+          //
+          // Readability: Dark and Budgetarian paint the drawer one step ABOVE
+          // the Remaining card's surface (colors.surface) via the
+          // surfaceElevated token, so the boundary between the two cards and
+          // the screen reads even where shadows die out. Light keeps white on
+          // white there, where the hairline border and drop shadow already
+          // carry the separation. No hardcoded colors.
+          backgroundColor: colors.surfaceElevated,
           maxHeight:
             rowsHeight +
             (activeTag ? filterHeight : 0) +

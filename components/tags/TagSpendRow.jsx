@@ -69,7 +69,11 @@ export function TagSpendRow({ tag, spent, expensePercent = 0, currency, active =
             ]}
           />
         </View>
-        <Text variant="caption" tone={active ? 'primary' : 'faint'} style={styles.progressValue}>
+        <Text
+          variant="caption"
+          tone={active ? 'primary' : 'muted'}
+          style={styles.progressValue}
+        >
           {formatPercent(safePercent)}
         </Text>
       </View>
