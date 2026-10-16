@@ -21,21 +21,23 @@ import {
 const CHIP_LIMIT = 80;
 
 /**
- * One chip per recognized line. Text is preserved exactly (currency marks,
- * punctuation, reference numbers); only meaningless whitespace is collapsed.
- * Empties, single characters and pure punctuation (scanner rail marks like
- * '|', '***') never become chips, and exact duplicates appear once.
+ * One chip per recognized line, in the order the lines were read. The text is
+ * kept verbatim apart from its surrounding whitespace: currency marks,
+ * punctuation, inner spaces and reference numbers all survive, because a line
+ * is only ever split where the recognizer itself ended it — never on a space,
+ * a currency symbol or a run of spaces.
+ *
+ * Empty and whitespace-only lines are skipped, and so is anything holding no
+ * letter or digit at all (scanner rail marks like '|' or '***'), since that is
+ * noise rather than reading. Nothing else is dropped: a repeated line is still
+ * a line the receipt printed, so it keeps its own chip like every other.
  */
 export function buildChips(lines) {
-  const seen = new Set();
   const chips = [];
   for (const raw of lines ?? []) {
-    const text = String(raw ?? '').replace(/\s+/g, ' ').trim();
-    if (text.length < 2) continue;
+    const text = String(raw ?? '').trim();
+    if (!text) continue;
     if (!/[\p{L}\p{N}]/u.test(text)) continue;
-    const key = text.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
     chips.push({ id: `chip_${chips.length}`, text });
     if (chips.length >= CHIP_LIMIT) break;
   }
