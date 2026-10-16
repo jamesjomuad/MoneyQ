@@ -29,6 +29,11 @@ export function TagSpendRow({ tag, spent, expensePercent = 0, currency, active =
         },
       ]}
     >
+      {/* Label above amount, never beside it: on one row a wide amount takes
+          the whole line (it is the one part that must not shrink) and leaves
+          the tag's name and emoji a clipped sliver of a card. Stacked, the
+          amount is its own line and can only ellipsize at the card's edge, so
+          the label stays readable whatever the amount's length. */}
       <View style={[styles.header, { gap: spacing.sm }]}>
         <View style={styles.tag}>
           <TagBadge tag={tag} background={false} />
@@ -87,17 +92,15 @@ const styles = StyleSheet.create({
     minWidth: 0,
     overflow: 'hidden',
   },
+  // A column (the React Native default), not a row: the label owns its line
+  // across the full card width, and the amount gets the line below it.
   header: {
-    alignItems: 'center',
-    flexDirection: 'row',
     minWidth: 0,
   },
   tag: {
-    flex: 1,
     minWidth: 0,
   },
   amount: {
-    flexShrink: 0,
     fontVariant: ['tabular-nums'],
   },
   progress: {
