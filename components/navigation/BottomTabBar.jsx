@@ -10,84 +10,78 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { hexToRgb } from '../../utils/colors';
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
 /**
- * Floating rounded card navigation.
+ * Floating capsule navigation.
  *
- * A pill-shaped capsule sits inside a padded band, so it floats clear of the
- * screen edges and never covers scrollable content. The card uses surface +
- * a subtle 1 px border + a soft shadow, all from theme tokens, so it reads
- * premium in light, dark and the Budgetarian navy palette.
+ * The capsule is one surface: a theme background, one soft shadow, no border.
+ * Everything inside it is one size — every glyph, every label, one icon zone —
+ * so the four tabs read as a single row instead of four arrangements. The tabs
+ * share the capsule's width equally and the label takes its tab's full width,
+ * so a longer name is never clipped by a fixed box.
  *
- * The shadow and the border live on two separate stacked layers: a
- * borderless surface pill carries the boxShadow, and the bordered card sits
- * on top of it. This keeps the rounded shadow crisp on every platform.
- *
- * The center action is a create menu: tapping it expands two labeled pills —
- * New Folder and New Budget — up from the raised circle, and tapping it again,
- * the backdrop, or Android's back button collapses the menu first. Both
- * actions reuse the existing /folder/form and /budget/form routes; the menu
- * always restores to its collapsed state before navigating.
+ * The center action stays a raised circle, docked just above the capsule's top
+ * edge, in a slot wide enough that no tab can sit under it. It opens a create
+ * menu: two labeled pills rise from the circle (New Folder, New Budget), and
+ * tapping the circle again, the backdrop, or Android's back button collapses
+ * the menu first. Both actions reuse the existing /folder/form and
+ * /budget/form routes; the menu always restores to its collapsed state before
+ * navigating.
  *
  * The active tab background is a single gliding pill shared by all tabs: it
  * glides (400 ms on the approved demo's cubic-bezier(0.22, 1, 0.36, 1)) to
- * whichever tab `state.index` points at, while the icon itself lifts and
- * gently scales. Tabs report their layout once; the pill follows the
+ * whichever tab `state.index` points at, while the icon itself settles a
+ * fraction larger. Tabs report their layout once; the pill follows the
  * navigation state, so programmatic tab changes animate identically.
  */
 
-const CARD_H = 74; // capsule height (excludes the safe-area spacing below it)
-const CARD_PAD = 8; // horizontal padding inside the capsule
-const ICON_SIZE = 24; // regular glyph; the active tab lifts it and scales ×1.06
-const LABEL_SIZE = 11;
-const ZONE_W = 56; // shared icon + label container width: fixed, so a long
-//                   label can never stretch a tab; it truncates instead
-const ZONE_H = 34; // icon container height: the pill is measured against this
-const TAB_PAD_V = 4; // tab vertical padding (icon zone position is measured,
-//                    never inferred from this)
+const BAR_H = 68; // capsule height (excludes the safe-area spacing below it)
+const BAR_PAD = 8; // horizontal padding inside the capsule
+const ICON_SIZE = 22; // the one glyph size, active or not
+const LABEL_SIZE = 11; // the one label size, active or not
+const ZONE_W = 44; // shared icon zone width: the pill is measured against it
+const ZONE_H = 30; // shared icon zone height
+const ITEM_GAP = 4; // icon → label gap, the item's only vertical rhythm
 
-// The single shared gliding pill. Sized from the icon container it tracks —
-// the approved demo's pill look at this scale: the container's width with a
-// little vertical air, so it wraps the glyph without ever reaching the label.
-const PILL_W = ZONE_W;
-const PILL_H = ZONE_H + 8;
-const PILL_RADIUS = 16; // rounded rect (the demo's 18 at its larger column size)
-const PILL_TRAVEL_MS = 400; // pill glide duration between tabs (350–420 target)
-const ICON_SCALE_MS = 300; // active-icon settle, same curve as the pill
+/**
+ * The single shared gliding pill. Sized from the icon zone it tracks — the
+ * zone plus a hair of horizontal air and a little vertical, so it wraps the
+ * glyph without ever reaching the label.
+ */
+const PILL_W = ZONE_W + 2;
+const PILL_H = ZONE_H + 6;
+const PILL_TRAVEL_MS = 400; // pill glide duration between tabs
+const ICON_SCALE_MS = 260; // active-icon settle, same curve as the pill
 // cubic-bezier(0.22, 1, 0.36, 1) from the demo: a quick, soft settle.
 const GLIDE_EASING = Easing.bezier(0.22, 1, 0.36, 1);
 
-const FAB_GREEN = 54; // green action diameter
-const FAB_RING = 3; // surface ring that separates it from the card
+const FAB_GREEN = 50; // green action diameter
+const FAB_RING = 3; // surface ring that separates it from the capsule
 const FAB_OUTER = FAB_GREEN + FAB_RING * 2; // total touch diameter
-const FAB_OVERHANG = 26; // how far the action rises above the card's top edge
-const FAB_SLOT = FAB_OUTER + 16; // center slot: action + clearance from tabs
+const FAB_OVERHANG = 22; // how far the action rises above the capsule's top
+const FAB_ICON = 24; // plus/close glyph inside the circle
+const FAB_SLOT = FAB_OUTER + 14; // center slot: circle + clearance from tabs
 
 const MENU_H = 48; // create-menu pill height (comfortable Android touch target)
 
-/** `#RRGGBB` + alpha → `rgba(r, g, b, alpha)`; returns the input if not a hex. */
-function withAlpha(hex, alpha) {
-  const rgb = hexToRgb(hex);
-  return rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})` : hex;
-}
-
 /**
- * One tab: a prominent icon over a short label, inside a fixed-size slot.
- * The active-state background is NOT rendered here — a single shared pill in
- * BottomTabBar glides between tabs and sits behind whichever icon is active.
+ * One tab: an icon over a short label, centered in an equal share of the
+ * capsule. The active-state background is NOT rendered here — a single shared
+ * pill in BottomTabBar glides between tabs and sits behind whichever icon is
+ * active.
+ *
  * This slot reports the ICON ZONE's layout, not the tab's: the tab's total
  * height depends on the label (which reflows when fonts load or weights
  * change), so inferring the icon's position from it drifts. Instead both the
- * tab (relative to the card) and the icon zone (relative to the tab) are
+ * tab (relative to the capsule) and the icon zone (relative to the tab) are
  * measured, and their offsets are summed — the pill then centers on the exact
- * zone the icon lives in, never on the label. The slot also lifts and gently
- * scales its own icon when focused (×1.06 over 300 ms); the color swap is a
- * plain re-render. Every slot shares the same fixed sizes, so nothing shifts
- * while the pill glides between tabs.
+ * zone the icon lives in, never on the label. The slot also settles its own
+ * icon a fraction larger when focused (×1.04 over 260 ms, no lift and no
+ * bounce); the color swap is a plain re-render. Every slot shares the same
+ * fixed zone, so nothing shifts while the pill glides between tabs.
  */
 function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
   const { colors } = useTheme();
@@ -104,17 +98,14 @@ function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
   }, [focused, reduced, focus]);
 
   const iconStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: -1 * focus.value },
-      { scale: 1 + 0.06 * focus.value },
-    ],
+    transform: [{ scale: 1 + 0.04 * focus.value }],
   }));
 
   const tabLayout = useRef(null);
   const zoneLayout = useRef(null);
 
-  // Report the icon zone's position in CARD coordinates: zone offset within
-  // the tab + tab offset within the card. Either layout event re-reports the
+  // Report the icon zone's position in capsule coordinates: zone offset within
+  // the tab + tab offset within the capsule. Either layout event re-reports the
   // pair, so late label reflows (font loads) keep the pill's target exact.
   const reportZone = useCallback(() => {
     if (!tabLayout.current || !zoneLayout.current) return;
@@ -233,7 +224,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
   const activeKey = routes[state.index]?.key;
 
   // The shared active pill: one Animated.View that glides to whichever tab is
-  // selected. Each TabButton reports its ICON ZONE's position in card
+  // selected. Each TabButton reports its ICON ZONE's position in capsule
   // coordinates into measuresRef; the effect below centers the pill on that
   // zone — including when the route changes from another screen, because it
   // follows `state.index`, not press callbacks. A rotation or width change
@@ -263,8 +254,8 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     const zone = activeKey ? measuresRef.current[activeKey] : undefined;
     if (!zone) return;
     // Center the pill on the icon zone: the zone's own x/y/width/height (summed
-    // up to card coordinates) fully decide it, so the first and last tabs align
-    // like every other one — even though the raised center slot makes the
+    // up to capsule coordinates) fully decide it, so the first and last tabs
+    // align like every other one — even though the raised center slot makes the
     // columns unequal. No padding or label assumptions.
     const left = zone.x + (zone.width - PILL_W) / 2;
     const top = zone.y + (zone.height - PILL_H) / 2;
@@ -332,10 +323,10 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     }, 700);
   };
 
-  // Distance from the band's bottom edge to the card's top, and to the crest
-  // of the raised circle — the menu stacks above the latter and stays clear
-  // of the Android navigation inset below the capsule.
-  const cardTop = Math.max(insets.bottom, spacing.md) + CARD_H;
+  // Distance from the band's bottom edge to the capsule's top, and to the
+  // crest of the raised circle — the menu stacks above the latter and stays
+  // clear of the Android navigation inset below the capsule.
+  const cardTop = Math.max(insets.bottom, spacing.md) + BAR_H;
   const menuBottom = cardTop + FAB_OVERHANG + spacing.sm;
 
   return (
@@ -355,9 +346,9 @@ export function BottomTabBar({ state, descriptors, navigation }) {
       ]}
     >
       {expanded ? (
-        // Tap-catcher rendered BEFORE the card, so it swallows taps anywhere
-        // on the scene above the bar while the capsule (and the center
-        // toggle) stay reachable on top of it.
+        // Tap-catcher rendered BEFORE the capsule, so it swallows taps anywhere
+        // on the scene above the bar while the capsule (and the center toggle)
+        // stay reachable on top of it.
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Dismiss create menu"
@@ -367,25 +358,15 @@ export function BottomTabBar({ state, descriptors, navigation }) {
       ) : null}
 
       <View style={styles.cardWrap}>
-        {/* Borderless surface pill that casts the shadow; the bordered card
-            sits on top of it so the shadow keeps its rounded outline. */}
-        <View
-          style={{
-            ...styles.cardShadow,
-            pointerEvents: 'none',
-            backgroundColor: colors.surface,
-            borderRadius: CARD_H / 2,
-            boxShadow: `0 4px 16px ${colors.shadow}`,
-          }}
-        />
-
+        {/* One surface: the capsule carries the background and the shadow
+            itself, so there is no second layer behind it to read as a band. */}
         <View
           style={[
             styles.card,
             {
               backgroundColor: colors.surface,
-              borderColor: colors.border,
-              borderRadius: CARD_H / 2,
+              borderRadius: BAR_H / 2,
+              boxShadow: `0 6px 18px ${colors.shadow}`,
             },
           ]}
         >
@@ -399,7 +380,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
               styles.pill,
               {
                 backgroundColor: colors.primarySoft,
-                borderColor: withAlpha(colors.primary, 0.16),
+                borderRadius: radius.md,
               },
               pillStyle,
             ]}
@@ -438,9 +419,10 @@ export function BottomTabBar({ state, descriptors, navigation }) {
             );
           })}
 
-          {/* Docked over the card's top edge. The surface ring keeps the green
-              circle visually separate without notching or distorting the pill.
-              It toggles the create menu and shows a close glyph while open. */}
+          {/* Docked over the capsule's top edge. The surface ring keeps the
+              green circle visually separate without notching or distorting the
+              capsule. It toggles the create menu and shows a close glyph while
+              open. */}
           <Pressable
             accessibilityLabel={expanded ? 'Close create menu' : 'Create new folder or budget'}
             accessibilityRole="button"
@@ -453,14 +435,19 @@ export function BottomTabBar({ state, descriptors, navigation }) {
                 height: FAB_OUTER,
                 transform: [
                   { translateX: -FAB_OUTER / 2 },
-                  { scale: pressed ? 0.94 : 1 },
+                  { scale: pressed ? 0.96 : 1 },
                 ],
                 width: FAB_OUTER,
               },
             ]}
           >
             <View
-              style={{ ...styles.fabRing, pointerEvents: 'none', backgroundColor: colors.surface, borderRadius: FAB_OUTER / 2 }}
+              style={{
+                ...styles.fabRing,
+                pointerEvents: 'none',
+                backgroundColor: colors.surface,
+                borderRadius: FAB_OUTER / 2,
+              }}
             />
             <View
               style={{
@@ -470,7 +457,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
                 boxShadow: `0 3px 8px ${colors.shadow}`,
               }}
             >
-              <Icon name={expanded ? 'close' : 'add'} size={26} color={colors.onPrimary} />
+              <Icon name={expanded ? 'close' : 'add'} size={FAB_ICON} color={colors.onPrimary} />
             </View>
           </Pressable>
         </View>
@@ -517,27 +504,22 @@ const styles = StyleSheet.create({
     top: -10000,
   },
   cardWrap: {
-    height: CARD_H,
+    height: BAR_H,
     justifyContent: 'center',
     width: '100%',
   },
-  cardShadow: {
-    ...StyleSheet.absoluteFillObject,
-  },
   card: {
     alignItems: 'center',
-    borderWidth: 1,
     flexDirection: 'row',
-    height: CARD_H,
+    height: BAR_H,
     overflow: 'visible',
-    paddingHorizontal: CARD_PAD,
+    paddingHorizontal: BAR_PAD,
     width: '100%',
   },
   tab: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    paddingVertical: TAB_PAD_V,
   },
   iconWrap: {
     alignItems: 'center',
@@ -548,11 +530,8 @@ const styles = StyleSheet.create({
     width: ZONE_W,
   },
   pill: {
-    // Anchored at the card's origin; top/translateX in the animated style
-    // steer it to the active tab's measured icon zone. The 1 px border is the
-    // demo's inset hairline, drawn inside so the pill's size never changes.
-    borderWidth: 1,
-    borderRadius: PILL_RADIUS,
+    // Anchored at the capsule's origin; top/translateX in the animated style
+    // steer it to the active tab's measured icon zone.
     height: PILL_H,
     left: 0,
     position: 'absolute',
@@ -560,11 +539,12 @@ const styles = StyleSheet.create({
     width: PILL_W,
   },
   label: {
-    // Same fixed width as the icon container: labels center under the icon
-    // and a long one truncates rather than stretching the tab.
-    marginTop: 4,
+    // The label spans its tab rather than a fixed box, so a longer name is
+    // never clipped by the icon zone's width; it truncates only if it would
+    // reach the neighbouring tab, and the padding keeps that edge clear.
+    marginTop: ITEM_GAP,
+    paddingHorizontal: 2,
     textAlign: 'center',
-    width: ZONE_W,
   },
   fab: {
     alignItems: 'center',
@@ -596,12 +576,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     flexGrow: 1,
-    gap: 10,
+    gap: 8,
     justifyContent: 'center',
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
   },
   menuLabel: {
+    // Manrope's static weights carry the weight in the font file; no
+    // synthetic bold.
+    fontFamily: 'Manrope_600SemiBold',
     fontSize: 15,
-    fontWeight: '600',
   },
 });
