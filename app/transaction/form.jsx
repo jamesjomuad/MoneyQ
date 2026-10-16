@@ -1602,7 +1602,11 @@ export default function TransactionFormScreen() {
             : null),
         }}
       >
-        <SectionHeader title="Amount" color={summaryInk} />
+        <SectionHeader
+          title="Amount"
+          color={summaryInk}
+          style={{ marginBottom: spacing.xs }}
+        />
         {breakdownActive ? (
           <>
             <AmountInput
@@ -1725,10 +1729,8 @@ export default function TransactionFormScreen() {
             // The scroll body above is an absolute overlay filling the whole
             // scene, so nothing in normal flow holds this bar down any more.
             // Pin it to the bottom explicitly, or it renders directly under
-            // the sticky amount card.
-            backgroundColor: colors.background,
-            borderColor: colors.border,
-            borderTopWidth: StyleSheet.hairlineWidth,
+            // the sticky amount card. The bar itself stays transparent so the
+            // button floats over the page on its own shadow.
             bottom: 0,
             left: 0,
             paddingHorizontal: spacing.lg,
@@ -1744,6 +1746,7 @@ export default function TransactionFormScreen() {
             icon={saving ? undefined : 'add'}
             onPress={handleSave}
             disabled={saving}
+            style={{ boxShadow: `0 4px 8px ${colors.shadow}` }}
           />
         </View>
       )}
