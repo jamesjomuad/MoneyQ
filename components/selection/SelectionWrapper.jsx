@@ -12,7 +12,10 @@ import { useTheme } from '../ui/ThemeProvider';
  * screen's business:
  *
  * - `masterRow` — the three-state parent checkbox row with a hairline, meant
- *   to sit at the head of the list card; null when nothing is eligible.
+ *   to sit at the head of the list card; null when nothing is eligible. With
+ *   `inlineMaster` it renders as a bare compact checkbox (no hairline, no
+ *   padding) so a screen can dock it into its own action row, e.g. beside
+ *   Home's Archive button.
  * - `toolbar` — the bottom contextual bar showing the count and the
  *   screen-supplied `actions`; null outside selection mode.
  * - `selectionMode / selectedIds / isSelected / toggleItem / toggleParent /
@@ -37,6 +40,7 @@ export function SelectionWrapper({
   selectLabel = 'Select all',
   deselectLabel = 'Deselect all',
   cancelLabel = 'Cancel',
+  inlineMaster = false,
   children,
 }) {
   const { colors, spacing } = useTheme();
@@ -55,14 +59,18 @@ export function SelectionWrapper({
         onPress={toggleParent}
         hitSlop={8}
         style={({ pressed }) => [
-          styles.masterRow,
-          {
-            borderBottomColor: colors.border,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            paddingHorizontal: spacing.lg,
-            paddingVertical: spacing.sm,
-            opacity: pressed ? 0.6 : 1,
-          },
+          inlineMaster
+            ? styles.masterInline
+            : [
+                styles.masterRow,
+                {
+                  borderBottomColor: colors.border,
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  paddingHorizontal: spacing.lg,
+                  paddingVertical: spacing.sm,
+                },
+              ],
+          { opacity: pressed ? 0.6 : 1 },
         ]}
       >
         <SelectionCheckbox state={parentState} />
@@ -87,5 +95,10 @@ const styles = StyleSheet.create({
   masterRow: {
     alignItems: 'center',
     flexDirection: 'row',
+  },
+  masterInline: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
 });

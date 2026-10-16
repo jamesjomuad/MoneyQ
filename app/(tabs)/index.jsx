@@ -375,6 +375,7 @@ export default function HomeScreen() {
       actions={selectionActions}
       selectLabel="Select all budgets"
       deselectLabel="Deselect all budgets"
+      inlineMaster
     >
       {(sel) => {
         // One row renderer for both the unified Home list and search results,
@@ -518,13 +519,18 @@ export default function HomeScreen() {
                 ) : null}
               </Animated.View>
 
-              {/* Compact utility action, directly below the full-width search
-                  field and above the folder/budget list. The search field keeps
-                  its whole width. */}
+              {/* Compact utility actions, directly below the full-width search
+                  field and above the folder/budget list: the three-state parent
+                  checkbox rides the row's left edge (auto margin) while the
+                  Archive button keeps the right, and the search field keeps its
+                  whole width. */}
               <Animated.View
                 entering={introEnter(1)}
                 style={[styles.archiveRow, { marginBottom: spacing.md }]}
               >
+                {!searching && sel.masterRow ? (
+                  <View style={styles.masterInlineSlot}>{sel.masterRow}</View>
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Open archive"
@@ -662,10 +668,6 @@ export default function HomeScreen() {
               ) : (
                 <>
                   <Card padded={false} style={{ marginBottom: spacing.sm }}>
-                    {/* The three-state parent checkbox sits under the search
-                        field, above a hairline, left-aligned with the child
-                        checkboxes it controls. */}
-                    {sel.masterRow}
                     <DraggableRows
                       items={listItems}
                       disabled={sel.selectionMode}
@@ -750,6 +752,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "flex-end",
+  },
+  masterInlineSlot: {
+    marginRight: "auto",
   },
   archiveButton: {
     alignItems: "center",
