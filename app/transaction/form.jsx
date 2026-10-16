@@ -919,6 +919,14 @@ export default function TransactionFormScreen() {
     : null;
   const summaryInk = summaryPalette ? summaryPalette.folderInk : null;
 
+  // Breakdown items added while editing an existing transaction default their
+  // Purchase date to the parent budget's own date (its stored start day)
+  // rather than today, so a back-dated item is written into the budget period
+  // it belongs to. The sheet keeps its own fallback to today when this screen
+  // has no loaded budget — a budget the store has not confirmed for this id
+  // must never stand in for the parent.
+  const defaultBreakdownDate = transactionId ? activeBudget?.start_date : undefined;
+
   // Mirror of the saved row, refreshed whenever the store reloads it. Read
   // inside autoSave so a listener from an older render cannot write twice.
   useEffect(() => {
@@ -1720,6 +1728,7 @@ export default function TransactionFormScreen() {
         <SubTransactionSheet
           item={itemSheet.item}
           currency={currency}
+          defaultPurchaseDate={defaultBreakdownDate}
           otherTotal={computeBreakdownTotal(
             itemSheet.item
               ? items.filter((entry) => entry.id !== itemSheet.item.id)

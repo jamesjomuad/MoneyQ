@@ -11,6 +11,7 @@ import { SegmentedControl } from '../ui/SegmentedControl';
 import { Text } from '../ui/Text';
 import { TextField } from '../ui/TextField';
 import { useTheme } from '../ui/ThemeProvider';
+import { isIsoCalendarDate } from '../../utils/breakdown';
 import { getCurrency, fromMinor, toMinor } from '../../utils/currency';
 import { nowTime, toIsoDate } from '../../utils/dates';
 
@@ -27,8 +28,9 @@ const NEGATIVE_TOTAL_ERROR = 'The breakdown total cannot be negative.';
  *
  *  - Add mode keeps the sheet open so items can be entered consecutively:
  *    "Add item" commits the draft (the parent form appends it and recalculates)
- *    and resets the fields to today / now; "Done" closes. Closing with
- *    unsubmitted input asks first — continue editing or discard just the draft.
+ *    and resets the fields to `defaultPurchaseDate` / now; "Done" closes.
+ *    Closing with unsubmitted input asks first — continue editing or discard
+ *    just the draft.
  *  - Edit mode commits on "Done" AND on dismissal; edits that fail validation
  *    stay in the sheet, never on the list.
  *
@@ -37,8 +39,24 @@ const NEGATIVE_TOTAL_ERROR = 'The breakdown total cannot be negative.';
  * switched sign would push the parent's total negative is rejected in place,
  * with the entered amount and description untouched. The repository re-checks
  * the same rule, so the sheet can only ever show what a save would accept.
+ *
+ * `defaultPurchaseDate` seeds a new item's Purchase date — the parent
+ * transaction's budget day, passed down by the form — so an item added while
+ * editing an existing transaction lands in the budget it belongs to instead
+ * of today. Both entry types share the one field, an item being edited always
+ * keeps its own saved date, and a caller with no usable day falls back to
+ * today's local date. The field is local pending state: the sheet never
+ * writes to the budget or the parent transaction.
  */
-export function SubTransactionSheet({ item, currency, otherTotal = 0, onAddItem, onApplyItem, onClose }) {
+export function SubTransactionSheet({
+  item,
+  currency,
+  otherTotal = 0,
+  defaultPurchaseDate,
+  onAddItem,
+  onApplyItem,
+  onClose,
+}) {
   const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const config = getCurrency(currency);
@@ -50,7 +68,7 @@ export function SubTransactionSheet({ item, currency, otherTotal = 0, onAddItem,
     item ? String(fromMinor(Math.abs(item.amount), currency)) : '',
   );
   const [purchaseDate, setPurchaseDate] = useState(
-    item?.purchase_date ?? toIsoDate(new Date()),
+    item?.purchase_date ?? defaultItemDate(defaultPurchaseDate),
   );
   const [purchaseTime, setPurchaseTime] = useState(
     item?.purchase_time ?? nowTime(),
@@ -117,11 +135,12 @@ export function SubTransactionSheet({ item, currency, otherTotal = 0, onAddItem,
   function handleAddItem() {
     if (isEdit) return;
     if (!commitDraft()) return;
-    // Reset for the next item: empty money fields, current local date/time.
+    // Reset for the next item: empty money fields, the caller's default
+    // purchase day and the current local time.
     setDescription('');
     setAmount('');
     setEntryType('purchase');
-    setPurchaseDate(toIsoDate(new Date()));
+    setPurchaseDate(defaultItemDate(defaultPurchaseDate));
     setPurchaseTime(nowTime());
     setNotes('');
     setNotesVisible(false);
@@ -295,6 +314,17 @@ export function SubTransactionSheet({ item, currency, otherTotal = 0, onAddItem,
       </View>
     </Modal>
   );
+}
+
+/**
+ * The local day a new breakdown item starts on: the caller's preferred day —
+ * the parent budget's own date — when it is a real 'YYYY-MM-DD' calendar day,
+ * and today's local date otherwise. The stored string is used as-is, so no
+ * UTC conversion can shift the day; the field can therefore never hold an
+ * invalid date.
+ */
+function defaultItemDate(preferred) {
+  return isIsoCalendarDate(preferred) ? preferred : toIsoDate(new Date());
 }
 
 /** Signed live preview, e.g. '+₱1,000.00' / '-₱100.00'; never a double negative. */
