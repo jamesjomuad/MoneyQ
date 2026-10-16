@@ -530,7 +530,11 @@ export default function BudgetDetailScreen() {
             zIndex: 2,
           }}
         >
-          <SectionHeader title="Remaining" color={folderInk} />
+          <SectionHeader
+            title="Remaining"
+            color={folderInk}
+            style={{ marginBottom: spacing.xs }}
+          />
           <View style={styles.remainingRow}>
             <Text
               variant="display"

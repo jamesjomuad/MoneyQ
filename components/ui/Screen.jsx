@@ -135,7 +135,8 @@ function Chevron({ collapsed, color }) {
 /**
  * Section heading. Pass `collapsed` + `onToggle` to make it fold its section —
  * the header stays visible (title and action remain) so a folded list is still
- * navigable.
+ * navigable. Pass `style` to override the default bottom margin when a section
+ * needs tighter spacing.
  */
 export function SectionHeader({
   title,
@@ -144,11 +145,12 @@ export function SectionHeader({
   onToggle,
   fontSize,
   color,
+  style,
 }) {
   const { colors, spacing } = useTheme();
 
   const content = (
-    <View style={[styles.sectionHeader, { marginBottom: spacing.sm }]}>
+    <View style={[styles.sectionHeader, { marginBottom: spacing.sm }, style]}>
       <View style={styles.titleGroup}>
         {onToggle ? (
           <Chevron collapsed={collapsed} color={colors.text} />
