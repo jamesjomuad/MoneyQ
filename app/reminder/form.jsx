@@ -12,6 +12,7 @@ import { Screen, SectionHeader } from '../../components/ui/Screen';
 import { Text } from '../../components/ui/Text';
 import { TextField } from '../../components/ui/TextField';
 import { useTheme } from '../../components/ui/ThemeProvider';
+import { useBudgetsStore } from '../../stores/budgetsStore';
 import { useRemindersStore } from '../../stores/remindersStore';
 import { showToast } from '../../stores/toastStore';
 import { formatCurrency } from '../../utils/currency';
@@ -37,6 +38,10 @@ import {
  * (through the reminder service, which also arms or cancels the OS
  * notification), and a permission or scheduling problem is reported without
  * ever losing the reminder itself.
+ *
+ * A reminder created pre-linked to a transaction opens on that transaction's
+ * budget day rather than today, since the transaction only belongs to the
+ * budget and may be dated outside its period.
  */
 export default function ReminderFormScreen() {
   const params = useLocalSearchParams();
@@ -50,6 +55,7 @@ export default function ReminderFormScreen() {
 
   const fetchReminder = useRemindersStore((state) => state.fetchReminder);
   const fetchTransaction = useRemindersStore((state) => state.fetchTransaction);
+  const fetchBudget = useBudgetsStore((state) => state.fetchBudget);
   const addReminder = useRemindersStore((state) => state.addReminder);
   const editReminder = useRemindersStore((state) => state.editReminder);
   const completeReminder = useRemindersStore((state) => state.completeReminder);
@@ -90,10 +96,42 @@ export default function ReminderFormScreen() {
   // whose date and time were not touched is allowed (mirrors the repository
   // rule), so editing only the notes never traps the user on a past instant.
   const savedScheduleRef = useRef(null);
+  // Latches the moment the user picks a day themselves, so the parent-budget
+  // default below can never overwrite a deliberate choice.
+  const dateTouchedRef = useRef(false);
 
   useEffect(() => {
     refreshPermission();
   }, [refreshPermission]);
+
+  // A reminder created from a transaction starts on that transaction's budget
+  // day instead of today: a transaction belongs to its budget, so its own date
+  // can sit outside the budget's period and is not the parent's date. The
+  // budget is reached through the linked transaction's `budget_id`, never
+  // through the transaction's own date. Only a create opened pre-linked is
+  // touched: an edited reminder hydrates from its stored row, and a
+  // standalone one keeps the tapped or suggested day. A budget with no usable
+  // day leaves that existing day in place.
+  useEffect(() => {
+    if (editing || !paramTransactionId) return undefined;
+    let cancelled = false;
+
+    // The link is followed read-only — the reminder row is still written only
+    // on save — so a failed lookup just leaves the suggested day untouched.
+    fetchTransaction(paramTransactionId)
+      .then((transaction) =>
+        transaction?.budget_id ? fetchBudget(transaction.budget_id) : null,
+      )
+      .catch(() => null)
+      .then((budget) => {
+        if (cancelled || dateTouchedRef.current) return;
+        if (isValidLocalDate(budget?.start_date)) setDate(budget.start_date);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editing, paramTransactionId, fetchTransaction, fetchBudget]);
 
   // Hydrate the editor from the stored row when editing.
   useEffect(() => {
@@ -156,6 +194,11 @@ export default function ReminderFormScreen() {
     if (navigation.canGoBack()) router.back();
     else router.replace('/');
   }, [navigation, resetLinkSearch]);
+
+  function handlePickDate(day) {
+    dateTouchedRef.current = true;
+    setDate(day);
+  }
 
   async function handleSave() {
     // Mirrors updateReminder's rule: only a changed schedule must be in the
@@ -274,7 +317,7 @@ export default function ReminderFormScreen() {
           label="Reminder Date"
           title="Reminder Date"
           value={date}
-          onChange={setDate}
+          onChange={handlePickDate}
           minimumDate={toIsoDate(new Date())}
           error={dateError}
         />
