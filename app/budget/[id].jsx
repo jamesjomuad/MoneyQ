@@ -467,8 +467,11 @@ export default function BudgetDetailScreen() {
           onPress: async () => {
             try {
               await archiveMany([budget.id]);
-              router.dismissAll();
-              router.replace('/');
+              // One navigation action, not dismissAll()+replace() in the same
+              // tick: two stack mutations per commit race with Fabric's
+              // header-config updates and crash detached stack fragments on
+              // Android (react-native-screens #4429).
+              router.dismissTo('/');
               showToast('1 budget archived', 'success');
             } catch (archiveError) {
               showToast(archiveError?.message ?? 'Could not archive this budget.', 'error');

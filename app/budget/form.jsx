@@ -301,8 +301,9 @@ export default function BudgetFormScreen() {
     setSaving(true);
     try {
       await removeBudget(id);
-      router.dismissAll();
-      router.replace("/");
+      // Single navigation action; dismissAll()+replace() in the same tick is
+      // the react-native-screens #4429 crash trigger on Android.
+      router.dismissTo("/");
     } catch (error) {
       // The delete failed, so the screen stays: hand auto-save back.
       discardingRef.current = false;
