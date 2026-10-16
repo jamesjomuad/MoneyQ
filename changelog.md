@@ -2,6 +2,61 @@
 
 All notable changes to Budgetarian. Dates are local calendar days; newest first.
 
+## 2026-10-16
+
+### Added
+- Budgets can be archived instead of deleted (migration 015, mirrored in both
+  storage adapters). Removing a budget from Home or a folder's selection
+  toolbar — and deleting a folder outright — no longer destroys anything: the
+  budgets leave the active lists while their transactions, tags, reminders and
+  attachments stay intact. Multi-select asks first ("Archive 3 budgets?") and
+  the toast it leaves behind carries an Undo that brings the same budgets back
+  in one write, each to the folder it came from.
+- A new Archive screen, opened from the Archive button on Home, lists what is
+  parked there with the day it was archived. Restore returns a budget to its
+  folder, or to the root list when that folder no longer exists. A permanent
+  delete is still offered there, and says plainly that it cannot be undone.
+
+### Changed
+- The bottom navigation is rebuilt as one clean capsule. The bar was carrying
+  three competing edges — an opaque band, a separate shadow layer behind a
+  bordered capsule, and a hairline border on the active pill — around an
+  oversized raised circle on a 74 px bar. Now the capsule is the only lit
+  surface: one theme background, one soft shadow, no border, 68 px tall, with
+  the active pill a theme-rounded soft-green shape that carries no border of
+  its own. Every tab shares one baseline — a 22 px glyph, an 11 px label and
+  the same icon zone — so the four tabs read as one row, and each label spans
+  its own tab instead of a fixed 56 px box. The raised create button is
+  smaller (56 px against 60) and sits lower, in a slot wide enough that no tab
+  crowds it. Motion is down to two things: the single pill gliding between
+  tabs (400 ms on a quick soft ease, following the measured icon zone) and a
+  1.04 icon settle over 260 ms — the extra icon lift and the overshoot are
+  gone. Destinations, the create menu and its routes, and the safe-area
+  behaviour are unchanged.
+- The transaction form's save bar is transparent, so the button floats on the
+  page instead of sitting on a panel pinned below the list, and it casts its
+  own shadow now. The headings on the Remaining and Amount cards sit a little
+  closer to the figure they label.
+- The Tag section's "Add or rename tags" is a plain text link on the section
+  title's row rather than a pill button, the tag chips are a step roomier, and
+  the Amount card's currency symbol is sized to the figure (~3/4 of the
+  numeral height, was half).
+- A reminder created from a transaction's Reminder section opens on that
+  transaction's budget day instead of today: a transaction belongs to its
+  budget and can be dated outside the budget's period. Picking a day by hand
+  always wins, and a budget with no usable date leaves the suggested day in
+  place.
+- A breakdown item added from an existing transaction starts on that budget's
+  day instead of today, for the same reason — a new item lands inside the
+  period it is filed under.
+
+### Fixed
+- A tag's label in the budget screen's tags drawer stays readable however long
+  its amount is. The label and its amount shared one line and the amount was
+  the part that could not shrink, so a long amount took the whole 48%-wide
+  card and clipped the tag's emoji and name away; the label now owns its own
+  line, with the amount on the line beneath it.
+
 ## 2026-10-15
 
 ### Added
