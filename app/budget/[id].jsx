@@ -318,7 +318,7 @@ export default function BudgetDetailScreen() {
   const load = useBudgetDetailStore((state) => state.load);
   const setActiveTag = useBudgetDetailStore((state) => state.setActiveTag);
   const removeTransaction = useBudgetDetailStore((state) => state.removeTransaction);
-  const removeBudget = useBudgetsStore((state) => state.removeBudget);
+  const archiveMany = useBudgetsStore((state) => state.archiveMany);
   const moveToFolder = useBudgetsStore((state) => state.moveToFolder);
   const folders = useFoldersStore((state) => state.folders);
   const loadFolders = useFoldersStore((state) => state.load);
@@ -449,20 +449,30 @@ export default function BudgetDetailScreen() {
   // folders organize budgets on Home and hold no money themselves.
   const budgetFolder = folders.find((folder) => folder.id === budget.folder_id) ?? null;
 
+  // Same archive operation as Home's selection-mode Remove: `archiveMany`
+  // flips only `deleted_at`, so the budget moves to Archive with its id,
+  // transactions, breakdown items, tags, reminders, attachments, color and
+  // folder assignment untouched, and Restore returns it losslessly.
   function confirmDeleteBudget() {
     if (!budget) return;
     Alert.alert(
       `Delete ${budget.name}?`,
-      `This removes the budget and its ${summary.transactionCount} transactions. This cannot be undone.`,
+      'This budget will be removed from your active lists and moved to Archive. Its financial data will be preserved, and you can restore it later from Archive.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
-          style: 'destructive',
+          // Neutral, not destructive: archiving is reversible.
+          style: 'default',
           onPress: async () => {
-            await removeBudget(budget.id);
-            router.dismissAll();
-            router.replace('/');
+            try {
+              await archiveMany([budget.id]);
+              router.dismissAll();
+              router.replace('/');
+              showToast('1 budget archived', 'success');
+            } catch (archiveError) {
+              showToast(archiveError?.message ?? 'Could not archive this budget.', 'error');
+            }
           },
         },
       ],
@@ -485,7 +495,8 @@ export default function BudgetDetailScreen() {
                     onPress: () =>
                       router.push({ pathname: '/budget/form', params: { id: budget.id } }),
                   },
-                  { text: 'Delete budget', style: 'destructive', onPress: confirmDeleteBudget },
+                  // Neutral, not destructive: this archives the budget (reversible).
+                  { text: 'Delete budget', onPress: confirmDeleteBudget },
                   { text: 'Cancel', style: 'cancel' },
                 ])
               }
