@@ -54,7 +54,10 @@ export function AmountInput({
       <Text
         variant="title"
         tone={ink ? 'default' : 'muted'}
-        style={{ marginRight: spacing.sm, fontSize: large ? 24 : 20, ...(ink ? { color: ink } : null) }}
+        // The currency symbol sits at ~3/4 the numeral height instead of half
+        // of it, so it still reads as a marker for the figure and not as a
+        // stray glyph: 40px digits in the large card, 30px digits otherwise.
+        style={{ marginRight: spacing.sm, fontSize: large ? 30 : 20, ...(ink ? { color: ink } : null) }}
       >
         {symbol}
       </Text>

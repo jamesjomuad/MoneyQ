@@ -1295,7 +1295,28 @@ export default function TransactionFormScreen() {
 
         <View style={{ height: spacing.lg }} />
 
-        <SectionHeader title="Tag" />
+        {/* The manage-tags action lives in the header itself, as a plain text
+            link on the section title's row: the same pattern the Tags screen
+            uses for "Add tag". Chip, button and shadow chrome would make a
+            destination this secondary read as a primary action. */}
+        <SectionHeader
+          title="Tag"
+          action={
+            tags.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add or rename tags"
+                hitSlop={8}
+                onPress={() => router.push('/tags')}
+                style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}
+              >
+                <Text variant="label" tone="primary">
+                  Add or rename tags
+                </Text>
+              </Pressable>
+            ) : null
+          }
+        />
         {tags.length === 0 ? (
           <EmptyState
             icon="tag"
@@ -1323,6 +1344,10 @@ export default function TransactionFormScreen() {
                     emoji={tag.emoji}
                     active={tag.id === tagId}
                     onPress={() => setTagId(tag.id === tagId ? '' : tag.id)}
+                    // Tag chips run one padding step above the base pill: this
+                    // row is the screen's primary picker, so the roomier pill
+                    // is both easier to read and an easier target to tap.
+                    style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.md }}
                   />
                 ))}
               </ScrollView>
@@ -1334,7 +1359,6 @@ export default function TransactionFormScreen() {
                 {errors.tag}
               </Text>
             ) : null}
-            <SecondaryLink label="Add or rename tags" icon="pencil" onPress={() => router.push('/tags')} />
           </>
         )}
 
@@ -1801,23 +1825,6 @@ function ReceiptViewer({ failed, onClose, uri }) {
         </View>
       </Pressable>
     </Modal>
-  );
-}
-
-function SecondaryLink({ label, onPress, icon }) {
-  const { radius, spacing } = useTheme();
-  return (
-    <View style={{ marginTop: spacing.xs, alignItems: 'center' }}>
-      {/* Auto-sized to its label and pill-rounded like the tag chips above,
-          so it doesn't read as a square-cornered outlier on this screen. */}
-      <Button
-        label={label}
-        icon={icon}
-        variant="primary"
-        onPress={onPress}
-        style={{ borderRadius: radius.pill }}
-      />
-    </View>
   );
 }
 
