@@ -6,11 +6,11 @@ import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { hexToRgb } from '../../utils/colors';
 import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
@@ -33,24 +33,33 @@ import { useTheme } from '../ui/ThemeProvider';
  * actions reuse the existing /folder/form and /budget/form routes; the menu
  * always restores to its collapsed state before navigating.
  *
- * The active tab background is a single rounded-square chip shared by all
- * tabs: it glides (300 ms ease-in-out) to whichever tab `state.index` points
- * at, with a subtle squash-and-stretch morph, while the icon itself gently
- * scales up. Tabs report their layout once; the chip follows the navigation
- * state, so programmatic tab changes animate identically.
+ * The active tab background is a single gliding pill shared by all tabs: it
+ * glides (400 ms on the approved demo's cubic-bezier(0.22, 1, 0.36, 1)) to
+ * whichever tab `state.index` points at, while the icon itself lifts and
+ * gently scales. Tabs report their layout once; the pill follows the
+ * navigation state, so programmatic tab changes animate identically.
  */
 
 const CARD_H = 74; // capsule height (excludes the safe-area spacing below it)
 const CARD_PAD = 8; // horizontal padding inside the capsule
-const ICON_SIZE = 24; // regular glyph; the active tab scales it ×1.10 (~26 px)
+const ICON_SIZE = 24; // regular glyph; the active tab lifts it and scales ×1.06
 const LABEL_SIZE = 11;
 const ZONE_W = 56; // shared icon + label container width: fixed, so a long
 //                   label can never stretch a tab; it truncates instead
-const CHIP_SIZE = 34; // active rounded-square wrapper (zone height matches it)
-const CHIP_RADIUS = 11; // moderate corner radius (never circular or pill-shaped)
+const ZONE_H = 34; // icon container height: the pill is measured against this
 const TAB_PAD_V = 4; // tab vertical padding (icon zone position is measured,
 //                    never inferred from this)
-const TRAVEL_MS = 300; // chip glide duration between tabs (ease-in-out)
+
+// The single shared gliding pill. Sized from the icon container it tracks —
+// the approved demo's pill look at this scale: the container's width with a
+// little vertical air, so it wraps the glyph without ever reaching the label.
+const PILL_W = ZONE_W;
+const PILL_H = ZONE_H + 8;
+const PILL_RADIUS = 16; // rounded rect (the demo's 18 at its larger column size)
+const PILL_TRAVEL_MS = 400; // pill glide duration between tabs (350–420 target)
+const ICON_SCALE_MS = 300; // active-icon settle, same curve as the pill
+// cubic-bezier(0.22, 1, 0.36, 1) from the demo: a quick, soft settle.
+const GLIDE_EASING = Easing.bezier(0.22, 1, 0.36, 1);
 
 const FAB_GREEN = 54; // green action diameter
 const FAB_RING = 3; // surface ring that separates it from the card
@@ -60,19 +69,25 @@ const FAB_SLOT = FAB_OUTER + 16; // center slot: action + clearance from tabs
 
 const MENU_H = 48; // create-menu pill height (comfortable Android touch target)
 
+/** `#RRGGBB` + alpha → `rgba(r, g, b, alpha)`; returns the input if not a hex. */
+function withAlpha(hex, alpha) {
+  const rgb = hexToRgb(hex);
+  return rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})` : hex;
+}
+
 /**
  * One tab: a prominent icon over a short label, inside a fixed-size slot.
- * The active-state background is NOT rendered here — a single shared chip in
+ * The active-state background is NOT rendered here — a single shared pill in
  * BottomTabBar glides between tabs and sits behind whichever icon is active.
  * This slot reports the ICON ZONE's layout, not the tab's: the tab's total
  * height depends on the label (which reflows when fonts load or weights
  * change), so inferring the icon's position from it drifts. Instead both the
  * tab (relative to the card) and the icon zone (relative to the tab) are
- * measured, and their offsets are summed — the chip then centers on the exact
- * zone the icon lives in, never on the label. The slot also gently scales its
- * own icon up when focused (~1.10 over 180 ms); the color swap is a plain
- * re-render. Every slot shares the same fixed sizes, so nothing shifts while
- * the chip morphs between tabs.
+ * measured, and their offsets are summed — the pill then centers on the exact
+ * zone the icon lives in, never on the label. The slot also lifts and gently
+ * scales its own icon when focused (×1.06 over 300 ms); the color swap is a
+ * plain re-render. Every slot shares the same fixed sizes, so nothing shifts
+ * while the pill glides between tabs.
  */
 function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
   const { colors } = useTheme();
@@ -82,11 +97,17 @@ function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
 
   const focus = useSharedValue(focused ? 1 : 0);
   useEffect(() => {
-    focus.value = withTiming(focused ? 1 : 0, { duration: reduced ? 0 : 180 });
+    focus.value = withTiming(focused ? 1 : 0, {
+      duration: reduced ? 0 : ICON_SCALE_MS,
+      easing: GLIDE_EASING,
+    });
   }, [focused, reduced, focus]);
 
   const iconStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + 0.1 * focus.value }],
+    transform: [
+      { translateY: -1 * focus.value },
+      { scale: 1 + 0.06 * focus.value },
+    ],
   }));
 
   const tabLayout = useRef(null);
@@ -94,7 +115,7 @@ function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
 
   // Report the icon zone's position in CARD coordinates: zone offset within
   // the tab + tab offset within the card. Either layout event re-reports the
-  // pair, so late label reflows (font loads) keep the chip's target exact.
+  // pair, so late label reflows (font loads) keep the pill's target exact.
   const reportZone = useCallback(() => {
     if (!tabLayout.current || !zoneLayout.current) return;
     onMeasure(route.key, {
@@ -211,18 +232,18 @@ export function BottomTabBar({ state, descriptors, navigation }) {
   const middle = Math.ceil(routes.length / 2);
   const activeKey = routes[state.index]?.key;
 
-  // The shared active chip: one Animated.View that glides to whichever tab
-  // is selected. Each TabButton reports its ICON ZONE's position in card
-  // coordinates into measuresRef; the effect below places the chip's center
-  // exactly on that zone's center — including when the route changes from
-  // another screen, because it follows `state.index`, not press callbacks.
+  // The shared active pill: one Animated.View that glides to whichever tab is
+  // selected. Each TabButton reports its ICON ZONE's position in card
+  // coordinates into measuresRef; the effect below centers the pill on that
+  // zone — including when the route changes from another screen, because it
+  // follows `state.index`, not press callbacks. A rotation or width change
+  // re-fires the tabs' onLayout, so a fresh measure re-centers the pill too.
   const measuresRef = useRef({});
   const placedRef = useRef(false);
   const [measuredTick, setMeasuredTick] = useState(0);
-  const chipX = useSharedValue(0);
-  const chipTop = useSharedValue(0);
-  const chipVisible = useSharedValue(0);
-  const morph = useSharedValue(0);
+  const pillX = useSharedValue(0);
+  const pillTop = useSharedValue(0);
+  const pillVisible = useSharedValue(0);
 
   const handleMeasure = useCallback((key, layout) => {
     const prev = measuresRef.current[key];
@@ -241,44 +262,35 @@ export function BottomTabBar({ state, descriptors, navigation }) {
   useEffect(() => {
     const zone = activeKey ? measuresRef.current[activeKey] : undefined;
     if (!zone) return;
-    // Center-to-center: the chip's geometric center lands on the measured
-    // icon zone's center. No padding or label assumptions — the zone's own
-    // x/y/width/height (summed up to card coordinates) fully decide it, so
-    // the first and last tabs align like every other one.
-    const left = zone.x + (zone.width - CHIP_SIZE) / 2;
-    const top = zone.y + (zone.height - CHIP_SIZE) / 2;
-    chipTop.value = top;
+    // Center the pill on the icon zone: the zone's own x/y/width/height (summed
+    // up to card coordinates) fully decide it, so the first and last tabs align
+    // like every other one — even though the raised center slot makes the
+    // columns unequal. No padding or label assumptions.
+    const left = zone.x + (zone.width - PILL_W) / 2;
+    const top = zone.y + (zone.height - PILL_H) / 2;
+    pillTop.value = top;
     if (!placedRef.current) {
       // First layout: snap into place unseen, then fade in.
       placedRef.current = true;
-      chipX.value = left;
-      chipVisible.value = withTiming(1, { duration: reduced ? 0 : 180 });
+      pillX.value = left;
+      pillVisible.value = withTiming(1, { duration: reduced ? 0 : 180 });
       return;
     }
-    if (Math.abs(chipX.value - left) < 0.5) {
+    if (Math.abs(pillX.value - left) < 0.5) {
       return; // x unchanged (e.g., label reflow moved only `top`) — no travel
     }
-    chipX.value = withTiming(left, {
-      duration: reduced ? 0 : TRAVEL_MS,
-      easing: Easing.inOut(Easing.ease),
+    // Glide horizontally on the demo's curve. Only the pill moves — icons and
+    // labels stay put, so the bar never reflows mid-transition.
+    pillX.value = withTiming(left, {
+      duration: reduced ? 0 : PILL_TRAVEL_MS,
+      easing: GLIDE_EASING,
     });
-    // Subtle squash-and-stretch + softer corners mid-travel: reads as one
-    // shape morphing between slots, without bouncing past either tab.
-    morph.value = withSequence(
-      withTiming(1, { duration: reduced ? 0 : 130, easing: Easing.out(Easing.quad) }),
-      withTiming(0, { duration: reduced ? 0 : 170, easing: Easing.in(Easing.quad) }),
-    );
-  }, [activeKey, measuredTick, reduced, chipX, chipTop, chipVisible, morph]);
+  }, [activeKey, measuredTick, reduced, pillX, pillTop, pillVisible]);
 
-  const chipStyle = useAnimatedStyle(() => ({
-    borderRadius: CHIP_RADIUS + 3 * morph.value,
-    opacity: chipVisible.value,
-    top: chipTop.value,
-    transform: [
-      { translateX: chipX.value },
-      { scaleX: 1 + 0.12 * morph.value },
-      { scaleY: 1 - 0.08 * morph.value },
-    ],
+  const pillStyle = useAnimatedStyle(() => ({
+    opacity: pillVisible.value,
+    top: pillTop.value,
+    transform: [{ translateX: pillX.value }],
   }));
 
   const [expanded, setExpanded] = useState(false);
@@ -377,13 +389,20 @@ export function BottomTabBar({ state, descriptors, navigation }) {
             },
           ]}
         >
-          {/* The single shared active chip. Rendered FIRST so every tab's
+          {/* The single shared active pill. Rendered FIRST so every tab's
               icon paints on top of it; it never intercepts touches. */}
           <Animated.View
             accessibilityElementsHidden
             importantForAccessibility="no"
             pointerEvents="none"
-            style={[styles.chip, { backgroundColor: colors.primarySoft }, chipStyle]}
+            style={[
+              styles.pill,
+              {
+                backgroundColor: colors.primarySoft,
+                borderColor: withAlpha(colors.primary, 0.16),
+              },
+              pillStyle,
+            ]}
           />
 
           {routes.slice(0, middle).map((route, i) => (
@@ -522,20 +541,23 @@ const styles = StyleSheet.create({
   },
   iconWrap: {
     alignItems: 'center',
-    // Square zone sized exactly to the chip, so the wrapper never overhangs
+    // The zone the pill is measured against, so the wrapper never overhangs
     // into the label and the icon centers with even air on all sides.
-    height: CHIP_SIZE,
+    height: ZONE_H,
     justifyContent: 'center',
     width: ZONE_W,
   },
-  chip: {
-    // Anchored at the card's origin; translateX/top in the animated style
-    // steer it to the active tab's measured icon zone.
-    height: CHIP_SIZE,
+  pill: {
+    // Anchored at the card's origin; top/translateX in the animated style
+    // steer it to the active tab's measured icon zone. The 1 px border is the
+    // demo's inset hairline, drawn inside so the pill's size never changes.
+    borderWidth: 1,
+    borderRadius: PILL_RADIUS,
+    height: PILL_H,
     left: 0,
     position: 'absolute',
     top: 0,
-    width: CHIP_SIZE,
+    width: PILL_W,
   },
   label: {
     // Same fixed width as the icon container: labels center under the icon
