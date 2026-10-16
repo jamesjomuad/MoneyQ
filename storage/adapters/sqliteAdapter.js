@@ -66,7 +66,12 @@ export function createSqliteAdapter(getDb) {
 
     // --- budgets -------------------------------------------------------
 
-    async listBudgets() {
+    /**
+     * Budget rows with derived expense/income totals. Soft-deleted (archived)
+     * budgets are hidden unless `includeArchived` is passed — only the backup
+     * snapshot and the Archive screen need them. Mirrors `listTags`.
+     */
+    async listBudgets({ includeArchived = false } = {}) {
       return query(`
         SELECT b.*,
           COALESCE(
@@ -78,6 +83,7 @@ export function createSqliteAdapter(getDb) {
           (SELECT COUNT(*) FROM transactions t
             WHERE t.budget_id = b.id) AS transaction_count
         FROM budgets b
+        ${includeArchived ? '' : 'WHERE b.deleted_at IS NULL'}
         ORDER BY b.position ASC, b.start_date DESC, b.created_at DESC
       `);
     },
@@ -88,7 +94,7 @@ export function createSqliteAdapter(getDb) {
 
     async insertBudget(row) {
       await run(
-        'INSERT INTO budgets (id, name, start_date, end_date, color, folder_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO budgets (id, name, start_date, end_date, color, folder_id, position, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         row.id,
         row.name,
         row.start_date,
@@ -98,6 +104,7 @@ export function createSqliteAdapter(getDb) {
         row.position ?? 0,
         row.created_at,
         row.updated_at,
+        row.deleted_at ?? null,
       );
     },
 
@@ -141,6 +148,38 @@ export function createSqliteAdapter(getDb) {
     /** Cascades to the budget's transactions through the foreign key. */
     async deleteBudget(id) {
       const result = await run('DELETE FROM budgets WHERE id = ?', id);
+      return result.changes ?? 0;
+    },
+
+    /**
+     * Soft-delete flip for archive/restore. `NULL` restores the budget; an ISO
+     * timestamp archives it. Only this column and the audit timestamp change —
+     * transactions, breakdown items, attachments, reminders, tags, color and
+     * folder assignment are never touched, so restoring is lossless.
+     */
+    async setBudgetArchived(id, deletedAt, timestamp) {
+      const result = await run(
+        'UPDATE budgets SET deleted_at = ?, updated_at = ? WHERE id = ?',
+        deletedAt ?? null,
+        timestamp,
+        id,
+      );
+      return result.changes ?? 0;
+    },
+
+    /**
+     * Archive every active budget still in one folder, backing the folder
+     * delete. Callers wrap it with `deleteFolder` in a transaction so a folder
+     * never disappears before its budgets are archived.
+     */
+    async archiveBudgetsInFolder(folderId, deletedAt, timestamp) {
+      const result = await run(
+        `UPDATE budgets SET deleted_at = ?, updated_at = ?
+          WHERE folder_id = ? AND deleted_at IS NULL`,
+        deletedAt ?? null,
+        timestamp,
+        folderId,
+      );
       return result.changes ?? 0;
     },
 
@@ -261,11 +300,13 @@ export function createSqliteAdapter(getDb) {
       );
     },
 
+    /** Cross-budget range read (Reports + Calendar); archived budgets excluded. */
     async listTransactionsInRange(startIso, endIso) {
       return query(
-        `SELECT * FROM transactions
-          WHERE transaction_date >= ? AND transaction_date <= ?
-          ORDER BY transaction_date DESC, created_at DESC`,
+        `SELECT t.* FROM transactions t
+           JOIN budgets b ON b.id = t.budget_id AND b.deleted_at IS NULL
+          WHERE t.transaction_date >= ? AND t.transaction_date <= ?
+          ORDER BY t.transaction_date DESC, t.created_at DESC`,
         startIso,
         endIso,
       );
@@ -291,7 +332,7 @@ export function createSqliteAdapter(getDb) {
                   WHERE s.transaction_id = t.id) AS sub_transaction_count
           FROM transactions t
           LEFT JOIN tags tg ON tg.id = t.tag_id
-          JOIN budgets b ON b.id = t.budget_id
+          JOIN budgets b ON b.id = t.budget_id AND b.deleted_at IS NULL
           WHERE lower(t.description) LIKE ? ESCAPE '\\'
              OR lower(tg.name) LIKE ? ESCAPE '\\'
              OR EXISTS (SELECT 1 FROM sub_transactions s
@@ -508,6 +549,7 @@ export function createSqliteAdapter(getDb) {
                 t.payment_due_date AS parent_payment_due_date
           FROM sub_transactions s
           JOIN transactions t ON t.id = s.transaction_id
+          JOIN budgets b ON b.id = t.budget_id AND b.deleted_at IS NULL
           WHERE s.purchase_date >= ? AND s.purchase_date <= ?
           ORDER BY s.purchase_date ASC, s.purchase_time ASC, s.position ASC, s.id ASC`,
         startIso,
@@ -518,9 +560,10 @@ export function createSqliteAdapter(getDb) {
     /** Parents scheduled to be due inside a date range (Calendar payment events). */
     async listTransactionsByDueDateRange(startIso, endIso) {
       return query(
-        `SELECT * FROM transactions
-          WHERE payment_due_date >= ? AND payment_due_date <= ?
-          ORDER BY payment_due_date ASC, created_at DESC`,
+        `SELECT t.* FROM transactions t
+           JOIN budgets b ON b.id = t.budget_id AND b.deleted_at IS NULL
+          WHERE t.payment_due_date >= ? AND t.payment_due_date <= ?
+          ORDER BY t.payment_due_date ASC, t.created_at DESC`,
         startIso,
         endIso,
       );
@@ -700,7 +743,7 @@ export function createSqliteAdapter(getDb) {
       const result = await run(
         `UPDATE budgets
             SET name = ?, start_date = ?, end_date = ?, color = ?, folder_id = ?,
-                created_at = ?, updated_at = ?
+                created_at = ?, updated_at = ?, deleted_at = ?
           WHERE id = ?`,
         row.name,
         row.start_date,
@@ -709,6 +752,7 @@ export function createSqliteAdapter(getDb) {
         row.folder_id ?? null,
         row.created_at,
         row.updated_at,
+        row.deleted_at ?? null,
         row.id,
       );
       return result.changes ?? 0;

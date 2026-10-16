@@ -176,7 +176,7 @@ export default function FolderFormScreen() {
   async function handleDelete() {
     Alert.alert(
       `Delete "${name.trim() || "this folder"}"?`,
-      'The budgets inside are NOT deleted — they move back to the Home list.',
+      'The budgets inside are archived, not deleted — they move to the Archive with their transactions, tags and reminders intact.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

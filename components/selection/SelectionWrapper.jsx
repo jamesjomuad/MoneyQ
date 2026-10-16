@@ -24,6 +24,10 @@ import { useTheme } from '../ui/ThemeProvider';
  * repository and knows nothing about folders, budgets, or moves. Screens
  * configure eligibility per list (`isEligible` + `idOf` over stable ids) and
  * supply their own action callbacks.
+ *
+ * `actions` is either a plain array, or a function of the selection when an
+ * action's own confirmation needs the current ids (Home's Remove archives
+ * exactly what is selected). Both forms produce the same toolbar.
  */
 export function SelectionWrapper({
   items,
@@ -69,7 +73,7 @@ export function SelectionWrapper({
     <SelectionToolbar
       count={selectedIds.length}
       onCancel={exitSelection}
-      actions={actions}
+      actions={typeof actions === 'function' ? actions(selection) : actions}
       cancelLabel={cancelLabel}
     />
   ) : null;

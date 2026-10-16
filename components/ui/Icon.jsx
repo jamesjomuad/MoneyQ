@@ -49,6 +49,7 @@ const ICONS = {
   pinFilled: { ios: 'pin.fill', android: 'push_pin', web: 'push_pin' },
   eye: { ios: 'eye', android: 'visibility', web: 'visibility' },
   eyeOff: { ios: 'eye.slash', android: 'visibility_off', web: 'visibility_off' },
+  archive: { ios: 'archivebox', android: 'archive', web: 'archive' },
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

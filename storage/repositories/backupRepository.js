@@ -11,7 +11,8 @@ import { storage } from '../adapters/adapter';
 export async function readSnapshot(store = storage) {
   const accounts = await store.listAccounts();
   const folders = await store.listFolders();
-  const budgets = await store.listBudgets();
+  // Archived budgets must round-trip: their transactions are exported too.
+  const budgets = await store.listBudgets({ includeArchived: true });
   const tags = await store.listTags({ includeArchived: true });
   const transactions = [];
   const subTransactions = [];

@@ -266,6 +266,11 @@ check(
   budgetColumns.includes('position'),
   budgetColumns.join(','),
 );
+check(
+  'budgets gained a nullable archive column',
+  budgetColumns.includes('deleted_at'),
+  budgetColumns.join(','),
+);
 const folderColumns = columnsOf('folders');
 check(
   'folders carry name, color, position and timestamps',
@@ -448,7 +453,11 @@ check(
   reminderColumns.includes('notes'),
   reminderColumns.join(','),
 );
-check('LATEST_VERSION matches the migration list', LATEST_VERSION === 14, String(LATEST_VERSION));
+check(
+  'LATEST_VERSION matches the migration list',
+  LATEST_VERSION === Math.max(...migrations.map((entry) => entry.version)),
+  String(LATEST_VERSION),
+);
 check(
   'migrations are unique and ascending',
   migrations.every((entry, index) => entry.version === index + 1),
@@ -1474,6 +1483,57 @@ async function runScenario(store) {
   });
   snapshot.reminderAfterReplace = await store.getReminder('p_merge_rem');
 
+  // --- archiving is a soft delete on both engines ------------------------
+  // setBudgetArchived stamps deleted_at (never a hard delete), cross-budget
+  // reads hide the row, listBudgets({includeArchived:true}) still finds it,
+  // and restoring clears the column so the same id comes back intact.
+  snapshot.archiveChanges = await store.setBudgetArchived('p_budget', STAMP, STAMP);
+  snapshot.budgetsHiddenByArchive = (await store.listBudgets()).map((budget) => budget.id);
+  snapshot.budgetsIncludingArchived = (await store.listBudgets({ includeArchived: true })).map(
+    (budget) => `${budget.id}:${budget.folder_id}:${budget.deleted_at}`,
+  );
+  snapshot.archivedTransactionsInRange = await store.listTransactionsInRange(
+    '2026-10-01',
+    '2026-10-31',
+  );
+  snapshot.archivedBudgetRow = await store.getBudget('p_budget');
+  snapshot.restoreChanges = await store.setBudgetArchived('p_budget', null, STAMP);
+  snapshot.budgetsAfterRestore = (await store.listBudgets()).map((budget) => budget.id);
+
+  // --- a folder's budgets are archived together (folder deletion) --------
+  await store.insertFolder({
+    id: 'p_archive_folder',
+    name: 'Archive Me',
+    color: null,
+    position: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertBudget({
+    id: 'p_archive_budget',
+    name: 'Archived With Folder',
+    start_date: '2026-07-01',
+    end_date: '2026-07-31',
+    folder_id: 'p_archive_folder',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.folderArchiveChanges = await store.archiveBudgetsInFolder(
+    'p_archive_folder',
+    STAMP,
+    STAMP,
+  );
+  snapshot.folderArchiveHidden = (await store.listBudgets()).map((budget) => budget.id);
+  snapshot.folderArchiveKept = (await store.listBudgets({ includeArchived: true })).map(
+    (budget) => `${budget.id}:${budget.folder_id}:${budget.deleted_at}`,
+  );
+  // A second pass must be a no-op: already-archived rows are left alone.
+  snapshot.folderArchiveSecondPass = await store.archiveBudgetsInFolder(
+    'p_archive_folder',
+    '2026-10-06T03:00:00.000Z',
+    '2026-10-06T03:00:00.000Z',
+  );
+
   // --- a rolled-back wipe restores every table (failed-restore safety) --
   await store.beginTransaction();
   await store.clearAllData();
@@ -1519,7 +1579,11 @@ check(
   sqliteJson === memoryJson,
   sqliteJson === memoryJson ? '' : `\n--- sqlite ---\n${sqliteJson}\n--- memory ---\n${memoryJson}`,
 );
-check('both adapters report the same schema version', LATEST_VERSION === 14);
+check(
+  'both adapters report the same schema version',
+  sqliteResult.schemaVersion === memoryResult.schemaVersion &&
+    sqliteResult.schemaVersion === LATEST_VERSION,
+);
 const parityBudget = sqliteResult.budgets.find((budget) => budget.id === 'p_budget');
 check(
   'both adapters report period income on the folder row',
@@ -1750,7 +1814,7 @@ await legacyAdapter.runAsync(
 // Exactly what runMigrations() does: apply only what is newer than user_version.
 const fromVersion = legacyDb.prepare('PRAGMA user_version').get().user_version;
 const pending = migrations.filter((entry) => entry.version > fromVersion);
-check('legacy database has thirteen pending migrations', pending.length === 13, String(pending.length));
+check('legacy database has fourteen pending migrations', pending.length === 14, String(pending.length));
 for (const entry of pending) {
   await entry.up(legacyAdapter);
 }

@@ -7,7 +7,7 @@ import { useTheme } from '../ui/ThemeProvider';
 /**
  * The contextual bottom bar shown while a list is in selection mode: a
  * cancel control, the selected count, and whatever actions the owning
- * screen supplies (e.g. "Move to Folder"). Actions are disabled while
+ * screen supplies (e.g. "Move"). Actions are disabled while
  * nothing is selected, so screens never wire their own count checks.
  *
  * The bar knows nothing about what the actions do — business logic and
@@ -57,6 +57,7 @@ export function SelectionToolbar({ count, onCancel, actions = [], cancelLabel = 
           key={action.label}
           label={action.label}
           icon={action.icon}
+          variant={action.variant}
           disabled={count === 0 || Boolean(action.disabled)}
           onPress={action.onPress}
           style={styles.action}
@@ -71,6 +72,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
+    // A screen may supply more than one action ("Move" + "Remove").
+    // Wrapping keeps both reachable on narrow phones instead of overflowing
+    // the row, without shrinking either label.
+    flexWrap: 'wrap',
   },
   cancel: {
     borderWidth: 1,

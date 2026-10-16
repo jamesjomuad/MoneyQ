@@ -112,10 +112,24 @@ export async function reorderFolder(id, targetIndex) {
 }
 
 /**
- * Hard delete of the folder row only. Budgets are never removed: the foreign
- * key (and the memory adapter's mirror) nulls their `folder_id`, so they
- * simply return to the root list with every transaction untouched.
+ * Deletes a folder, never the data inside it: every budget still in the folder
+ * is archived first (soft-deleted, ids and records untouched), then the folder
+ * row goes. One transaction, so a failure can never drop the folder before its
+ * budgets are archived, nor archive half of them. The foreign key then nulls
+ * the archived budgets' `folder_id` (the memory adapter mirrors it), which is
+ * exactly the "original folder is gone" case the Archive screen restores to the
+ * root list. Already-archived budgets in the folder are left alone.
  */
 export async function deleteFolder(id) {
-  return storage.deleteFolder(id);
+  const timestamp = nowIso();
+
+  await storage.beginTransaction();
+  try {
+    await storage.archiveBudgetsInFolder(id, timestamp, timestamp);
+    await storage.deleteFolder(id);
+    await storage.commitTransaction();
+  } catch (error) {
+    await storage.rollbackTransaction();
+    throw error;
+  }
 }

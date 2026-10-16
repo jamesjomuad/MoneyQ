@@ -67,6 +67,15 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     b.start_date.localeCompare(a.start_date) ||
     b.created_at.localeCompare(a.created_at);
 
+  /**
+   * Ids of soft-deleted (archived) budgets. Cross-budget reads hide their
+   * rows, mirroring the adapters' `deleted_at IS NULL` join.
+   */
+  const archivedBudgetIds = () =>
+    new Set(
+      store.budgets.filter((budget) => budget.deleted_at != null).map((budget) => budget.id),
+    );
+
   /** SQLite's folder order: `ORDER BY position, created_at, id`. */
   const byFolderPosition = (a, b) =>
     a.position - b.position ||
@@ -146,8 +155,13 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
 
     // --- budgets -------------------------------------------------------
 
-    async listBudgets() {
+    /**
+     * Mirrors SQLite's `listBudgets`: archived (soft-deleted) budgets are
+     * hidden unless `includeArchived` is passed.
+     */
+    async listBudgets({ includeArchived = false } = {}) {
       return [...store.budgets]
+        .filter((budget) => includeArchived || budget.deleted_at == null)
         .sort(byBudgetPeriod)
         .map((budget) => {
           let spent = 0;
@@ -169,9 +183,10 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
 
     async insertBudget(row) {
       // Mirror the SQLite schema: `color` and `folder_id` always exist on the
-      // row (NULL when the budget keeps theme colors / stays ungrouped), and
-      // `position` defaults to the scope's rank 0 like the column default.
-      store.budgets.push({ color: null, folder_id: null, position: 0, ...row });
+      // row (NULL when the budget keeps theme colors / stays ungrouped),
+      // `position` defaults to the scope's rank 0 like the column default, and
+      // `deleted_at` is NULL (active) for every fresh budget.
+      store.budgets.push({ color: null, folder_id: null, position: 0, deleted_at: null, ...row });
     },
 
     async updateBudget(row) {
@@ -218,6 +233,33 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         if (doomed.has(reminder.transaction_id)) reminder.transaction_id = null;
       }
       return removed;
+    },
+
+    /**
+     * Soft-delete flip for archive/restore. `null` restores the budget; a
+     * timestamp archives it. Nothing else on the budget — or any associated
+     * record — is touched.
+     */
+    async setBudgetArchived(id, deletedAt, timestamp) {
+      const index = store.budgets.findIndex((budget) => budget.id === id);
+      if (index < 0) return 0;
+      store.budgets[index] = {
+        ...store.budgets[index],
+        deleted_at: deletedAt ?? null,
+        updated_at: timestamp,
+      };
+      return 1;
+    },
+
+    /** Archive every active budget still in one folder (folder delete). */
+    async archiveBudgetsInFolder(folderId, deletedAt, timestamp) {
+      let changes = 0;
+      store.budgets = store.budgets.map((budget) => {
+        if (budget.folder_id !== folderId || budget.deleted_at != null) return budget;
+        changes += 1;
+        return { ...budget, deleted_at: deletedAt ?? null, updated_at: timestamp };
+      });
+      return changes;
     },
 
     // --- folders ---------------------------------------------------------
@@ -318,9 +360,11 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async listTransactionsInRange(startIso, endIso) {
+      const archived = archivedBudgetIds();
       return store.transactions
         .filter(
           (transaction) =>
+            !archived.has(transaction.budget_id) &&
             transaction.transaction_date >= startIso &&
             transaction.transaction_date <= endIso,
         )
@@ -335,10 +379,12 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
      */
     async searchTransactions(term, limit) {
       const needle = String(term).toLowerCase();
+      const archived = archivedBudgetIds();
       const tagById = new Map(store.tags.map((tag) => [tag.id, tag]));
       const budgetById = new Map(store.budgets.map((budget) => [budget.id, budget]));
       return store.transactions
         .filter((transaction) => {
+          if (archived.has(transaction.budget_id)) return false;
           const inDescription = (transaction.description ?? '')
             .toLowerCase()
             .includes(needle);
@@ -531,11 +577,13 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
      */
     async listSubTransactionsInRange(startIso, endIso) {
       const parentById = new Map(store.transactions.map((t) => [t.id, t]));
+      const archived = archivedBudgetIds();
       return store.subTransactions
         .filter((item) =>
           item.purchase_date != null &&
           item.purchase_date >= startIso &&
-          item.purchase_date <= endIso,
+          item.purchase_date <= endIso &&
+          !archived.has(parentById.get(item.transaction_id)?.budget_id),
         )
         .sort(
           (a, b) =>
@@ -559,9 +607,11 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     async listTransactionsByDueDateRange(startIso, endIso) {
+      const archived = archivedBudgetIds();
       return store.transactions
         .filter(
           (transaction) =>
+            !archived.has(transaction.budget_id) &&
             transaction.payment_due_date != null &&
             transaction.payment_due_date >= startIso &&
             transaction.payment_due_date <= endIso,
@@ -710,6 +760,7 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         folder_id: row.folder_id ?? null,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        deleted_at: row.deleted_at ?? null,
       });
       return 1;
     },

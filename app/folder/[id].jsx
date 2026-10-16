@@ -44,6 +44,8 @@ export default function FolderDetailScreen() {
   const pinnedIds = useBudgetsStore((state) => state.pinnedIds);
   const reorderBudget = useBudgetsStore((state) => state.reorderBudget);
   const moveManyToFolder = useBudgetsStore((state) => state.moveManyToFolder);
+  const archiveMany = useBudgetsStore((state) => state.archiveMany);
+  const restoreMany = useBudgetsStore((state) => state.restoreMany);
 
   const folders = useFoldersStore((state) => state.folders);
   const isLoadingFolders = useFoldersStore((state) => state.isLoading);
@@ -65,15 +67,91 @@ export default function FolderDetailScreen() {
   // supplies the list, its actions, and the actual move. Every row here is a
   // budget, so all rows are eligible by default.
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // The ids whose archive can still be undone. Undo reads and clears this in
+  // the same tick, so a repeated tap is a no-op rather than a second restore.
+  const undoRef = useRef(null);
+
+  // Archiving is a write, so a second confirm is swallowed until the first
+  // settles — the dialog can't double-submit.
+  const archivingRef = useRef(false);
+
+  /** Undo lives here, not in the toast: after a successful archive, restore
+   *  the same ids to their original folders (or the root list). */
+  const undoArchive = useCallback(async () => {
+    const ids = undoRef.current;
+    if (!ids || ids.length === 0) return;
+    undoRef.current = null;
+    try {
+      await restoreMany(ids);
+      showToast(
+        ids.length === 1 ? 'Budget restored' : `${ids.length} budgets restored`,
+        'success',
+      );
+    } catch (error) {
+      showToast(error?.message ?? 'Could not restore the budgets.', 'error');
+    }
+  }, [restoreMany]);
+
+  // Archiving from inside a folder follows Home's contract: the selection
+  // system supplies the ids, the store performs the soft delete, and the
+  // budgets land on the Archive screen with all their data intact. The same
+  // snackbar Undo returns them to this folder.
+  const confirmBulkArchive = useCallback(
+    (selection) => {
+      const ids = [...selection.selectedIds];
+      const count = ids.length;
+      if (count === 0) return;
+      Alert.alert(
+        `Archive ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
+        'These budgets will be removed from your active lists. Their financial data will be preserved, and you can restore them later from Archive.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Archive',
+            // Neutral, not destructive: archiving is reversible.
+            style: 'default',
+            onPress: async () => {
+              if (archivingRef.current) return;
+              archivingRef.current = true;
+              try {
+                await archiveMany(ids);
+                selection.exitSelection();
+                undoRef.current = ids;
+                showToast(
+                  count === 1 ? '1 budget archived' : `${count} budgets archived`,
+                  'success',
+                  { label: 'Undo', icon: 'undo', onPress: undoArchive },
+                );
+              } catch (error) {
+                showToast(error?.message ?? 'Could not archive the budgets.', 'error');
+              } finally {
+                archivingRef.current = false;
+              }
+            },
+          },
+        ],
+      );
+    },
+    [archiveMany, undoArchive],
+  );
+
   const selectionActions = useMemo(
-    () => [
+    () => (selection) => [
       {
-        label: 'Move to Folder',
+        label: 'Remove',
+        icon: 'archive',
+        // Secondary rather than destructive: archiving is reversible.
+        variant: 'secondary',
+        onPress: () => confirmBulkArchive(selection),
+      },
+      {
+        label: 'Move',
         icon: 'folder',
         onPress: () => setPickerOpen(true),
       },
     ],
-    [setPickerOpen],
+    [confirmBulkArchive, setPickerOpen],
   );
 
   // Drag-and-drop reordering (same contract as Home): lock the scroll while a
@@ -138,7 +216,7 @@ export default function FolderDetailScreen() {
         <EmptyState
           icon="folder"
           title="Folder not found"
-          description="This budget folder may have been deleted. Its budgets, if there were any, are back on the Home list."
+          description="This budget folder may have been deleted. Its budgets, if there were any, are in the Archive."
         >
           <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
         </EmptyState>
@@ -160,7 +238,7 @@ export default function FolderDetailScreen() {
     Alert.alert(
       `Delete "${folder.name}"?`,
       count > 0
-        ? `The ${count} ${count === 1 ? 'budget' : 'budgets'} inside are NOT deleted — they move back to the Home list.`
+        ? `The ${count} ${count === 1 ? 'budget' : 'budgets'} inside are archived, not deleted — they move to the Archive with every transaction, tag and reminder intact, and can be restored later.`
         : 'This folder is empty. Deleting it changes nothing else.',
       [
         { text: 'Cancel', style: 'cancel' },

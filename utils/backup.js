@@ -41,7 +41,7 @@ const THEME_VALUES = ['system', 'light', 'dark', 'moneyq'];
 const ENTITY_COLUMNS = {
   accounts: ['id', 'name', 'type', 'initial_balance', 'archived', 'created_at', 'updated_at'],
   folders: ['id', 'name', 'color', 'position', 'created_at', 'updated_at'],
-  budgets: ['id', 'name', 'start_date', 'end_date', 'color', 'folder_id', 'created_at', 'updated_at'],
+  budgets: ['id', 'name', 'start_date', 'end_date', 'color', 'folder_id', 'created_at', 'updated_at', 'deleted_at'],
   tags: [
     'id',
     'name',
@@ -358,6 +358,12 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
             : (warnings.push(`Budget ${id} referenced budget folder "${String(row.folder_id)}" which is not in the backup; left ungrouped.`), null),
       created_at: coerceTimestamp(row.created_at, warnings, `Budget ${id}`, id, nowStamp, 'created_at'),
       updated_at: coerceTimestamp(row.updated_at, warnings, `Budget ${id}`, id, nowStamp, 'updated_at'),
+      // Archive status. Absent from pre-archive backups, where every budget was
+      // active, so a missing/blank value coerces to NULL rather than a warning.
+      deleted_at:
+        row.deleted_at === null || row.deleted_at === undefined || row.deleted_at === ''
+          ? null
+          : String(row.deleted_at),
     });
     budgetIds.add(id);
   }

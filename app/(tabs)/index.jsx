@@ -51,6 +51,8 @@ export default function HomeScreen() {
   const load = useBudgetsStore((state) => state.load);
   const togglePinned = useBudgetsStore((state) => state.togglePinned);
   const moveManyToFolder = useBudgetsStore((state) => state.moveManyToFolder);
+  const archiveMany = useBudgetsStore((state) => state.archiveMany);
+  const restoreMany = useBudgetsStore((state) => state.restoreMany);
   const reorderBudget = useBudgetsStore((state) => state.reorderBudget);
   const folders = useFoldersStore((state) => state.folders);
   const loadFolders = useFoldersStore((state) => state.load);
@@ -59,19 +61,91 @@ export default function HomeScreen() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // The only Home-specific piece the selection wrapper is told about: the
-  // Move action opens the destination picker, and the actual move (plus its
-  // confirmation, exit, and error toast) stays in this screen's business
-  // logic below.
+  // The ids whose archive can still be undone. Undo reads and clears this in
+  // the same tick, so a repeated tap is a no-op rather than a second restore.
+  const undoRef = useRef(null);
+
+  // Archiving is a write, so a second confirm is swallowed until the first
+  // settles — the dialog can't double-submit.
+  const archivingRef = useRef(false);
+
+  /** Undo lives here, not in the toast: after a successful archive, restore
+   *  the same ids to their original folders (or the root list). */
+  const undoArchive = useCallback(async () => {
+    const ids = undoRef.current;
+    if (!ids || ids.length === 0) return;
+    undoRef.current = null;
+    try {
+      await restoreMany(ids);
+      showToast(
+        ids.length === 1 ? 'Budget restored' : `${ids.length} budgets restored`,
+        'success',
+      );
+    } catch (error) {
+      showToast(error?.message ?? 'Could not restore the budgets.', 'error');
+    }
+  }, [restoreMany]);
+
+  // The Home-specific pieces the selection wrapper is told about: Remove
+  // archives the current selection and Move opens the destination picker.
+  // Confirmations, the exit and the undo snackbar stay in this screen's
+  // business logic. `actions` receives the live selection so Remove knows
+  // exactly which budgets to archive.
+  const confirmBulkArchive = useCallback(
+    (selection) => {
+      const ids = [...selection.selectedIds];
+      const count = ids.length;
+      if (count === 0) return;
+      Alert.alert(
+        `Archive ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
+        'These budgets will be removed from your active lists. Their financial data will be preserved, and you can restore them later from Archive.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Archive',
+            // Neutral, not destructive: archiving is reversible.
+            style: 'default',
+            onPress: async () => {
+              if (archivingRef.current) return;
+              archivingRef.current = true;
+              try {
+                await archiveMany(ids);
+                selection.exitSelection();
+                undoRef.current = ids;
+                showToast(
+                  count === 1 ? '1 budget archived' : `${count} budgets archived`,
+                  'success',
+                  { label: 'Undo', icon: 'undo', onPress: undoArchive },
+                );
+              } catch (error) {
+                showToast(error?.message ?? 'Could not archive the budgets.', 'error');
+              } finally {
+                archivingRef.current = false;
+              }
+            },
+          },
+        ],
+      );
+    },
+    [archiveMany, undoArchive],
+  );
+
   const selectionActions = useMemo(
-    () => [
+    () => (selection) => [
       {
-        label: 'Move to Folder',
+        label: 'Remove',
+        icon: 'archive',
+        // Secondary rather than destructive: archiving is reversible.
+        variant: 'secondary',
+        onPress: () => confirmBulkArchive(selection),
+      },
+      {
+        label: 'Move',
         icon: 'folder',
         onPress: () => setPickerOpen(true),
       },
     ],
-    [],
+    [confirmBulkArchive],
   );
 
   // Drag-and-drop reordering: `liftedKey` is the row currently held by a
@@ -444,6 +518,35 @@ export default function HomeScreen() {
                 ) : null}
               </Animated.View>
 
+              {/* Compact utility action, directly below the full-width search
+                  field and above the folder/budget list. The search field keeps
+                  its whole width. */}
+              <Animated.View
+                entering={introEnter(1)}
+                style={[styles.archiveRow, { marginBottom: spacing.md }]}
+              >
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open archive"
+                  onPress={() => router.push("/archive")}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.archiveButton,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      borderRadius: radius.pill,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <Icon name="archive" size={16} color={colors.textMuted} />
+                  <Text variant="label" tone="muted">
+                    Archive
+                  </Text>
+                </Pressable>
+              </Animated.View>
+
               {isLoading && budgets.length === 0 ? (
                 <View style={styles.loading}>
                   <ActivityIndicator color={colors.primary} size="large" />
@@ -642,6 +745,19 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: "center",
     width: 44,
+  },
+  archiveRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+  archiveButton: {
+    alignItems: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   txSection: {
     marginTop: 8,

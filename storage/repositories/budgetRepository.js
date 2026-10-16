@@ -28,6 +28,18 @@ export async function getBudgets() {
   return storage.listBudgets();
 }
 
+/**
+ * Budgets the user removed, most recently archived first. Same derived totals
+ * as `getBudgets`; the Archive screen is the only consumer. Archive order is
+ * newest-first so the last thing removed sits on top.
+ */
+export async function getArchivedBudgets() {
+  const budgets = await storage.listBudgets({ includeArchived: true });
+  return budgets
+    .filter((budget) => budget.deleted_at != null)
+    .sort((a, b) => String(b.deleted_at).localeCompare(String(a.deleted_at)));
+}
+
 export async function getBudget(id) {
   return storage.getBudget(id);
 }
@@ -151,6 +163,60 @@ export async function setBudgetsFolder(ids, folderId = null) {
 /** Cascades to the budget's transactions; callers must confirm with the user. */
 export async function deleteBudget(id) {
   return storage.deleteBudget(id);
+}
+
+/**
+ * Archives (soft-deletes) the given budgets. One transaction flips only
+ * `deleted_at` + `updated_at` per row — the budget's id, folder assignment,
+ * transactions, breakdown items, attachments, reminders, tags and colors all
+ * stay exactly as they were, so `restoreBudget` is lossless. Archived budgets
+ * drop out of every active list and out of range/search reads, but remain
+ * visible on the Archive screen and in backups.
+ */
+export async function archiveBudgets(ids) {
+  const timestamp = nowIso();
+
+  await storage.beginTransaction();
+  try {
+    for (const id of ids) await storage.setBudgetArchived(id, timestamp, timestamp);
+    await storage.commitTransaction();
+  } catch (error) {
+    await storage.rollbackTransaction();
+    throw error;
+  }
+
+  return ids;
+}
+
+/**
+ * Clears a budget's archive flag. The folder assignment rides along, so a
+ * budget restored while its folder still exists returns there; a budget whose
+ * folder was deleted has a NULL `folder_id` and lands back on the root list.
+ */
+export async function restoreBudget(id) {
+  await storage.setBudgetArchived(id, null, nowIso());
+  return getBudget(id);
+}
+
+/**
+ * Clears the archive flag for several budgets at once — the Undo half of a
+ * bulk archive. Each row keeps its own `folder_id`, so the group lands back
+ * exactly where it was taken from. One transaction: a failure restores
+ * nothing, so Undo is all-or-nothing.
+ */
+export async function restoreBudgets(ids) {
+  const timestamp = nowIso();
+
+  await storage.beginTransaction();
+  try {
+    for (const id of ids) await storage.setBudgetArchived(id, null, timestamp);
+    await storage.commitTransaction();
+  } catch (error) {
+    await storage.rollbackTransaction();
+    throw error;
+  }
+
+  return ids;
 }
 
 /**

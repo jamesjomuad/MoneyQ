@@ -1,11 +1,15 @@
 import { create } from 'zustand';
 
 import {
+  archiveBudgets,
   createBudget,
   deleteBudget,
+  getArchivedBudgets,
   getBudget,
   getBudgets,
   reorderBudget,
+  restoreBudget,
+  restoreBudgets,
   setBudgetFolder,
   setBudgetsFolder,
   updateBudget,
@@ -29,6 +33,7 @@ import { cancelScheduledRemindersForBudget } from '../services/reminderService';
  */
 export const useBudgetsStore = create((set, get) => ({
   budgets: [],
+  archivedBudgets: [],
   pinnedIds: [],
   isLoading: true,
   error: null,
@@ -36,16 +41,55 @@ export const useBudgetsStore = create((set, get) => ({
   load: async () => {
     set({ isLoading: true, error: null });
     try {
-      const [budgets, pinned] = await Promise.all([getBudgets(), getPinnedBudgetIds()]);
-      // Drop pins for budgets that no longer exist so a deleted folder also
-      // disappears from the pinned section.
-      const existing = new Set(budgets.map((budget) => budget.id));
+      const [budgets, archivedBudgets, pinned] = await Promise.all([
+        getBudgets(),
+        getArchivedBudgets(),
+        getPinnedBudgetIds(),
+      ]);
+      // Drop pins for budgets that no longer exist. Archived budgets are still
+      // real rows with their data intact, so their pins are kept and come back
+      // when the budget is restored.
+      const existing = new Set(
+        [...budgets, ...archivedBudgets].map((budget) => budget.id),
+      );
       const pinnedIds = pinned.filter((id) => existing.has(id));
       if (pinnedIds.length !== pinned.length) await setPinnedBudgetIds(pinnedIds);
-      set({ budgets, pinnedIds, isLoading: false });
+      set({ budgets, archivedBudgets, pinnedIds, isLoading: false });
     } catch (error) {
       set({ error, isLoading: false });
     }
+  },
+
+  /** Refresh only the archive list (Archive screen focus). */
+  loadArchived: async () => {
+    const archivedBudgets = await getArchivedBudgets();
+    set({ archivedBudgets });
+  },
+
+  /** Archive the selection: budgets leave every active list, data untouched. */
+  archiveMany: async (ids) => {
+    await archiveBudgets(ids);
+    await get().load();
+  },
+
+  /**
+   * Restore one archived budget. It returns to its original folder when that
+   * folder still exists, otherwise to the root list.
+   */
+  restoreArchived: async (id) => {
+    const budget = await restoreBudget(id);
+    await get().load();
+    return budget;
+  },
+
+  /**
+   * Undo a bulk archive: bring the same ids back in one write. Every budget
+   * keeps its own folder assignment, so each returns to where it came from
+   * (root level when its folder no longer exists).
+   */
+  restoreMany: async (ids) => {
+    await restoreBudgets(ids);
+    await get().load();
   },
 
   fetchBudget: (id) => getBudget(id),
