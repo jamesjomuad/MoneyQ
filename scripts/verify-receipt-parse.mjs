@@ -1,4 +1,5 @@
 import { parseReceiptText } from '../utils/receiptParse.js';
+import { parseChipAmount, findChipForAmount } from '../utils/receiptOcr.js';
 import { toMinor } from '../utils/currency.js';
 import { parseFlexibleDate } from '../utils/dates.js';
 
@@ -71,6 +72,34 @@ check('a balance figure never prefills the amount', balance.amount === null && b
 
 const firstNumber = parseReceiptText('Total count 3 items cost ₱75.00');
 check('the first number on a line is not assumed to be the amount', firstNumber.amount === '75' || firstNumber.amount === '75.00', `got ${JSON.stringify(firstNumber.amount)}`);
+
+console.log('receipt parser: OCR peso letter');
+
+const pesoLetter = parseReceiptText('P26.00');
+check('an OCR peso letter reads like the peso symbol', pesoLetter.amount === '26.00', `got ${JSON.stringify(pesoLetter.amount)}`);
+check('the peso-letter amount lands exactly in minor units', toMinor(pesoLetter.amount, 'PHP') === 2600);
+check('the peso-letter line is consumed out of notes', !pesoLetter.notes.includes('26.00'), JSON.stringify(pesoLetter.notes));
+
+const pesoLetterLabeled = parseReceiptText('Total P1,250.00');
+check('a labeled peso-letter total is trusted', pesoLetterLabeled.amount === '1250.00', `got ${JSON.stringify(pesoLetterLabeled.amount)}`);
+
+const pesoWordAttached = parseReceiptText('PHP26.00');
+check('a peso code attached to the number is recognized', pesoWordAttached.amount === '26.00', `got ${JSON.stringify(pesoWordAttached.amount)}`);
+
+const pesoInWord = parseReceiptText('SHIP26.00');
+check('a P inside a word is not treated as a currency mark', pesoInWord.amount === null, `got ${JSON.stringify(pesoInWord.amount)}`);
+
+const chipPeso = parseChipAmount('P26.00');
+check('the OCR chip of a peso letter yields its amount', chipPeso.ok && chipPeso.value === '26.00', JSON.stringify(chipPeso));
+
+const chipPesoId = parseChipAmount('Ref P7842190345');
+check('a peso-letter reference still refuses (excluded line)', chipPesoId.ok === false, JSON.stringify(chipPesoId));
+
+const chips = [
+  { id: 'chip_0', text: 'P26.00' },
+  { id: 'chip_1', text: 'Total' },
+];
+check('a prefilled peso-letter amount points back at its chip', findChipForAmount(chips, '26.00') === 'chip_0');
 
 console.log('receipt parser: date rules');
 

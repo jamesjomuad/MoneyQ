@@ -3,6 +3,7 @@ import {
   NUMBER_IN_TEXT,
   centsOf,
   dateCandidatesFromLine,
+  normalizeCurrencyMarks,
   normalizeNumber,
   parseReceiptText,
 } from './receiptParse';
@@ -60,7 +61,7 @@ export function parseChipAmount(text) {
       reason: 'This line is about a balance, fee or reference number — not an amount.',
     };
   }
-  const matches = [...value.matchAll(NUMBER_IN_TEXT)];
+  const matches = [...normalizeCurrencyMarks(value).matchAll(NUMBER_IN_TEXT)];
   if (matches.length === 0) {
     return { ok: false, reason: 'No usable number found in this text.' };
   }
@@ -155,7 +156,7 @@ export function findChipForAmount(chips, value) {
   const cents = centsOf(String(value));
   for (const chip of chips) {
     if (AMOUNT_EXCLUDE.test(chip.text)) continue;
-    const numbers = [...chip.text.matchAll(NUMBER_IN_TEXT)]
+    const numbers = [...normalizeCurrencyMarks(chip.text).matchAll(NUMBER_IN_TEXT)]
       .map((m) => normalizeNumber(m[1]))
       .filter(Boolean);
     if (numbers.some((n) => centsOf(n) === cents)) return chip.id;

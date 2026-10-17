@@ -28,6 +28,19 @@ const AMOUNT_EXCLUDE = /\b(balance|fee|charges?|tax|vat|change|cashback|discount
 const CURRENCY_SYMBOL = /(?:₱|\$|€|£|¥)/;
 const CURRENCY_WORD = /\b(?:PHP|Php|php|Peso|Pesos)\b/;
 
+// OCR frequently reads the Philippine peso sign (₱) as a capital 'P', so
+// '₱26.00' arrives as 'P26.00' (or, when the wallet prints the code, as
+// 'PHP26.00'). A peso letter sitting directly against a number is the same
+// money evidence as the symbol, so it is rewritten to '₱' before the amount
+// rules run. The lookbehind keeps a 'P' that is really part of a word
+// ('SHIP26.00') out of it, so nothing gains an amount it never had.
+const PESO_LETTER = /(?<![A-Za-z])(?:PHP|P)(?=\s?\d)/g;
+
+/** Rewrite an OCR'd peso letter ('P26.00') as the peso symbol ('₱26.00'). */
+export function normalizeCurrencyMarks(text) {
+  return String(text ?? '').replace(PESO_LETTER, '₱');
+}
+
 // Grouped thousands ('1,250') or up to two decimal places ('1,250.75'). The
 // guards keep fragments of dates (13/10/2026), times and long id runs out.
 const NUMBER_IN_TEXT =
@@ -183,7 +196,8 @@ export function parseReceiptText(text) {
   const amountCandidates = [];
   const dateCandidates = [];
   lines.forEach((line, index) => {
-    amountCandidates.push(...amountCandidatesFromLine(line, index));
+    // The peso letter is only a scan artifact; the notes keep the line verbatim.
+    amountCandidates.push(...amountCandidatesFromLine(normalizeCurrencyMarks(line), index));
     dateCandidates.push(...dateCandidatesFromLine(line, index));
   });
 
