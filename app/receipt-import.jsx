@@ -11,15 +11,13 @@ import { Text } from '../components/ui/Text';
 import { useTheme } from '../components/ui/ThemeProvider';
 import { useBudgetsStore } from '../stores/budgetsStore';
 import { useReceiptImportStore } from '../stores/receiptImportStore';
-import { useSettingsStore } from '../stores/settingsStore';
 import {
   collectSharedReceipt,
   receiptShareService,
   removeStagedFile,
   stageSharedImage,
 } from '../services/receiptShareService';
-import { formatCurrency, toMinor } from '../utils/currency';
-import { formatDateRange, formatShortDate } from '../utils/dates';
+import { formatDateRange } from '../utils/dates';
 import { createId } from '../utils/id';
 import { parseReceiptText } from '../utils/receiptParse';
 
@@ -34,7 +32,6 @@ import { parseReceiptText } from '../utils/receiptParse';
  */
 export default function ReceiptImportScreen() {
   const { colors, radius, spacing } = useTheme();
-  const currency = useSettingsStore((state) => state.currency);
   const [status, setStatus] = useState(() =>
     receiptShareService.supported ? 'loading' : 'unsupported',
   );
@@ -185,8 +182,6 @@ export default function ReceiptImportScreen() {
     );
   }
 
-  const { parsed } = pending;
-
   return (
     <>
       <Stack.Screen options={{ title: 'Import Receipt' }} />
@@ -228,29 +223,6 @@ export default function ReceiptImportScreen() {
             </Text>
           </Card>
         )}
-
-        <SectionHeader title="Detected" />
-        <Card style={{ gap: spacing.sm }}>
-          <DetectedRow
-            icon="expense"
-            label="Amount"
-            value={
-              parsed.amount
-                ? formatCurrency(toMinor(parsed.amount, currency), { currency })
-                : 'Not recognized — enter manually'
-            }
-          />
-          <DetectedRow
-            icon="calendar"
-            label="Date"
-            value={parsed.date ? formatShortDate(parsed.date) : 'Not recognized — today by default'}
-          />
-          <DetectedRow
-            icon="list"
-            label="Description"
-            value={parsed.notes ? 'Receipt details copied' : 'Left empty'}
-          />
-        </Card>
 
         <SectionHeader title="Budget" />
         {budgets.length === 0 ? (
@@ -307,21 +279,6 @@ export default function ReceiptImportScreen() {
   );
 }
 
-function DetectedRow({ icon, label, value }) {
-  const { colors, spacing } = useTheme();
-  return (
-    <View style={[styles.detectedRow, { gap: spacing.sm }]}>
-      <Icon name={icon} size={18} color={colors.textMuted} />
-      <Text variant="label" tone="muted" style={{ width: 92 }}>
-        {label}
-      </Text>
-      <Text variant="body" style={{ flex: 1 }} numberOfLines={2}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   preview: {
     width: '100%',
@@ -329,10 +286,6 @@ const styles = StyleSheet.create({
   },
   sharedText: {
     lineHeight: 20,
-  },
-  detectedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   budgetRow: {
     flexDirection: 'row',
