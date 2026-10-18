@@ -66,6 +66,7 @@ const FAB_ICON = 24; // plus/close glyph inside the circle
 const FAB_SLOT = FAB_OUTER + 14; // center slot: circle + clearance from tabs
 
 const MENU_H = 48; // create-menu pill height (comfortable Android touch target)
+const BAR_LIFT = 10; // extra air under the capsule, lifting the bar off the edge
 
 /**
  * One tab: an icon over a short label, centered in an equal share of the
@@ -323,10 +324,13 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     }, 700);
   };
 
+  // Air held under the capsule: the Android navigation inset (or a minimum of
+  // breathing room) plus the small lift that keeps the bar off the screen edge.
+  const barInset = Math.max(insets.bottom, spacing.md) + BAR_LIFT;
   // Distance from the band's bottom edge to the capsule's top, and to the
   // crest of the raised circle — the menu stacks above the latter and stays
   // clear of the Android navigation inset below the capsule.
-  const cardTop = Math.max(insets.bottom, spacing.md) + BAR_H;
+  const cardTop = barInset + BAR_H;
   const menuBottom = cardTop + FAB_OVERHANG + spacing.sm;
 
   return (
@@ -338,9 +342,9 @@ export function BottomTabBar({ state, descriptors, navigation }) {
           backgroundColor: colors.background,
           // Reserve the action's overhang plus a little air above the capsule.
           paddingTop: FAB_OVERHANG + spacing.xs,
-          // Keep the capsule clear of the screen edges, and clear of the
-          // Android system navigation area via the bottom inset.
-          paddingBottom: Math.max(insets.bottom, spacing.md),
+          // Keep the capsule clear of the screen edges, clear of the Android
+          // system navigation area, and lifted the extra hair off the bottom.
+          paddingBottom: barInset,
           paddingHorizontal: spacing.lg,
         },
       ]}
