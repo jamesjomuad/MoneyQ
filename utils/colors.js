@@ -135,3 +135,41 @@ export function resolveRowChip(customColor, colors) {
 
   return { background: base, icon, onSurface };
 }
+
+/** WCAG 2.1 non-text contrast: the floor for a component edge to read. */
+const READABLE_EDGE = 3;
+
+/**
+ * The border a tag chip should draw for a saved tag colour.
+ *
+ * The chip is edged with the tag's own colour, so the colour chosen in the
+ * tag's settings is exactly what the drawer shows. When that hue already reads
+ * against the theme's surface it is used untouched; only when it would fade
+ * away (several tag colours fall under 3:1 on the dark surfaces) is the hue
+ * stepped toward white or black — just far enough to clear the threshold.
+ *
+ * @param {string|null|undefined} customColor user-selected tag hex, if any
+ * @param {object} colors active theme colors
+ * @returns {string|null} a border hex, or null when the tag has no colour
+ */
+export function resolveTagBorder(customColor, colors) {
+  if (!isHexColor(customColor)) return null;
+
+  const base = customColor.toUpperCase();
+  let best = base;
+  let bestRatio = contrastRatio(base, colors.surface);
+  if (bestRatio >= READABLE_EDGE) return base;
+
+  for (const amount of [0.3, 0.5, 0.7]) {
+    for (const target of [LIGHT_INK, DARK_INK_BASE]) {
+      const candidate = mixHex(base, target, amount);
+      const ratio = contrastRatio(candidate, colors.surface);
+      if (ratio >= READABLE_EDGE) return candidate;
+      if (ratio > bestRatio) {
+        bestRatio = ratio;
+        best = candidate;
+      }
+    }
+  }
+  return best;
+}

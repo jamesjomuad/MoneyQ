@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { TagBadge } from '../ui/TagBadge';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
+import { resolveTagBorder } from '../../utils/colors';
 import { formatCurrency } from '../../utils/currency';
 import { formatPercent } from '../../utils/reports';
 
@@ -11,6 +12,8 @@ export function TagSpendRow({ tag, spent, expensePercent = 0, currency, active =
   const { colors, radius, spacing } = useTheme();
   const safePercent = Number.isFinite(expensePercent) ? expensePercent : 0;
   const fillPercent = Math.min(100, Math.max(0, safePercent));
+  // Each chip is edged with its own tag colour (null when the tag has none).
+  const tagBorder = resolveTagBorder(tag.color, colors);
 
   return (
     <Pressable
@@ -22,7 +25,9 @@ export function TagSpendRow({ tag, spent, expensePercent = 0, currency, active =
         styles.card,
         {
           backgroundColor: active ? colors.primarySoft : colors.surface,
-          borderColor: active ? colors.primary : colors.border,
+          // The tag's own colour edges the chip, stepped only when the theme
+          // would hide it; a tag with no saved colour keeps today's border.
+          borderColor: tagBorder ?? (active ? colors.primary : colors.border),
           borderRadius: radius.md,
           padding: spacing.md,
           opacity: pressed ? 0.8 : 1,
@@ -88,7 +93,7 @@ export function TagSpendRow({ tag, spent, expensePercent = 0, currency, active =
 
 const styles = StyleSheet.create({
   card: {
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 2,
     minWidth: 0,
     overflow: 'hidden',
   },
