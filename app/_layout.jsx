@@ -86,6 +86,9 @@ function DatabaseGate({ children }) {
     async function initialise() {
       try {
         const { source, schemaVersion } = await initStorage();
+        // Preferences are read before the shell mounts, so the very first frame
+        // already carries the saved appearance instead of flashing the default.
+        await useSettingsStore.getState().loadSettings();
         if (!cancelled)
           useAppStore.getState().setDatabaseReady(schemaVersion, source);
       } catch (error) {
@@ -135,11 +138,11 @@ function NavigationShell() {
     },
   };
 
-  // This shell only mounts once storage is ready: load persisted preferences
-  // (currency, appearance) and reconcile reminders against the rows. Once per
-  // launch — an edit, a payment or a delete does its own cancel/schedule.
+  // This shell only mounts once storage is ready and the persisted preferences
+  // (currency, appearance) are loaded by the gate above. Reconcile the
+  // reminders against the rows once per launch — an edit, a payment or a
+  // delete does its own cancel/schedule.
   useEffect(() => {
-    useSettingsStore.getState().loadSettings();
     useRemindersStore.getState().resyncOnLaunch();
   }, []);
 
