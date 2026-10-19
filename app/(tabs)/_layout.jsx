@@ -18,9 +18,10 @@ export default function TabsLayout() {
     <Tabs
       screenLayout={tabSceneLayout}
       screenOptions={{
-        // The tab titles are decorative; the tab bar carries the labels, so
-        // the header is dropped to hand the vertical space back to content.
-        // The per-screen `title` options stay: the custom tab bar reads them.
+        // The tab titles are decorative; the tab bar is icon-only, so the
+        // header is dropped to hand the vertical space back to content.
+        // The per-screen `title` options stay: they seed each tab's
+        // accessibility name.
         headerShown: false,
         sceneStyle: { backgroundColor: colors.background },
       }}

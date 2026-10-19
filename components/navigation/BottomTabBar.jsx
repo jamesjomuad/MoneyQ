@@ -18,10 +18,10 @@ import { useTheme } from '../ui/ThemeProvider';
  * Floating capsule navigation.
  *
  * The capsule is one surface: a theme background, one soft shadow, no border.
- * Everything inside it is one size — every glyph, every label, one icon zone —
- * so the four tabs read as a single row instead of four arrangements. The tabs
- * share the capsule's width equally and the label takes its tab's full width,
- * so a longer name is never clipped by a fixed box.
+ * The tabs are icon-only: one glyph size, one shared icon zone, no visible
+ * label, so the four tabs read as a single row of evenly spaced glyphs. The
+ * tabs share the capsule's width equally and every glyph centers in its own
+ * equal share; the destination still travels through `accessibilityLabel`.
  *
  * The center action stays a raised circle, docked just above the capsule's top
  * edge, in a slot wide enough that no tab can sit under it. It opens a create
@@ -40,16 +40,14 @@ import { useTheme } from '../ui/ThemeProvider';
 
 const BAR_H = 68; // capsule height (excludes the safe-area spacing below it)
 const BAR_PAD = 8; // horizontal padding inside the capsule
-const ICON_SIZE = 22; // the one glyph size, active or not
-const LABEL_SIZE = 11; // the one label size, active or not
-const ZONE_W = 44; // shared icon zone width: the pill is measured against it
-const ZONE_H = 30; // shared icon zone height
-const ITEM_GAP = 4; // icon → label gap, the item's only vertical rhythm
+const ICON_SIZE = 26; // the one glyph size, active or not
+const ZONE_W = 48; // shared icon zone width: the pill is measured against it
+const ZONE_H = 34; // shared icon zone height
 
 /**
  * The single shared gliding pill. Sized from the icon zone it tracks — the
  * zone plus a hair of horizontal air and a little vertical, so it wraps the
- * glyph without ever reaching the label.
+ * glyph with even air on all sides.
  */
 const PILL_W = ZONE_W + 2;
 const PILL_H = ZONE_H + 6;
@@ -62,27 +60,25 @@ const FAB_GREEN = 50; // green action diameter
 const FAB_RING = 3; // surface ring that separates it from the capsule
 const FAB_OUTER = FAB_GREEN + FAB_RING * 2; // total touch diameter
 const FAB_OVERHANG = 22; // how far the action rises above the capsule's top
-const FAB_ICON = 24; // plus/close glyph inside the circle
+const FAB_ICON = 28; // plus/close glyph inside the circle
 const FAB_SLOT = FAB_OUTER + 14; // center slot: circle + clearance from tabs
 
 const MENU_H = 48; // create-menu pill height (comfortable Android touch target)
 const BAR_LIFT = 10; // extra air under the capsule, lifting the bar off the edge
 
 /**
- * One tab: an icon over a short label, centered in an equal share of the
- * capsule. The active-state background is NOT rendered here — a single shared
- * pill in BottomTabBar glides between tabs and sits behind whichever icon is
- * active.
+ * One tab: a single icon, centered in an equal share of the capsule — no visible
+ * label, so the glyph owns the whole tab. The destination (and its screen-reader
+ * name) still travel through `accessibilityLabel`. The active-state background is
+ * NOT rendered here — a single shared pill in BottomTabBar glides between tabs and
+ * sits behind whichever icon is active.
  *
- * This slot reports the ICON ZONE's layout, not the tab's: the tab's total
- * height depends on the label (which reflows when fonts load or weights
- * change), so inferring the icon's position from it drifts. Instead both the
- * tab (relative to the capsule) and the icon zone (relative to the tab) are
- * measured, and their offsets are summed — the pill then centers on the exact
- * zone the icon lives in, never on the label. The slot also settles its own
- * icon a fraction larger when focused (×1.04 over 260 ms, no lift and no
- * bounce); the color swap is a plain re-render. Every slot shares the same
- * fixed zone, so nothing shifts while the pill glides between tabs.
+ * This slot reports the ICON ZONE's layout, not the tab's, so the pill centers on
+ * the exact zone the icon lives in no matter how the tab's height is distributed.
+ * The slot also settles its own icon a fraction larger when focused (×1.04 over
+ * 260 ms, no lift and no bounce); the color swap is a plain re-render. Every slot
+ * shares the same fixed zone, so nothing shifts while the pill glides between
+ * tabs.
  */
 function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
   const { colors } = useTheme();
@@ -107,7 +103,7 @@ function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
 
   // Report the icon zone's position in capsule coordinates: zone offset within
   // the tab + tab offset within the capsule. Either layout event re-reports the
-  // pair, so late label reflows (font loads) keep the pill's target exact.
+  // pair, so a re-measure (rotation, font change) keeps the pill's target exact.
   const reportZone = useCallback(() => {
     if (!tabLayout.current || !zoneLayout.current) return;
     onMeasure(route.key, {
@@ -154,20 +150,6 @@ function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
           })}
         </Animated.View>
       </View>
-      <Text
-        variant="caption"
-        tone={focused ? 'primary' : 'muted'}
-        numberOfLines={1}
-        style={[
-          styles.label,
-          {
-            fontFamily: focused ? 'Manrope_600SemiBold' : 'Manrope_500Medium',
-            fontSize: LABEL_SIZE,
-          },
-        ]}
-      >
-        {label}
-      </Text>
     </Pressable>
   );
 }
@@ -257,7 +239,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     // Center the pill on the icon zone: the zone's own x/y/width/height (summed
     // up to capsule coordinates) fully decide it, so the first and last tabs
     // align like every other one — even though the raised center slot makes the
-    // columns unequal. No padding or label assumptions.
+    // columns unequal. No padding or glyph assumptions.
     const left = zone.x + (zone.width - PILL_W) / 2;
     const top = zone.y + (zone.height - PILL_H) / 2;
     pillTop.value = top;
@@ -269,10 +251,10 @@ export function BottomTabBar({ state, descriptors, navigation }) {
       return;
     }
     if (Math.abs(pillX.value - left) < 0.5) {
-      return; // x unchanged (e.g., label reflow moved only `top`) — no travel
+      return; // x unchanged (a re-measure moved only `top`) — no travel
     }
-    // Glide horizontally on the demo's curve. Only the pill moves — icons and
-    // labels stay put, so the bar never reflows mid-transition.
+    // Glide horizontally on the demo's curve. Only the pill moves — the icons
+    // stay put, so the bar never reflows mid-transition.
     pillX.value = withTiming(left, {
       duration: reduced ? 0 : PILL_TRAVEL_MS,
       easing: GLIDE_EASING,
@@ -527,8 +509,8 @@ const styles = StyleSheet.create({
   },
   iconWrap: {
     alignItems: 'center',
-    // The zone the pill is measured against, so the wrapper never overhangs
-    // into the label and the icon centers with even air on all sides.
+    // The zone the pill is measured against; the taller tab centers this zone
+    // on both axes, so the glyph carries even air on all sides.
     height: ZONE_H,
     justifyContent: 'center',
     width: ZONE_W,
@@ -541,14 +523,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     width: PILL_W,
-  },
-  label: {
-    // The label spans its tab rather than a fixed box, so a longer name is
-    // never clipped by the icon zone's width; it truncates only if it would
-    // reach the neighbouring tab, and the padding keeps that edge clear.
-    marginTop: ITEM_GAP,
-    paddingHorizontal: 2,
-    textAlign: 'center',
   },
   fab: {
     alignItems: 'center',
