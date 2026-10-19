@@ -189,7 +189,7 @@ export default function FolderFormScreen() {
               await removeFolder(id);
               // Single navigation action; dismissAll()+replace() in the same
               // tick is the react-native-screens #4429 crash trigger on Android.
-              router.dismissTo('/');
+              router.dismissTo('/budgets');
             } catch (error) {
               discardingRef.current = false;
               setFormError(error?.message ?? 'Could not delete this folder.');
@@ -218,7 +218,7 @@ export default function FolderFormScreen() {
         subtitle={
           editing
             ? "Rename it or change its color. Budgets keep their data; only the label changes."
-            : "Folders group budgets on Home — for example Travel or Business. They hold no money themselves."
+            : "Folders group budgets in Budgets — for example Travel or Business. They hold no money themselves."
         }
       />
 

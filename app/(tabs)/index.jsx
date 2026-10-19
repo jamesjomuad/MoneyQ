@@ -1,788 +1,535 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  StyleSheet,
-  TextInput,
-  View,
-} from "react-native";
-import Animated, { FadeInDown, useReducedMotion } from "react-native-reanimated";
+import { useCallback, useMemo } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
-import { BudgetCard } from "../../components/budgets/BudgetCard";
-import { FolderGroupCard } from "../../components/budgets/FolderGroupCard";
-import { FolderPickerSheet } from "../../components/budgets/FolderPickerSheet";
-import { PinnedFolders } from "../../components/budgets/PinnedFolders";
-import { DraggableRows } from "../../components/lists/DraggableRows";
-import { SelectionWrapper } from "../../components/selection/SelectionWrapper";
 import { TransactionRow } from "../../components/transactions/TransactionRow";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Screen, SectionHeader } from "../../components/ui/Screen";
+import { Stat } from "../../components/ui/Stat";
 import { Text } from "../../components/ui/Text";
 import { useTheme } from "../../components/ui/ThemeProvider";
 import { useBudgetsStore } from "../../stores/budgetsStore";
-import { useFoldersStore } from "../../stores/foldersStore";
-import { useSearchStore } from "../../stores/searchStore";
+import { useDashboardStore } from "../../stores/dashboardStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { showToast } from "../../stores/toastStore";
+import { useTagsStore } from "../../stores/tagsStore";
+import { computeBudgetBalance, computeTotals } from "../../utils/calculations";
+import { resolveRowChip } from "../../utils/colors";
+import { formatCurrency } from "../../utils/currency";
+import {
+  daysInclusive,
+  formatDateRange,
+  formatShortDate,
+  formatTime,
+  todayIso,
+} from "../../utils/dates";
+import { PAYMENT_EVENT_LABELS, derivePaymentEventStatus } from "../../utils/paymentStatus";
+import { REMINDER_STATUS_LABELS, deriveReminderStatus } from "../../utils/reminders";
 
-// The entrance plays once per app session. The flag clears only on a JS
-// reload (cold start); returning from a detail page, a tab or the background
-// keeps Home mounted, so nothing re-animates.
-let homeIntroPlayed = false;
-const INTRO_STAGGER = 55; // ms between steps; a step is one major item or card
+/** How far a budget's period can be from ending and still be worth flagging. */
+const ENDING_SOON_DAYS = 7;
 
-// Bulk-move eligibility on Home: only ungrouped budget rows are selectable —
-// folder rows never carry a child checkbox. Selection addresses budgets by
-// their stable ids.
-const isBudgetRow = (item) => item.kind === 'budget';
-const budgetRowId = (item) => item.budget.id;
+/** How many rows each list shows before it stops — a dashboard, not a report. */
+const ATTENTION_LIMIT = 3;
+const UPCOMING_LIMIT = 4;
 
+/** Why a budget is on the attention list, in the user's words. */
+function attentionReason(row) {
+  if (row.overBalance) return "Spending ahead of income";
+  if (row.daysLeft <= 0) return "Period ends today";
+  if (row.daysLeft === 1) return "Period ends in 1 day";
+  return `Period ends in ${row.daysLeft} days`;
+}
+
+/**
+ * Home tab: the Insights dashboard. It answers "how am I doing, what is coming
+ * up, and what did I just record" from data that already exists — the active
+ * budgets the Budgets tab manages, this month's transactions, the payments and
+ * reminders around today, and the newest transactions.
+ *
+ * Every figure is derived on the spot from those reads, so nothing is stored
+ * twice and no total can drift from its rows. Breakdown items are never added
+ * to transactions: the summary sums parent rows only. Archived budgets are
+ * excluded by construction — `useBudgetsStore` only loads active ones and the
+ * adapters hide archived transactions and reminders from every cross-budget
+ * read.
+ *
+ * Charts belong to Reports; this screen stays a set of lists and figures. The
+ * heavy lifting (which rows to read) lives in `useDashboardStore`.
+ */
 export default function HomeScreen() {
   const { colors, radius, spacing } = useTheme();
-  const reduced = useReducedMotion();
-  const budgets = useBudgetsStore((state) => state.budgets);
-  const pinnedIds = useBudgetsStore((state) => state.pinnedIds);
-  const isLoading = useBudgetsStore((state) => state.isLoading);
-  const load = useBudgetsStore((state) => state.load);
-  const togglePinned = useBudgetsStore((state) => state.togglePinned);
-  const moveManyToFolder = useBudgetsStore((state) => state.moveManyToFolder);
-  const archiveMany = useBudgetsStore((state) => state.archiveMany);
-  const restoreMany = useBudgetsStore((state) => state.restoreMany);
-  const reorderBudget = useBudgetsStore((state) => state.reorderBudget);
-  const folders = useFoldersStore((state) => state.folders);
-  const loadFolders = useFoldersStore((state) => state.load);
-  const moveFolder = useFoldersStore((state) => state.moveFolder);
   const currency = useSettingsStore((state) => state.currency);
 
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const isLoading = useDashboardStore((state) => state.isLoading);
+  const error = useDashboardStore((state) => state.error);
+  const range = useDashboardStore((state) => state.range);
+  const monthTransactions = useDashboardStore((state) => state.monthTransactions);
+  const upcomingPayments = useDashboardStore((state) => state.upcomingPayments);
+  const upcomingReminders = useDashboardStore((state) => state.upcomingReminders);
+  const recent = useDashboardStore((state) => state.recent);
+  const load = useDashboardStore((state) => state.load);
 
-  // The ids whose archive can still be undone. Undo reads and clears this in
-  // the same tick, so a repeated tap is a no-op rather than a second restore.
-  const undoRef = useRef(null);
+  const budgets = useBudgetsStore((state) => state.budgets);
+  const loadBudgets = useBudgetsStore((state) => state.load);
+  const tags = useTagsStore((state) => state.tags);
+  const loadTags = useTagsStore((state) => state.load);
 
-  // Archiving is a write, so a second confirm is swallowed until the first
-  // settles — the dialog can't double-submit.
-  const archivingRef = useRef(false);
-
-  /** Undo lives here, not in the toast: after a successful archive, restore
-   *  the same ids to their original folders (or the root list). */
-  const undoArchive = useCallback(async () => {
-    const ids = undoRef.current;
-    if (!ids || ids.length === 0) return;
-    undoRef.current = null;
-    try {
-      await restoreMany(ids);
-      showToast(
-        ids.length === 1 ? 'Budget restored' : `${ids.length} budgets restored`,
-        'success',
-      );
-    } catch (error) {
-      showToast(error?.message ?? 'Could not restore the budgets.', 'error');
-    }
-  }, [restoreMany]);
-
-  // The Home-specific pieces the selection wrapper is told about: Remove
-  // archives the current selection and Move opens the destination picker.
-  // Confirmations, the exit and the undo snackbar stay in this screen's
-  // business logic. `actions` receives the live selection so Remove knows
-  // exactly which budgets to archive.
-  const confirmBulkArchive = useCallback(
-    (selection) => {
-      const ids = [...selection.selectedIds];
-      const count = ids.length;
-      if (count === 0) return;
-      Alert.alert(
-        `Archive ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
-        'These budgets will be removed from your active lists. Their financial data will be preserved, and you can restore them later from Archive.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Archive',
-            // Neutral, not destructive: archiving is reversible.
-            style: 'default',
-            onPress: async () => {
-              if (archivingRef.current) return;
-              archivingRef.current = true;
-              try {
-                await archiveMany(ids);
-                selection.exitSelection();
-                undoRef.current = ids;
-                showToast(
-                  count === 1 ? '1 budget archived' : `${count} budgets archived`,
-                  'success',
-                  { label: 'Undo', icon: 'undo', onPress: undoArchive },
-                );
-              } catch (error) {
-                showToast(error?.message ?? 'Could not archive the budgets.', 'error');
-              } finally {
-                archivingRef.current = false;
-              }
-            },
-          },
-        ],
-      );
-    },
-    [archiveMany, undoArchive],
-  );
-
-  const selectionActions = useMemo(
-    () => (selection) => [
-      {
-        label: 'Remove',
-        icon: 'archive',
-        // Secondary rather than destructive: archiving is reversible.
-        variant: 'secondary',
-        onPress: () => confirmBulkArchive(selection),
-      },
-      {
-        label: 'Move',
-        icon: 'folder',
-        onPress: () => setPickerOpen(true),
-      },
-    ],
-    [confirmBulkArchive],
-  );
-
-  // Drag-and-drop reordering: `liftedKey` is the row currently held by a
-  // long-press drag (null while idle). The list scroll locks while it is set
-  // — the sanctioned Android pattern — and edge auto-scroll drives the list
-  // programmatically through scrollRef, which keeps working while locked.
-  const [liftedKey, setLiftedKey] = useState(null);
-  const scrollRef = useRef(null);
-  const offsetRef = useRef(0);
-  const handleScroll = useCallback((event) => {
-    offsetRef.current = event.nativeEvent.contentOffset.y;
-  }, []);
-  const dragScroll = useMemo(
-    () => ({
-      scrollTo: (y) =>
-        scrollRef.current?.scrollTo({ x: 0, y: Math.max(0, y), animated: false }),
-      getOffset: () => offsetRef.current,
-      getViewport: (report) =>
-        scrollRef.current?.measureInWindow((_x, y, _w, h) => report({ y, h })),
-    }),
-    [],
-  );
-
-  // Intro state: `playIntro` freezes at mount so re-renders never restart it;
-  // the module flag flips once the first settled content (not the loading
-  // placeholder) has rendered, so anything mounting later — a new folder,
-  // search results — appears without animation.
-  const [playIntro] = useState(() => !homeIntroPlayed && !reduced);
-  useEffect(() => {
-    if (playIntro && !isLoading) homeIntroPlayed = true;
-  }, [playIntro, isLoading]);
-
-  const introEnter = useCallback(
-    (step) => {
-      if (!playIntro || homeIntroPlayed) return undefined;
-      return FadeInDown.duration(300)
-        .delay(step * INTRO_STAGGER)
-        .withInitialValues({ transform: [{ translateY: 16 }] });
-    },
-    [playIntro]
-  );
-
-  // Local search over the data the app already owns: folders are filtered
-  // from the loaded budgets here, transactions through the search store.
-  // Typing debounces by a quarter second so a fast typer triggers one scan,
-  // not one per keystroke; the visible results always follow `debouncedTerm`.
-  const [query, setQuery] = useState("");
-  const [debouncedTerm, setDebouncedTerm] = useState("");
-  const term = query.trim();
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedTerm(query.trim()), 250);
-    return () => clearTimeout(timer);
-  }, [query]);
-  const searching = debouncedTerm.length > 0;
-  const txMatches = useSearchStore((state) => state.transactions);
-  const searchError = useSearchStore((state) => state.error);
-  const runSearch = useSearchStore((state) => state.search);
-  const resetSearch = useSearchStore((state) => state.reset);
-
-  // Budget/folder data reloads only when the tab actually gains focus.
   useFocusEffect(
     useCallback(() => {
       load();
-      loadFolders();
-    }, [load, loadFolders]),
+      loadBudgets();
+      loadTags();
+    }, [load, loadBudgets, loadTags]),
   );
 
-  // The transaction scan re-runs when focus returns or the debounced term
-  // changes — never per keystroke.
-  useFocusEffect(
-    useCallback(() => {
-      if (debouncedTerm) runSearch(debouncedTerm);
-      else resetSearch();
-    }, [debouncedTerm, runSearch, resetSearch]),
+  // The screen is re-read on every focus, so "today" is fixed per mount: the
+  // period bars and payment statuses only need a day-resolution reference.
+  const today = useMemo(() => todayIso(), []);
+
+  const totals = useMemo(() => computeTotals(monthTransactions), [monthTransactions]);
+
+  const remainingTotal = useMemo(
+    () =>
+      budgets.reduce(
+        (sum, budget) => sum + computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0),
+        0,
+      ),
+    [budgets],
   );
 
-  const openFolder = useCallback(
-    (budget) =>
+  const tagById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
+
+  /**
+   * The budgets worth a nudge: one whose spending is already ahead of its
+   * income, or one whose period is about to close. A budget holds transactions
+   * rather than capping them, so the bar tracks the period itself — there is no
+   * limit to compare against.
+   */
+  const attention = useMemo(() => {
+    const rows = [];
+    for (const budget of budgets) {
+      const remaining = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
+      const totalDays = Math.max(daysInclusive(budget.start_date, budget.end_date), 1);
+      const daysSoFar = Math.min(Math.max(daysInclusive(budget.start_date, today), 0), totalDays);
+      const daysLeft = daysInclusive(today, budget.end_date) - 1;
+      const overBalance = (budget.income ?? 0) > 0 && remaining < 0;
+      const endingSoon = daysLeft >= 0 && daysLeft <= ENDING_SOON_DAYS && budget.start_date <= today;
+      if (!overBalance && !endingSoon) continue;
+      rows.push({
+        budget,
+        remaining,
+        progress: daysSoFar / totalDays,
+        daysLeft,
+        overBalance,
+      });
+    }
+    rows.sort((a, b) => Number(b.overBalance) - Number(a.overBalance) || a.daysLeft - b.daysLeft);
+    return rows.slice(0, ATTENTION_LIMIT);
+  }, [budgets, today]);
+
+  // The due-date read starts a month back, which is what keeps an overdue
+  // payment on the list instead of letting it fall off silently.
+  const duePayments = useMemo(
+    () =>
+      upcomingPayments
+        .filter((entry) => derivePaymentEventStatus(entry, today) !== "paid")
+        .slice(0, UPCOMING_LIMIT),
+    [upcomingPayments, today],
+  );
+
+  const dueReminders = useMemo(() => upcomingReminders.slice(0, UPCOMING_LIMIT), [upcomingReminders]);
+
+  const openTransaction = useCallback(
+    (entry) =>
       router.push({
-        pathname: "/budget/[id]",
-        params: { id: budget.id },
+        pathname: "/transaction/form",
+        params: { budgetId: entry.budget_id, transactionId: entry.id },
       }),
     [],
   );
 
-  // Unified search hits: folders first, then budgets, each keeping its own
-  // existing store order. Rows render through the same components as the
-  // main Home list.
-  const matchedItems = useMemo(() => {
-    if (!searching) return [];
-    const needle = debouncedTerm.toLowerCase();
-    const items = [];
-    for (const folder of folders) {
-      if (folder.name.toLowerCase().includes(needle)) {
-        items.push({ kind: 'folder', key: `f_${folder.id}`, folder });
-      }
-    }
-    for (const budget of budgets) {
-      if (budget.name.toLowerCase().includes(needle)) {
-        items.push({ kind: 'budget', key: `b_${budget.id}`, budget });
-      }
-    }
-    return items;
-  }, [budgets, debouncedTerm, folders, searching]);
-
-  // Transaction matches arrive newest-first across all folders; group them
-  // under their folder so it's clear where each one lives. Group order follows
-  // each folder's most recent match.
-  const txGroups = useMemo(() => {
-    const groups = [];
-    const groupIndex = new Map();
-    for (const transaction of txMatches) {
-      let index = groupIndex.get(transaction.budget_id);
-      if (index === undefined) {
-        index = groups.length;
-        groupIndex.set(transaction.budget_id, index);
-        groups.push({
-          budgetId: transaction.budget_id,
-          name: transaction.budget_name ?? 'Budget',
-          items: [],
-        });
-      }
-      groups[index].items.push(transaction);
-    }
-    return groups;
-  }, [txMatches]);
-
-  // Pinned order follows the stored insertion order, not the folder list order.
-  const pinnedBudgets = useMemo(() => {
-    const byId = new Map(budgets.map((budget) => [budget.id, budget]));
-    return pinnedIds.map((id) => byId.get(id)).filter(Boolean);
-  }, [budgets, pinnedIds]);
-
-  // Folder cards show how many budgets live inside; the main list keeps only
-  // ungrouped budgets so nothing appears twice on Home.
-  const { folderCounts, ungrouped } = useMemo(() => {
-    const counts = new Map();
-    const ungroupedBudgets = [];
-    for (const budget of budgets) {
-      if (budget.folder_id) {
-        counts.set(budget.folder_id, (counts.get(budget.folder_id) ?? 0) + 1);
-      } else {
-        ungroupedBudgets.push(budget);
-      }
-    }
-    return { folderCounts: counts, ungrouped: ungroupedBudgets };
-  }, [budgets]);
-
-  // One unified Home list: every folder, then the ungrouped budgets, each in
-  // its existing store order. This is presentation only — no re-sorting, no
-  // grouping headers, and grouped budgets still live only inside their folder.
-  const listItems = useMemo(() => {
-    const items = [];
-    for (const folder of folders) {
-      items.push({ kind: 'folder', key: `f_${folder.id}`, folder });
-    }
-    for (const budget of ungrouped) {
-      items.push({ kind: 'budget', key: `b_${budget.id}`, budget });
-    }
-    return items;
-  }, [folders, ungrouped]);
-
-  // Mixed-list guard for drag: the unified list is folders-then-budgets, and
-  // each kind persists positions only within its own scope. A dragged row
-  // may therefore only land inside its own block — folders stay above the
-  // divider, budgets below — so the candidate splice index gets clamped to
-  // the block boundaries before the drop commits.
-  const resolveMixedTarget = useCallback(
-    (item, fromIndex, candidateIndex, list) => {
-      const firstBudget = list.findIndex((x) => x.kind === 'budget');
-      if (firstBudget === -1) return candidateIndex; // folders only
-      if (item.kind === 'folder') {
-        return Math.min(candidateIndex, firstBudget - 1);
-      }
-      return Math.max(candidateIndex, firstBudget);
-    },
+  const openReminder = useCallback(
+    (reminder) => router.push({ pathname: "/reminder/form", params: { reminderId: reminder.id } }),
     [],
   );
 
-  // The drop target is an index in the mixed list; translate it into the
-  // row's index within its own kind in the FINAL ordering, which is exactly
-  // what the per-scope repositories (moveFolder / reorderBudget) expect.
-  const handleReorder = useCallback(
-    async (item, targetIndex) => {
-      const from = listItems.findIndex((x) => x.key === item.key);
-      if (from === -1 || targetIndex === from) return;
-      const next = [...listItems];
-      const [moved] = next.splice(from, 1);
-      next.splice(targetIndex, 0, moved);
-      try {
-        if (moved.kind === 'folder') {
-          const idx = next
-            .filter((x) => x.kind === 'folder')
-            .findIndex((x) => x.key === moved.key);
-          await moveFolder(moved.folder.id, idx);
-        } else {
-          const idx = next
-            .filter((x) => x.kind === 'budget')
-            .findIndex((x) => x.key === moved.key);
-          await reorderBudget(moved.budget.id, idx);
-        }
-      } catch (error) {
-        showToast(
-          error?.message ?? 'Could not reorder. Please try again.',
-          'error',
-        );
-      }
-    },
-    [listItems, moveFolder, reorderBudget],
+  const openBudget = useCallback(
+    (budget) => router.push({ pathname: "/budget/[id]", params: { id: budget.id } }),
+    [],
   );
 
-  const handleEditTransaction = useCallback((entry) => {
-    router.push({
-      pathname: "/transaction/form",
-      params: {
-        budgetId: entry.budget_id,
-        transactionId: entry.id,
-      },
-    });
-  }, []);
+  const nothingYet = budgets.length === 0 && recent.length === 0;
+  const loadingFirst = isLoading && recent.length === 0;
+  const failed = Boolean(error) && recent.length === 0;
+  const ready = !loadingFirst && !failed && !nothingYet;
 
   return (
-    <SelectionWrapper
-      items={listItems}
-      idOf={budgetRowId}
-      isEligible={isBudgetRow}
-      actions={selectionActions}
-      selectLabel="Select all budgets"
-      deselectLabel="Deselect all budgets"
-      inlineMaster
-    >
-      {(sel) => {
-        // One row renderer for both the unified Home list and search results,
-        // so folder and budget rows stay pixel-identical in every context.
-        // Search rows keep pinning but never enter bulk-move selection.
-        const renderRow = (item, index, total, forSearch, lifted = false) => (
-          <Animated.View
-            key={item.key}
-            entering={introEnter(2 + Math.min(index, 4))}
-          >
-            {item.kind === 'folder' ? (
-              <FolderGroupCard
-                folder={item.folder}
-                budgetCount={folderCounts.get(item.folder.id) ?? 0}
-                isLast={index === total - 1}
-                onPress={
-                  lifted
-                    ? undefined
-                    : () =>
-                        router.push({
-                          pathname: "/folder/[id]",
-                          params: { id: item.folder.id },
-                        })
-                }
-              />
-            ) : (
-              <BudgetCard
-                budget={item.budget}
-                currency={currency}
-                pinned={pinnedIds.includes(item.budget.id)}
-                onTogglePin={togglePinned}
-                selectable={sel.selectionMode && !forSearch}
-                selected={!forSearch && sel.isSelected(item.budget.id)}
-                onToggleSelect={sel.toggleItem}
-                onPress={lifted ? undefined : openFolder}
-                isLast={index === total - 1}
-              />
-            )}
-          </Animated.View>
-        );
+    <Screen topInset>
+      <SectionHeader title={range ? `Overview · ${range.label}` : "Overview"} />
 
-        function confirmBulkMove(folderId) {
-          const destination = folderId
-            ? folders.find((folder) => folder.id === folderId)?.name ?? 'folder'
-            : null;
-          const count = sel.selectedIds.length;
-          Alert.alert(
-            `Move ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
-            destination
-              ? `They will appear under "${destination}" on Home. Nothing else about them changes.`
-              : 'They will return to the main Home list. Nothing else about them changes.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Move',
-                onPress: async () => {
-                  try {
-                    await moveManyToFolder(sel.selectedIds, folderId);
-                    sel.exitSelection();
-                    showToast(
-                      destination ? `Moved to ${destination}` : 'Moved to Home',
-                      'success',
-                    );
-                  } catch (error) {
-                    showToast(error?.message ?? 'Could not move the budgets.', 'error');
-                  }
-                },
-              },
-            ],
-          );
-        }
+      {loadingFirst ? (
+        <View style={styles.loading}>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
+            Loading insights…
+          </Text>
+        </View>
+      ) : null}
 
-        return (
-          <View style={styles.fill}>
-            {/* Home animates its own items, so the scroll body stays put. */}
-            {/* The tab bar is in normal flow, so no large reserved clearance is
-                needed; a modest gap keeps the last card off the pinned strip. */}
-            <Screen
-              topInset
-              enter={false}
-              scrollRef={scrollRef}
-              onScroll={handleScroll}
-              scrollEnabled={liftedKey === null}
+      {failed ? (
+        <EmptyState
+          icon="database"
+          title="Could not load your insights"
+          description="Something went wrong reading your budgets and transactions. Nothing was changed — your data is still on this device."
+        >
+          <Button label="Try again" icon="refresh" onPress={() => load()} />
+        </EmptyState>
+      ) : null}
+
+      {nothingYet ? (
+        <EmptyState
+          icon="wallet"
+          title="Your insights will appear here"
+          description="Create a budget and record what you spend to see your remaining balance, the payments and reminders coming up, and your latest activity at a glance."
+        >
+          <Button
+            label="Create your first budget"
+            icon="add"
+            onPress={() => router.push("/budget/form")}
+          />
+        </EmptyState>
+      ) : null}
+
+      {ready ? (
+        <View style={{ gap: spacing.lg }}>
+          <Card>
+            <Text variant="label" tone="faint">
+              Remaining
+            </Text>
+            <Text
+              variant="title"
+              tone={remainingTotal < 0 ? "expense" : "default"}
+              style={{ marginTop: spacing.xs }}
             >
-              {budgets.length > 0 && !searching ? (
-                <Animated.View entering={introEnter(1)}>
-                  <SectionHeader title={`Your Budgets · ${budgets.length}`} />
-                </Animated.View>
-              ) : null}
+              {formatCurrency(remainingTotal, { currency })}
+            </Text>
+            <Text variant="caption" tone="muted" style={{ marginTop: spacing.xs }}>
+              {budgets.length === 1
+                ? "Across 1 active budget"
+                : `Across ${budgets.length} active budgets`}
+            </Text>
 
-              <Animated.View
-                entering={introEnter(0)}
+            <View
+              style={[
+                styles.summaryRow,
+                {
+                  borderTopColor: colors.border,
+                  marginTop: spacing.md,
+                  paddingTop: spacing.md,
+                },
+              ]}
+            >
+              <Stat
+                label="Income"
+                value={formatCurrency(totals.income, { currency })}
+                tone="income"
+              />
+              <Stat
+                label="Expenses"
+                value={formatCurrency(totals.expense, { currency })}
+                tone="expense"
+              />
+            </View>
+
+            <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
+              Income and expenses recorded in {range?.label ?? "this month"}. Archived budgets are
+              not included.
+            </Text>
+          </Card>
+
+          {attention.length > 0 ? (
+            <View>
+              <SectionHeader title="Needs Attention" />
+              <Card padded={false}>
+                {attention.map((row, index) => (
+                  <Pressable
+                    key={row.budget.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${row.budget.name}, ${attentionReason(row)}, ${formatCurrency(
+                      row.remaining,
+                      { currency },
+                    )} remaining`}
+                    onPress={() => openBudget(row.budget)}
+                    style={({ pressed }) => [
+                      styles.row,
+                      { padding: spacing.lg },
+                      index > 0 && {
+                        borderTopWidth: StyleSheet.hairlineWidth,
+                        borderTopColor: colors.border,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.dot,
+                        { backgroundColor: resolveRowChip(row.budget.color, colors).background },
+                      ]}
+                    />
+                    <View style={styles.grow}>
+                      <View style={styles.rowHead}>
+                        <Text variant="body" numberOfLines={1} style={styles.grow}>
+                          {row.budget.name}
+                        </Text>
+                        <Text
+                          variant="body"
+                          tone={row.remaining < 0 ? "expense" : "default"}
+                          style={styles.amount}
+                        >
+                          {formatCurrency(row.remaining, { currency })}
+                        </Text>
+                      </View>
+                      <Text variant="caption" tone="muted" numberOfLines={1} style={styles.reason}>
+                        {attentionReason(row)} ·{" "}
+                        {formatDateRange(row.budget.start_date, row.budget.end_date)}
+                      </Text>
+                      <View
+                        style={[
+                          styles.track,
+                          { backgroundColor: colors.surfaceMuted, marginTop: spacing.sm },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.fill,
+                            {
+                              width: `${Math.round(row.progress * 100)}%`,
+                              backgroundColor: row.overBalance ? colors.expense : colors.primary,
+                              borderRadius: radius.pill,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
+                        {Math.round(row.progress * 100)}% of the period elapsed
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
+              </Card>
+            </View>
+          ) : null}
+
+          <View>
+            <SectionHeader title="Upcoming" />
+            <Card padded={false}>
+              <View style={[styles.groupHead, { borderBottomColor: colors.border }]}>
+                <Text variant="caption" tone="muted">
+                  Payments due
+                </Text>
+                <Text variant="caption" tone="faint">
+                  Next 30 days
+                </Text>
+              </View>
+
+              {duePayments.length === 0 ? (
+                <Text variant="caption" tone="faint" style={{ padding: spacing.lg }}>
+                  Nothing is due in the next 30 days.
+                </Text>
+              ) : (
+                duePayments.map((entry, index) => {
+                  const status = derivePaymentEventStatus(entry, today);
+                  return (
+                    <Pressable
+                      key={entry.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${entry.description || "Payment"}, ${
+                        PAYMENT_EVENT_LABELS[status]
+                      }, due ${formatShortDate(entry.payment_due_date)}, ${formatCurrency(entry.amount, {
+                        currency,
+                      })}`}
+                      onPress={() => openTransaction(entry)}
+                      style={({ pressed }) => [
+                        styles.row,
+                        styles.rowCenter,
+                        { padding: spacing.lg },
+                        index > 0 && {
+                          borderTopWidth: StyleSheet.hairlineWidth,
+                          borderTopColor: colors.border,
+                        },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Icon name="calendar" size={18} color={colors.warning} />
+                      <View style={styles.grow}>
+                        <Text variant="body" numberOfLines={1}>
+                          {entry.description || "Payment"}
+                        </Text>
+                        <Text variant="caption" tone="muted" style={styles.reason}>
+                          Due {formatShortDate(entry.payment_due_date)}
+                        </Text>
+                      </View>
+                      <View style={styles.trailing}>
+                        <Text
+                          variant="caption"
+                          style={{
+                            color:
+                              status === "overdue"
+                                ? colors.expense
+                                : status === "dueToday"
+                                  ? colors.warning
+                                  : colors.textMuted,
+                          }}
+                        >
+                          {PAYMENT_EVENT_LABELS[status]}
+                        </Text>
+                        <Text variant="body" style={[styles.amount, styles.statusRight]}>
+                          {formatCurrency(entry.amount, { currency })}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
+
+              <View
                 style={[
-                  styles.searchBar,
+                  styles.groupHead,
                   {
-                    backgroundColor: colors.surfaceMuted,
-                    borderColor: colors.border,
-                    // Matches the app's pill-shaped fields.
-                    borderRadius: 50,
-                    marginBottom: spacing.md,
-                    paddingHorizontal: spacing.md,
+                    borderTopColor: colors.border,
+                    borderTopWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: colors.border,
                   },
                 ]}
               >
-                <Icon name="search" size={18} color={colors.textFaint} />
-                <TextInput
-                  value={query}
-                  onChangeText={setQuery}
-                  placeholder="Search folders and transactions..."
-                  placeholderTextColor={colors.textFaint}
-                  selectionColor={colors.primary}
-                  accessibilityLabel="Search folders and transactions"
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  returnKeyType="search"
-                  style={[
-                    styles.searchInput,
-                    {
-                      color: colors.text,
-                      marginLeft: spacing.sm,
-                      marginRight: term.length > 0 ? 0 : spacing.xs,
-                    },
-                  ]}
-                />
-                {term.length > 0 ? (
+                <Text variant="caption" tone="muted">
+                  Reminders
+                </Text>
+                <Text variant="caption" tone="faint">
+                  Next 30 days
+                </Text>
+              </View>
+
+              {dueReminders.length === 0 ? (
+                <Text variant="caption" tone="faint" style={{ padding: spacing.lg }}>
+                  No reminders scheduled.
+                </Text>
+              ) : (
+                dueReminders.map((reminder, index) => {
+                  const status = deriveReminderStatus(reminder);
+                  return (
+                    <Pressable
+                      key={reminder.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${reminder.notes || reminder.description || "Reminder"}, ${
+                        REMINDER_STATUS_LABELS[status]
+                      }, ${formatShortDate(reminder.remind_date)} ${formatTime(reminder.remind_time)}`}
+                      onPress={() => openReminder(reminder)}
+                      style={({ pressed }) => [
+                        styles.row,
+                        styles.rowCenter,
+                        { padding: spacing.lg },
+                        index > 0 && {
+                          borderTopWidth: StyleSheet.hairlineWidth,
+                          borderTopColor: colors.border,
+                        },
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Icon name="clock" size={18} color={colors.warning} />
+                      <View style={styles.grow}>
+                        <Text variant="body" numberOfLines={1}>
+                          {reminder.notes || reminder.description || "Reminder"}
+                        </Text>
+                        <Text variant="caption" tone="muted" style={styles.reason}>
+                          {formatShortDate(reminder.remind_date)} ·{" "}
+                          {formatTime(reminder.remind_time)}
+                        </Text>
+                      </View>
+                      <View style={styles.trailing}>
+                        <Text
+                          variant="caption"
+                          style={{
+                            color: status === "overdue" ? colors.expense : colors.textMuted,
+                          }}
+                        >
+                          {REMINDER_STATUS_LABELS[status]}
+                        </Text>
+                        {reminder.amount == null ? null : (
+                          <Text variant="body" style={[styles.amount, styles.statusRight]}>
+                            {formatCurrency(reminder.amount, { currency })}
+                          </Text>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
+            </Card>
+          </View>
+
+          {recent.length > 0 ? (
+            <View>
+              <SectionHeader
+                title="Recent Transactions"
+                action={
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Clear search"
-                    onPress={() => setQuery("")}
-                    hitSlop={8}
-                    style={({ pressed }) => [
-                      styles.clearButton,
-                      {
-                        borderRadius: radius.sm,
-                        opacity: pressed ? 0.55 : 1,
-                      },
-                    ]}
+                    accessibilityLabel="Open the Budgets tab"
+                    onPress={() => router.push("/budgets")}
+                    style={({ pressed }) => [pressed && styles.pressed]}
                   >
-                    <Icon name="close" size={15} color={colors.textMuted} />
-                  </Pressable>
-                ) : null}
-              </Animated.View>
-
-              {/* Compact utility actions, directly below the full-width search
-                  field and above the folder/budget list: the three-state parent
-                  checkbox rides the row's left edge (auto margin) while the
-                  Archive button keeps the right, and the search field keeps its
-                  whole width. */}
-              <Animated.View
-                entering={introEnter(1)}
-                style={[styles.archiveRow, { marginBottom: spacing.md }]}
-              >
-                {!searching && sel.masterRow ? (
-                  <View style={styles.masterInlineSlot}>{sel.masterRow}</View>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Open archive"
-                  onPress={() => router.push("/archive")}
-                  hitSlop={8}
-                  style={({ pressed }) => [
-                    styles.archiveButton,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                      borderRadius: radius.pill,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <Icon name="archive" size={16} color={colors.textMuted} />
-                  <Text variant="label" tone="muted">
-                    Archive
-                  </Text>
-                </Pressable>
-              </Animated.View>
-
-              {isLoading && budgets.length === 0 ? (
-                <View style={styles.loading}>
-                  <ActivityIndicator color={colors.primary} size="large" />
-                  <Text variant="body" tone="muted" style={{ marginTop: spacing.md }}>
-                    Loading budgets…
-                  </Text>
-                </View>
-              ) : budgets.length === 0 && folders.length === 0 && !searching ? (
-                <EmptyState
-                  icon="folder"
-                  title="No budgets yet"
-                  description="A budget is a period you name, such as October 2026. Transactions you add inside it are what make up your spending."
-                >
-                  <View style={{ alignItems: "center", gap: spacing.sm, width: "100%" }}>
-                    <Button
-                      label="Create your first budget"
-                      icon="add"
-                      onPress={() => router.push("/budget/form")}
-                    />
-                    <Button
-                      label="New folder"
-                      icon="folder"
-                      variant="secondary"
-                      onPress={() => router.push("/folder/form")}
-                    />
-                  </View>
-                </EmptyState>
-              ) : searching ? (
-                <>
-                  {matchedItems.length > 0 ? (
-                    <>
-                      <SectionHeader
-                        title={`Folders & Budgets · ${matchedItems.length}`}
-                        fontSize={14}
-                      />
-                      <Card padded={false} style={{ marginBottom: spacing.lg }}>
-                        {matchedItems.map((item, index) =>
-                          renderRow(item, index, matchedItems.length, true)
-                        )}
-                      </Card>
-                    </>
-                  ) : null}
-
-                  {txMatches.length > 0 ? (
-                    <View style={matchedItems.length > 0 ? styles.txSection : null}>
-                      <SectionHeader
-                        title={`Transactions · ${txMatches.length}`}
-                        fontSize={14}
-                      />
-                      {txGroups.map((group, groupIdx) => (
-                        <View
-                          key={group.budgetId}
-                          style={groupIdx > 0 ? styles.txGroup : null}
-                        >
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`Open folder ${group.name}`}
-                            onPress={() =>
-                              router.push({
-                                pathname: "/budget/[id]",
-                                params: { id: group.budgetId },
-                              })
-                            }
-                            hitSlop={8}
-                            style={({ pressed }) => [
-                              styles.folderHeader,
-                              {
-                                gap: spacing.sm,
-                                opacity: pressed ? 0.6 : 1,
-                                paddingVertical: spacing.sm,
-                              },
-                            ]}
-                          >
-                            <Text variant="label" tone="primary" numberOfLines={1}>
-                              {group.name.toUpperCase()} · {group.items.length}
-                            </Text>
-                            <Icon name="chevronRight" size={14} color={colors.primary} />
-                          </Pressable>
-                          <Card padded={false}>
-                            {group.items.map((transaction, index) => (
-                              <TransactionRow
-                                key={transaction.id}
-                                transaction={transaction}
-                                tag={transaction.tag}
-                                currency={currency}
-                                isFirst={index === 0}
-                                isLast={index === group.items.length - 1}
-                                onEdit={handleEditTransaction}
-                              />
-                            ))}
-                          </Card>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-
-                  {matchedItems.length === 0 && txMatches.length === 0 ? (
-                    <EmptyState
-                      icon="search"
-                      title="No results found"
-                      description={`Nothing matches "${debouncedTerm}". Try a different folder name, transaction description, or tag.`}
-                    >
-                      <Button label="Clear search" icon="close" onPress={() => setQuery("")} />
-                    </EmptyState>
-                  ) : null}
-
-                  {searchError ? (
-                    <Text variant="caption" tone="expense" style={styles.searchNote}>
-                      Search could not finish. Check the data and try again.
+                    <Text variant="caption" tone="primary">
+                      Budgets
                     </Text>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <Card padded={false} style={{ marginBottom: spacing.sm }}>
-                    <DraggableRows
-                      items={listItems}
-                      disabled={sel.selectionMode}
-                      scroll={dragScroll}
-                      onLiftChange={setLiftedKey}
-                      resolveTarget={resolveMixedTarget}
-                      onReorder={handleReorder}
-                      renderItem={(item, index, total, lifted) =>
-                        renderRow(item, index, total, false, lifted)
-                      }
-                    />
-                  </Card>
-
-                  {/* The Plus action: same create entry Home offered before,
-                      now sitting under the single unified list. */}
-                  {ungrouped.length === 0 ? (
-                    <View style={styles.listActions}>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Create a new budget"
-                        onPress={() => router.push("/budget/form")}
-                        hitSlop={8}
-                        style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-                      >
-                        <Text variant="label" tone="primary">
-                          + New budget
-                        </Text>
-                      </Pressable>
-                    </View>
-                  ) : null}
-                </>
-              )}
-            </Screen>
-
-            {sel.selectionMode && !searching ? (
-              sel.toolbar
-            ) : searching ? null : (
-              <Animated.View entering={introEnter(7)}>
-                <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
-              </Animated.View>
-            )}
-
-            {pickerOpen ? (
-              <FolderPickerSheet
-                folders={folders}
-                onPick={(folderId) => confirmBulkMove(folderId)}
-                onClose={() => setPickerOpen(false)}
+                  </Pressable>
+                }
               />
-            ) : null}
-          </View>
-        );
-      }}
-    </SelectionWrapper>
+              <Card padded={false}>
+                {recent.map((transaction, index) => (
+                  <TransactionRow
+                    key={transaction.id}
+                    transaction={transaction}
+                    tag={tagById.get(transaction.tag_id) ?? null}
+                    currency={currency}
+                    isFirst={index === 0}
+                    isLast={index === recent.length - 1}
+                    onEdit={openTransaction}
+                  />
+                ))}
+              </Card>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
   loading: { alignItems: "center", paddingVertical: 48 },
-  searchBar: {
-    alignItems: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderStyle: "solid",
+  summaryRow: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth },
+  row: { flexDirection: "row", gap: 12 },
+  rowCenter: { alignItems: "center" },
+  rowHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  grow: { flex: 1 },
+  dot: { width: 10, height: 10, borderRadius: 5, marginTop: 6 },
+  reason: { marginTop: 2 },
+  amount: { fontVariant: ["tabular-nums"] },
+  track: { height: 6, borderRadius: 999, overflow: "hidden" },
+  fill: { height: 6 },
+  groupHead: {
     flexDirection: "row",
-    minHeight: 48,
-  },
-  searchInput: {
-    fontFamily: 'Manrope_400Regular',
-    flex: 1,
-    fontSize: 15,
-    minHeight: 44,
-    paddingVertical: 10,
-  },
-  clearButton: {
     alignItems: "center",
-    backgroundColor: "transparent",
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  archiveRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "flex-end",
-  },
-  masterInlineSlot: {
-    marginRight: "auto",
-  },
-  archiveButton: {
-    alignItems: "center",
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 12,
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
     paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  txSection: {
-    marginTop: 8,
-  },
-  listActions: {
-    flexDirection: "row",
-    gap: 16,
-    marginBottom: 24,
-    marginTop: 4,
-    paddingHorizontal: 4,
-  },
-  txGroup: {
-    marginTop: 8,
-  },
-  folderHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-  },
-  searchNote: {
-    marginTop: 8,
-    textAlign: "center",
-  },
+  trailing: { alignItems: "flex-end" },
+  statusRight: { textAlign: "right" },
+  pressed: { opacity: 0.7 },
 });

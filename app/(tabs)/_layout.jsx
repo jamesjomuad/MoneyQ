@@ -10,7 +10,11 @@ function tabSceneLayout({ children, navigation }) {
   return <TabSwipeArea navigation={navigation}>{children}</TabSwipeArea>;
 }
 
-/** Home holds budgets; Settings holds preferences. Budgets are not duplicated. */
+/**
+ * Home sums things up, Budgets manages them, Calendar dates them, Reports
+ * analyses them and Settings holds preferences. Each screen keeps its own job,
+ * so a budget is never edited in two places.
+ */
 export default function TabsLayout() {
   const { colors } = useTheme();
 
@@ -32,6 +36,13 @@ export default function TabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => <Icon name="home" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="budgets"
+        options={{
+          title: 'Budgets',
+          tabBarIcon: ({ color, size }) => <Icon name="wallet" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

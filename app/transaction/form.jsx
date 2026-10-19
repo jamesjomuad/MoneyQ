@@ -1162,7 +1162,7 @@ export default function TransactionFormScreen() {
           title="No budget selected"
           description="Open a budget first, then add a transaction from inside it."
         >
-          <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
+          <Button label="Back to Budgets" icon="wallet" onPress={() => router.replace('/budgets')} />
         </EmptyState>
       </View>
     );

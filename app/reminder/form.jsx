@@ -192,7 +192,7 @@ export default function ReminderFormScreen() {
   const leave = useCallback(() => {
     resetLinkSearch();
     if (navigation.canGoBack()) router.back();
-    else router.replace('/');
+    else router.replace('/calendar');
   }, [navigation, resetLinkSearch]);
 
   function handlePickDate(day) {

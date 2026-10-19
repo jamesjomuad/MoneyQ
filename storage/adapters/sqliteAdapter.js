@@ -313,7 +313,23 @@ export function createSqliteAdapter(getDb) {
     },
 
     /**
-     * Cross-budget text search used by Home. Case-insensitive substring match
+     * The newest parent transactions across every active budget — the
+     * dashboard's compact "recent" list. Same archive-safe join as the range
+     * read, ordered so the LIMIT rides `idx_transactions_date` instead of
+     * sorting the whole table.
+     */
+    async listRecentTransactions(limit) {
+      return query(
+        `SELECT t.* FROM transactions t
+           JOIN budgets b ON b.id = t.budget_id AND b.deleted_at IS NULL
+          ORDER BY t.transaction_date DESC, t.created_at DESC
+          LIMIT ?`,
+        limit,
+      );
+    },
+
+    /**
+     * Cross-budget text search used by the Budgets tab. Case-insensitive substring match
      * on the description, the joined tag name, or any breakdown item's
      * description — a child match returns the parent row, never the child,
      * with `sub_transaction_count` so results can label their items. LIKE

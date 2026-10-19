@@ -73,6 +73,15 @@ export async function getTransactionsByDueDateRange(startIso, endIso) {
 }
 
 /**
+ * The newest transactions across every active budget, newest first — the
+ * dashboard's compact recent list. Archived budgets' rows are excluded by the
+ * adapter, like every other cross-budget read.
+ */
+export async function getRecentTransactions(limit) {
+  return storage.listRecentTransactions(limit);
+}
+
+/**
  * Payment due date rule: optional, date-only, and a real calendar day — the
  * repository never infers it from the budget end date and never stores a
  * time. Clearing (null, '' or undefined-to-null) removes the scheduled

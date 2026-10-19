@@ -70,7 +70,7 @@ export default function BudgetFormScreen() {
   );
   // null keeps the theme-driven folder colors — custom colors are optional.
   const [color, setColor] = useState(null);
-  // Which budget folder this budget will sit in; null is the Home root. A new
+  // Which budget folder this budget will sit in; null is the main budget list. A new
   // budget started from inside a folder (folder screen's "New budget") keeps
   // that folder preselected.
   const [folderId, setFolderId] = useState(() =>
@@ -303,7 +303,7 @@ export default function BudgetFormScreen() {
       await removeBudget(id);
       // Single navigation action; dismissAll()+replace() in the same tick is
       // the react-native-screens #4429 crash trigger on Android.
-      router.dismissTo("/");
+      router.dismissTo("/budgets");
     } catch (error) {
       // The delete failed, so the screen stays: hand auto-save back.
       discardingRef.current = false;
@@ -402,7 +402,7 @@ export default function BudgetFormScreen() {
         <View style={styles.folderFieldText}>
           <Text variant="body">{selectedFolder ? selectedFolder.name : 'No folder'}</Text>
           <Text variant="caption" tone="faint">
-            {selectedFolder ? 'Grouped on Home' : 'Sits in the main Home list'}
+            {selectedFolder ? 'Grouped in Budgets' : 'Sits in the main budget list'}
           </Text>
         </View>
         <Icon name="chevronRight" size={16} color={colors.textFaint} />

@@ -373,6 +373,20 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
     },
 
     /**
+     * The newest parent transactions across every active budget — the
+     * dashboard's compact "recent" list. Same archive exclusion as every other
+     * cross-budget read, ordered like SQLite's LIMIT query.
+     */
+    async listRecentTransactions(limit) {
+      const archived = archivedBudgetIds();
+      return store.transactions
+        .filter((transaction) => !archived.has(transaction.budget_id))
+        .sort(byTransactionDate)
+        .slice(0, limit)
+        .map(copy);
+    },
+
+    /**
      * SQLite's case-insensitive description-or-tag-name search, now also
      * matching breakdown item descriptions — a child match returns the parent
      * row with `sub_transaction_count`, never the child. Wildcards literal.

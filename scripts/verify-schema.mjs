@@ -1635,6 +1635,10 @@ async function runScenario(store) {
   snapshot.arcRemindersAll = (await store.listReminders({ includeArchived: true })).map(
     (row) => row.id,
   );
+  // The dashboard's compact recent list: newest first, capped at the limit,
+  // and — like every cross-budget read — blind to an archived budget's rows.
+  snapshot.recentTransactions = (await store.listRecentTransactions(5)).map((row) => row.id);
+  snapshot.recentTransactionsAll = (await store.listRecentTransactions(200)).map((row) => row.id);
   // The scoped reads the Calendar, the budget detail view and the transaction
   // form use: same rows, same order and same archive rule as the full read,
   // but narrowed by the engine instead of filtered in JS.
@@ -1992,6 +1996,17 @@ check(
     sqliteResult.arcRemindersArchivedBudget,
     sqliteResult.arcRemindersLiveTransaction,
   ]),
+);
+check(
+  'the recent-transactions read caps its list and hides archived budgets on both engines',
+  sqliteResult.recentTransactions.length > 0 &&
+    sqliteResult.recentTransactions.length <= 5 &&
+    sqliteResult.recentTransactionsAll.includes('p_arc_tx') === false &&
+    JSON.stringify(sqliteResult.recentTransactions) ===
+      JSON.stringify(memoryResult.recentTransactions) &&
+    JSON.stringify(sqliteResult.recentTransactionsAll) ===
+      JSON.stringify(memoryResult.recentTransactionsAll),
+  JSON.stringify(sqliteResult.recentTransactions),
 );
 check(
   'deleting a transaction or budget cascades its attachments on both engines',

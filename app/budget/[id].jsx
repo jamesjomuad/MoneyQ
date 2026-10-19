@@ -401,7 +401,7 @@ export default function BudgetDetailScreen() {
         >
           <View style={{ alignItems: 'center', gap: spacing.sm }}>
             <Button label="Try again" icon="refresh" onPress={() => load(budgetId)} />
-            <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
+            <Button label="Back to Budgets" icon="wallet" onPress={() => router.replace('/budgets')} />
           </View>
         </EmptyState>
       </View>
@@ -417,7 +417,7 @@ export default function BudgetDetailScreen() {
           title="Budget not found"
           description={error?.message ?? 'This budget may have been deleted.'}
         >
-          <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
+          <Button label="Back to Budgets" icon="wallet" onPress={() => router.replace('/budgets')} />
         </EmptyState>
       </View>
     );
@@ -446,10 +446,10 @@ export default function BudgetDetailScreen() {
   const folderCard = isHexColor(budget.color) ? resolveFolderPalette(budget.color, colors) : null;
   const folderInk = folderCard ? folderCard.folderInk : null;
   // The budget folder this budget currently sits in. Display lookup only:
-  // folders organize budgets on Home and hold no money themselves.
+  // folders organize budgets in the Budgets tab and hold no money themselves.
   const budgetFolder = folders.find((folder) => folder.id === budget.folder_id) ?? null;
 
-  // Same archive operation as Home's selection-mode Remove: `archiveMany`
+  // Same archive operation as the Budgets tab's selection-mode Remove: `archiveMany`
   // flips only `deleted_at`, so the budget moves to Archive with its id,
   // transactions, breakdown items, tags, reminders, attachments, color and
   // folder assignment untouched, and Restore returns it losslessly.
@@ -471,7 +471,7 @@ export default function BudgetDetailScreen() {
               // tick: two stack mutations per commit race with Fabric's
               // header-config updates and crash detached stack fragments on
               // Android (react-native-screens #4429).
-              router.dismissTo('/');
+              router.dismissTo('/budgets');
               showToast('1 budget archived', 'success');
             } catch (archiveError) {
               showToast(archiveError?.message ?? 'Could not archive this budget.', 'error');
@@ -777,7 +777,7 @@ export default function BudgetDetailScreen() {
             try {
               await moveToFolder(budget.id, pickedId);
               const destination = folders.find((folder) => folder.id === pickedId);
-              showToast(destination ? `Moved to ${destination.name}` : 'Moved to Home');
+              showToast(destination ? `Moved to ${destination.name}` : 'Moved to the main list');
             } catch (moveError) {
               showToast(moveError?.message ?? 'Could not move the budget.', 'error');
             }

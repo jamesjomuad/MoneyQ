@@ -93,7 +93,7 @@ export default function FolderDetailScreen() {
     }
   }, [restoreMany]);
 
-  // Archiving from inside a folder follows Home's contract: the selection
+  // Archiving from inside a folder follows the Budgets tab's contract: the selection
   // system supplies the ids, the store performs the soft delete, and the
   // budgets land on the Archive screen with all their data intact. The same
   // snackbar Undo returns them to this folder.
@@ -154,7 +154,7 @@ export default function FolderDetailScreen() {
     [confirmBulkArchive, setPickerOpen],
   );
 
-  // Drag-and-drop reordering (same contract as Home): lock the scroll while a
+  // Drag-and-drop reordering (same contract as the Budgets tab): lock the scroll while a
   // row is lifted and drive edge auto-scroll programmatically through
   // scrollRef. This list IS the budget's scope, so the drop index goes
   // straight to the repository — no per-kind translation needed.
@@ -218,7 +218,7 @@ export default function FolderDetailScreen() {
           title="Folder not found"
           description="This budget folder may have been deleted. Its budgets, if there were any, are in the Archive."
         >
-          <Button label="Back to Home" icon="home" onPress={() => router.replace('/')} />
+          <Button label="Back to Budgets" icon="wallet" onPress={() => router.replace('/budgets')} />
         </EmptyState>
       </View>
     );
@@ -274,8 +274,8 @@ export default function FolderDetailScreen() {
           Alert.alert(
             `Move ${count} ${count === 1 ? 'budget' : 'budgets'}?`,
             destination
-              ? `They will appear under "${destination}" on Home. Nothing else about them changes.`
-              : 'They will return to the main Home list. Nothing else about them changes.',
+              ? `They will appear under "${destination}" in Budgets. Nothing else about them changes.`
+              : 'They will return to the main budget list. Nothing else about them changes.',
             [
               { text: 'Cancel', style: 'cancel' },
               {
@@ -285,7 +285,7 @@ export default function FolderDetailScreen() {
                     await moveManyToFolder(sel.selectedIds, targetFolderId);
                     sel.exitSelection();
                     showToast(
-                      destination ? `Moved to ${destination}` : 'Moved to Home',
+                      destination ? `Moved to ${destination}` : 'Moved to the main list',
                       'success',
                     );
                   } catch (error) {
@@ -349,7 +349,7 @@ export default function FolderDetailScreen() {
                 <EmptyState
                   icon="folder"
                   title="No budgets in this folder yet"
-                  description="Create a new budget here, or move an existing one in from Home using the checkboxes."
+                  description="Create a new budget here, or move an existing one in from Budgets using the checkboxes."
                 >
                   <Button
                     label="New budget in this folder"
@@ -404,7 +404,7 @@ export default function FolderDetailScreen() {
             </Screen>
 
             {/* Selection mode swaps the create FAB for the contextual move bar,
-                exactly like Home swaps its pinned strip. */}
+                exactly like the Budgets tab swaps its pinned strip. */}
             {sel.selectionMode ? sel.toolbar : <Fab onPress={openCreateBudget} accessibilityLabel="Create a new budget in this folder" />}
 
             {pickerOpen ? (

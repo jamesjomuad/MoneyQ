@@ -18,7 +18,7 @@ import { formatCurrency } from '../utils/currency';
 import { formatDate, formatDateRange } from '../utils/dates';
 
 /**
- * Everything the user removed from Home. Removing a budget is a soft delete:
+ * Everything the user removed from the budget list. Removing a budget is a soft delete:
  * the row keeps its id, folder assignment, transactions, breakdown items,
  * attachments, reminders, tags and colors, so Restore is lossless. Only the
  * explicit permanent delete here writes rows away, and it is confirmed first
@@ -122,7 +122,7 @@ export default function ArchiveScreen() {
           <EmptyState
             icon="archive"
             title="Nothing archived"
-            description="Budgets you remove from Home land here. Every transaction, tag and reminder is kept — restore one whenever you like."
+            description="Budgets you remove from the budget list land here. Every transaction, tag and reminder is kept — restore one whenever you like."
           />
         ) : (
           <>
