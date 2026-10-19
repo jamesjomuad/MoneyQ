@@ -64,7 +64,9 @@ export const useBudgetDetailStore = create((set, get) => {
           getBudget(budgetId),
           getTags(),
           getTransactionsForBudget(budgetId),
-          getReminders(),
+          // Archived rows included: the budget's own detail view stays
+          // archive-agnostic, exactly like its row and its transactions.
+          getReminders({ includeArchived: true }),
           getSubTransactionsForBudget(budgetId),
         ]);
 

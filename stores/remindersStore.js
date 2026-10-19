@@ -100,6 +100,8 @@ export const useRemindersStore = create((set, get) => {
       set({ dayDate: date, dayIsLoading: true, dayError: null });
 
       try {
+        // The repository hides reminders of archived budgets, so this day can
+        // only ever show rows belonging to live budgets.
         const rows = await getReminders();
         if (id !== dayRequestId) return;
         const dayReminders = rows.filter(
@@ -141,7 +143,10 @@ export const useRemindersStore = create((set, get) => {
       });
 
       try {
-        const rows = await getReminders();
+        // Archived rows included: this list belongs to the transaction form,
+        // which manages the reminder row that already exists — hiding it here
+        // would make the form's switch look off for a row that is still there.
+        const rows = await getReminders({ includeArchived: true });
         if (id !== transactionRequestId) return;
         const transactionReminders = rows.filter(
           (reminder) => reminder.transaction_id === transactionId,

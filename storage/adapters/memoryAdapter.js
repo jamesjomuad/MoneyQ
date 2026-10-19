@@ -636,10 +636,19 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
 
     /**
      * Same projection as the SQLite LEFT JOIN: reminder row + transaction
-     * fields, or NULL transaction fields for a standalone reminder.
+     * fields, or NULL transaction fields for a standalone reminder. Reminders
+     * tied to an archived budget are hidden unless `includeArchived` is asked
+     * for, mirroring the SQLite budget join; the standalone ones belong to no
+     * budget and are always kept.
      */
-    async listReminders() {
-      return store.reminders.map(projectReminder).sort((a, b) => a.remind_at.localeCompare(b.remind_at));
+    async listReminders({ includeArchived = false } = {}) {
+      const archived = includeArchived ? null : archivedBudgetIds();
+      return store.reminders
+        .map(projectReminder)
+        .filter(
+          (reminder) => !archived || reminder.budget_id == null || !archived.has(reminder.budget_id),
+        )
+        .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
     },
 
     async getReminder(id) {

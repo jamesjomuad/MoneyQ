@@ -1534,6 +1534,120 @@ async function runScenario(store) {
     '2026-10-06T03:00:00.000Z',
   );
 
+  // --- archiving hides a budget's calendar events -------------------------
+  // p_budget was hard-deleted by the cascade test above, so this fresh pair of
+  // live budgets is what proves the Calendar's reads: the archived budget's
+  // transaction, breakdown purchase, payment due date and reminder all
+  // disappear, an unrelated active budget keeps every one of its own, the
+  // reminder row itself survives untouched, and restoring brings it straight
+  // back — on both engines.
+  await store.insertBudget({
+    id: 'p_arc_budget',
+    name: 'Archived Events',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    folder_id: null,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertTransaction({
+    id: 'p_arc_tx',
+    budget_id: 'p_arc_budget',
+    type: 'expense',
+    amount: 12_000,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Archived bill',
+    transaction_date: '2026-10-21',
+    payment_status: 'unpaid',
+    has_breakdown: 1,
+    payment_due_date: '2026-10-25',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertSubTransaction({
+    id: 'p_arc_sub',
+    transaction_id: 'p_arc_tx',
+    description: 'Archived purchase',
+    amount: 12_000,
+    position: 0,
+    created_at: STAMP,
+    updated_at: STAMP,
+    purchase_date: '2026-10-22',
+    purchase_time: '10:30',
+    notes: null,
+  });
+  await store.insertReminder({
+    id: 'p_arc_reminder',
+    transaction_id: 'p_arc_tx',
+    enabled: 1,
+    status: 'active',
+    remind_date: '2026-10-23',
+    remind_time: '09:00',
+    remind_at: '2026-10-23T09:00:00+08:00',
+    notification_id: null,
+    notes: '',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertBudget({
+    id: 'p_live_budget',
+    name: 'Live Events',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    folder_id: null,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertTransaction({
+    id: 'p_live_tx',
+    budget_id: 'p_live_budget',
+    type: 'expense',
+    amount: 8_000,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Live bill',
+    transaction_date: '2026-10-24',
+    payment_status: 'unpaid',
+    has_breakdown: 0,
+    payment_due_date: '2026-10-27',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertReminder({
+    id: 'p_live_reminder',
+    transaction_id: 'p_live_tx',
+    enabled: 1,
+    status: 'active',
+    remind_date: '2026-10-26',
+    remind_time: '09:00',
+    remind_at: '2026-10-26T09:00:00+08:00',
+    notification_id: null,
+    notes: '',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+
+  await store.setBudgetArchived('p_arc_budget', STAMP, STAMP);
+  snapshot.arcReminders = (await store.listReminders()).map((row) => row.id);
+  snapshot.arcRemindersAll = (await store.listReminders({ includeArchived: true })).map(
+    (row) => row.id,
+  );
+  snapshot.arcReminderRow = await store.getReminder('p_arc_reminder');
+  snapshot.arcEvents = (await store.listTransactionsInRange('2026-10-01', '2026-10-31')).map(
+    (row) => row.id,
+  );
+  snapshot.arcPurchases = (await store.listSubTransactionsInRange('2026-10-01', '2026-10-31')).map(
+    (row) => row.id,
+  );
+  snapshot.arcDue = (
+    await store.listTransactionsByDueDateRange('2026-10-01', '2026-10-31')
+  ).map((row) => row.id);
+  snapshot.arcRestore = await store.setBudgetArchived('p_arc_budget', null, STAMP);
+  snapshot.arcRemindersAfterRestore = (await store.listReminders()).map((row) => row.id);
+
   // --- a rolled-back wipe restores every table (failed-restore safety) --
   await store.beginTransaction();
   await store.clearAllData();
@@ -1758,6 +1872,39 @@ check(
     sqliteResult.afterFullWipe.reminders.length === 0 &&
     Object.keys(sqliteResult.afterFullWipe.settings).length === 0 &&
     JSON.stringify(sqliteResult.afterFullWipe) === JSON.stringify(memoryResult.afterFullWipe),
+);
+check(
+  'an archived budget hides its reminders from the calendar list on both engines',
+  sqliteResult.arcReminders.includes('p_arc_reminder') === false &&
+    sqliteResult.arcReminders.includes('p_live_reminder') &&
+    // The row itself is untouched by archiving — only hidden.
+    sqliteResult.arcReminderRow?.enabled === 1 &&
+    sqliteResult.arcReminderRow?.remind_date === '2026-10-23' &&
+    sqliteResult.arcRemindersAll.includes('p_arc_reminder') &&
+    JSON.stringify(sqliteResult.arcReminders) === JSON.stringify(memoryResult.arcReminders) &&
+    JSON.stringify(sqliteResult.arcRemindersAll) === JSON.stringify(memoryResult.arcRemindersAll),
+  JSON.stringify(sqliteResult.arcReminders),
+);
+check(
+  'an archived budget hides its calendar events, purchases and payments on both engines',
+  sqliteResult.arcEvents.includes('p_arc_tx') === false &&
+    sqliteResult.arcEvents.includes('p_live_tx') &&
+    sqliteResult.arcPurchases.includes('p_arc_sub') === false &&
+    sqliteResult.arcDue.includes('p_arc_tx') === false &&
+    sqliteResult.arcDue.includes('p_live_tx') &&
+    JSON.stringify(sqliteResult.arcEvents) === JSON.stringify(memoryResult.arcEvents) &&
+    JSON.stringify(sqliteResult.arcPurchases) === JSON.stringify(memoryResult.arcPurchases) &&
+    JSON.stringify(sqliteResult.arcDue) === JSON.stringify(memoryResult.arcDue),
+  JSON.stringify(sqliteResult.arcEvents),
+);
+check(
+  'restoring a budget brings its reminders back on both engines',
+  sqliteResult.arcRemindersAfterRestore.includes('p_arc_reminder') &&
+    sqliteResult.arcRestore === 1 &&
+    memoryResult.arcRestore === 1 &&
+    JSON.stringify(sqliteResult.arcRemindersAfterRestore) ===
+      JSON.stringify(memoryResult.arcRemindersAfterRestore),
+  JSON.stringify(sqliteResult.arcRemindersAfterRestore),
 );
 check(
   'deleting a transaction or budget cascades its attachments on both engines',

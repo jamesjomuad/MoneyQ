@@ -19,8 +19,18 @@ import {
  * screen shares the same rule: an armed reminder needs a real date, a real
  * time, and — when either is being changed — an instant that has not passed.
  */
-export async function getReminders() {
-  return storage.listReminders();
+/**
+ * Every reminder, joined with its transaction so a linked one carries its
+ * budget. Reminders belonging to an archived budget are hidden unless
+ * `includeArchived` is passed: archiving a budget retires its events, and no
+ * screen may show them — least of all the Calendar. A standalone reminder
+ * belongs to no budget and is never hidden. The full-fidelity callers (the
+ * backup snapshot and the launch-time resync) opt in, because a restored
+ * budget's reminders must round-trip and a live schedule must not change just
+ * because a budget was archived.
+ */
+export async function getReminders({ includeArchived = false } = {}) {
+  return storage.listReminders({ includeArchived });
 }
 
 export async function getReminder(id) {

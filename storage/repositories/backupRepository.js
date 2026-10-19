@@ -22,7 +22,9 @@ export async function readSnapshot(store = storage) {
     const items = await store.listSubTransactionsByBudget(budget.id);
     subTransactions.push(...items);
   }
-  const reminders = await store.listReminders();
+  // Archived reminders must round-trip too: restoring a budget brings its
+  // events back, so the snapshot can never drop the links.
+  const reminders = await store.listReminders({ includeArchived: true });
   const settings = await store.getAllSettings();
   return { accounts, folders, budgets, tags, transactions, subTransactions, reminders, settings };
 }

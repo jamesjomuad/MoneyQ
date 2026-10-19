@@ -213,7 +213,11 @@ export async function removeReminder(id) {
 
 /** Cancels every notification belonging to a budget that is about to go. */
 export async function cancelScheduledRemindersForBudget(budgetId) {
-  const rows = (await getReminders()).filter((row) => row.budget_id === budgetId);
+  // Archived rows included: this runs on permanent deletion, which can target
+  // a budget that was archived first, and its alarms must still be cancelled.
+  const rows = (await getReminders({ includeArchived: true })).filter(
+    (row) => row.budget_id === budgetId,
+  );
   for (const row of rows) {
     if (row.notification_id) await notifications.cancelAsync(row.notification_id);
   }
@@ -229,7 +233,9 @@ export async function cancelScheduledRemindersForBudget(budgetId) {
 export async function resyncReminders() {
   if (!notifications.isSupported) return { scheduled: 0, cancelled: 0 };
 
-  const rows = await getReminders();
+  // Archived rows included: what is armed is decided by the reminder's own
+  // state, so archiving a budget must never silently unschedule its alarms.
+  const rows = await getReminders({ includeArchived: true });
   const scheduled = await notifications.listScheduledAsync();
   const permission = await notifications.getPermissionStatusAsync();
 

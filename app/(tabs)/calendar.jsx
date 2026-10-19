@@ -57,12 +57,17 @@ export default function CalendarScreen() {
   );
 
   // Reload the visible month on focus so edits made elsewhere show up; the
-  // store keeps the selection when it still belongs to that month.
+  // store keeps the selection when it still belongs to that month. The day
+  // list is cached per date, so it is re-read as well: archiving or restoring
+  // a budget on another screen must not leave that budget's reminders here.
+  // The date is read from the store at focus time, so `selectedDate` stays out
+  // of the dependencies and tapping through days still uses the cache.
   useFocusEffect(
     useCallback(() => {
       load();
       loadTags();
-    }, [load, loadTags]),
+      loadDay(useCalendarStore.getState().selectedDate, { force: true });
+    }, [load, loadTags, loadDay]),
   );
 
   // The interactive reminder list is scoped to one date at a time: changing

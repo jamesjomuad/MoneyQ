@@ -576,8 +576,14 @@ export function createSqliteAdapter(getDb) {
      * reminder (transaction_id NULL) still appears with NULL transaction
      * fields. The joined columns exist so rescheduling and the Calendar tab
      * never need one query per reminder. Ordered by the instant they fire.
+     *
+     * Like the cross-budget range reads, a reminder linked to an archived
+     * budget is hidden by default: archiving a budget retires its events, and
+     * the Calendar must never show them. A standalone reminder belongs to no
+     * budget, so it is always kept. `includeArchived` is for the reads that
+     * must see every row — the backup snapshot and the launch-time resync.
      */
-    async listReminders() {
+    async listReminders({ includeArchived = false } = {}) {
       return query(`
         SELECT r.*,
                t.budget_id            AS budget_id,
@@ -586,6 +592,8 @@ export function createSqliteAdapter(getDb) {
                t.transaction_date    AS transaction_date
           FROM reminders r
           LEFT JOIN transactions t ON t.id = r.transaction_id
+          LEFT JOIN budgets b ON b.id = t.budget_id
+         ${includeArchived ? '' : 'WHERE t.id IS NULL OR b.deleted_at IS NULL'}
          ORDER BY r.remind_at ASC
       `);
     },
