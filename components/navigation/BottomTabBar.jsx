@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { router } from 'expo-router';
-import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -10,8 +9,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon } from '../ui/Icon';
-import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
 /**
@@ -23,13 +20,10 @@ import { useTheme } from '../ui/ThemeProvider';
  * tabs share the capsule's width equally and every glyph centers in its own
  * equal share; the destination still travels through `accessibilityLabel`.
  *
- * The center action stays a raised circle, docked just above the capsule's top
- * edge, in a slot wide enough that no tab can sit under it. It opens a create
- * menu: two labeled pills rise from the circle (New Folder, New Budget), and
- * tapping the circle again, the backdrop, or Android's back button collapses
- * the menu first. Both actions reuse the existing /folder/form and
- * /budget/form routes; the menu always restores to its collapsed state before
- * navigating.
+ * The capsule carries navigation destinations only: the create action lives on
+ * the Budgets screen (components/budgets/CreateFab.jsx), beside the folders and
+ * budgets it creates, so no tab is ever split off into an action slot and the
+ * four destinations share the capsule evenly.
  *
  * The active tab background is a single gliding pill shared by all tabs: it
  * glides (400 ms on the approved demo's cubic-bezier(0.22, 1, 0.36, 1)) to
@@ -56,14 +50,6 @@ const ICON_SCALE_MS = 260; // active-icon settle, same curve as the pill
 // cubic-bezier(0.22, 1, 0.36, 1) from the demo: a quick, soft settle.
 const GLIDE_EASING = Easing.bezier(0.22, 1, 0.36, 1);
 
-const FAB_GREEN = 50; // green action diameter
-const FAB_RING = 3; // surface ring that separates it from the capsule
-const FAB_OUTER = FAB_GREEN + FAB_RING * 2; // total touch diameter
-const FAB_OVERHANG = 22; // how far the action rises above the capsule's top
-const FAB_ICON = 28; // plus/close glyph inside the circle
-const FAB_SLOT = FAB_OUTER + 14; // center slot: circle + clearance from tabs
-
-const MENU_H = 48; // create-menu pill height (comfortable Android touch target)
 const BAR_LIFT = 10; // extra air under the capsule, lifting the bar off the edge
 
 /**
@@ -154,56 +140,12 @@ function TabButton({ descriptor, route, focused, navigate, onMeasure }) {
   );
 }
 
-/**
- * One expanded create action: a floating pill with icon + label that rises
- * into place as the menu opens. `open` is the shared 0→1 value driving the
- * whole menu, so every item animates from the same clock with a small
- * per-index travel offset for a staggered, polished feel.
- */
-function CreateMenuItem({ animatedOpen, colors, index, icon, label, onPress, radius }) {
-  const itemStyle = useAnimatedStyle(() => ({
-    opacity: animatedOpen.value,
-    transform: [
-      { translateY: (1 - animatedOpen.value) * (10 + index * 8) },
-      { scale: 0.9 + 0.1 * animatedOpen.value },
-    ],
-  }));
-
-  return (
-    <Animated.View
-      style={[
-        styles.menuItemWrap,
-        {
-          backgroundColor: colors.surfaceElevated,
-          borderColor: colors.border,
-          borderRadius: radius.pill,
-          boxShadow: `0 4px 14px ${colors.shadow}`,
-        },
-        itemStyle,
-      ]}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        onPress={onPress}
-        style={({ pressed }) => [styles.menuItem, { opacity: pressed ? 0.7 : 1 }]}
-      >
-        <Icon name={icon} size={20} color={colors.primary} />
-        <Text variant="body" style={styles.menuLabel}>
-          {label}
-        </Text>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
 export function BottomTabBar({ state, descriptors, navigation }) {
   const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
 
   const routes = state.routes;
-  const middle = Math.ceil(routes.length / 2);
   const activeKey = routes[state.index]?.key;
 
   // The shared active pill: one Animated.View that glides to whichever tab is
@@ -238,8 +180,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     if (!zone) return;
     // Center the pill on the icon zone: the zone's own x/y/width/height (summed
     // up to capsule coordinates) fully decide it, so the first and last tabs
-    // align like every other one — even though the raised center slot makes the
-    // columns unequal. No padding or glyph assumptions.
+    // align like every other one. No padding or glyph assumptions.
     const left = zone.x + (zone.width - PILL_W) / 2;
     const top = zone.y + (zone.height - PILL_H) / 2;
     pillTop.value = top;
@@ -267,53 +208,13 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     transform: [{ translateX: pillX.value }],
   }));
 
-  const [expanded, setExpanded] = useState(false);
-  const open = useSharedValue(0);
-  const pushingRef = useRef(false);
-
-  // The shared 0→1 value follows `expanded` through one effect (same pattern
-  // as TabButton's focus value), so no callback ever mutates a hook value.
-  useEffect(() => {
-    open.value = withTiming(expanded ? 1 : 0, { duration: reduced ? 0 : 220 });
-  }, [expanded, reduced, open]);
-
-  // Android hardware back: while the menu is open, the first press only
-  // collapses it — the app never navigates away by surprise.
-  useEffect(() => {
-    if (!expanded) return undefined;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      setExpanded(false);
-      return true;
-    });
-    return () => subscription.remove();
-  }, [expanded]);
-
-  // Any tab change dismisses the menu first, so it never lingers over a new
-  // screen.
-  const navigate = (name) => {
-    setExpanded(false);
-    navigation.navigate(name);
-  };
-
-  // Collapse, then push the form exactly once even on a double tap.
-  const pushForm = (pathname) => {
-    if (pushingRef.current) return;
-    pushingRef.current = true;
-    setExpanded(false);
-    router.push({ pathname });
-    setTimeout(() => {
-      pushingRef.current = false;
-    }, 700);
-  };
+  // Tab presses go straight to the navigator — the capsule carries no action
+  // of its own.
+  const navigate = (name) => navigation.navigate(name);
 
   // Air held under the capsule: the Android navigation inset (or a minimum of
   // breathing room) plus the small lift that keeps the bar off the screen edge.
   const barInset = Math.max(insets.bottom, spacing.md) + BAR_LIFT;
-  // Distance from the band's bottom edge to the capsule's top, and to the
-  // crest of the raised circle — the menu stacks above the latter and stays
-  // clear of the Android navigation inset below the capsule.
-  const cardTop = barInset + BAR_H;
-  const menuBottom = cardTop + FAB_OVERHANG + spacing.sm;
 
   return (
     <View
@@ -322,8 +223,8 @@ export function BottomTabBar({ state, descriptors, navigation }) {
         {
           pointerEvents: 'box-none',
           backgroundColor: colors.background,
-          // Reserve the action's overhang plus a little air above the capsule.
-          paddingTop: FAB_OVERHANG + spacing.xs,
+          // Just enough air above the capsule for its shadow.
+          paddingTop: spacing.sm,
           // Keep the capsule clear of the screen edges, clear of the Android
           // system navigation area, and lifted the extra hair off the bottom.
           paddingBottom: barInset,
@@ -331,18 +232,6 @@ export function BottomTabBar({ state, descriptors, navigation }) {
         },
       ]}
     >
-      {expanded ? (
-        // Tap-catcher rendered BEFORE the capsule, so it swallows taps anywhere
-        // on the scene above the bar while the capsule (and the center toggle)
-        // stay reachable on top of it.
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss create menu"
-          onPress={() => setExpanded(false)}
-          style={[styles.backdrop, { bottom: cardTop }]}
-        />
-      ) : null}
-
       <View style={styles.cardWrap}>
         {/* One surface: the capsule carries the background and the shadow
             itself, so there is no second layer behind it to read as a band. */}
@@ -372,108 +261,17 @@ export function BottomTabBar({ state, descriptors, navigation }) {
             ]}
           />
 
-          {routes.slice(0, middle).map((route, i) => (
+          {routes.map((route, index) => (
             <TabButton
               key={route.key}
               descriptor={descriptors[route.key]}
-              focused={state.index === i}
+              focused={state.index === index}
               navigate={navigate}
               onMeasure={handleMeasure}
               route={route}
             />
           ))}
-
-          {/* Center slot reserves the action's width plus clearance, so no tab
-              can sit under or crowd the raised button. */}
-          <View
-            accessibilityElementsHidden
-            importantForAccessibility="no"
-            style={{ pointerEvents: 'none', width: FAB_SLOT }}
-          />
-
-          {routes.slice(middle).map((route, i) => {
-            const index = i + middle;
-            return (
-              <TabButton
-                key={route.key}
-                descriptor={descriptors[route.key]}
-                focused={state.index === index}
-                navigate={navigate}
-                onMeasure={handleMeasure}
-                route={route}
-              />
-            );
-          })}
-
-          {/* Docked over the capsule's top edge. The surface ring keeps the
-              green circle visually separate without notching or distorting the
-              capsule. It toggles the create menu and shows a close glyph while
-              open. */}
-          <Pressable
-            accessibilityLabel={expanded ? 'Close create menu' : 'Create new folder or budget'}
-            accessibilityRole="button"
-            accessibilityState={{ expanded }}
-            hitSlop={8}
-            onPress={() => setExpanded(!expanded)}
-            style={({ pressed }) => [
-              styles.fab,
-              {
-                height: FAB_OUTER,
-                transform: [
-                  { translateX: -FAB_OUTER / 2 },
-                  { scale: pressed ? 0.96 : 1 },
-                ],
-                width: FAB_OUTER,
-              },
-            ]}
-          >
-            <View
-              style={{
-                ...styles.fabRing,
-                pointerEvents: 'none',
-                backgroundColor: colors.surface,
-                borderRadius: FAB_OUTER / 2,
-              }}
-            />
-            <View
-              style={{
-                ...styles.fabCore,
-                backgroundColor: colors.primary,
-                borderRadius: FAB_GREEN / 2,
-                boxShadow: `0 3px 8px ${colors.shadow}`,
-              }}
-            >
-              <Icon name={expanded ? 'close' : 'add'} size={FAB_ICON} color={colors.onPrimary} />
-            </View>
-          </Pressable>
         </View>
-      </View>
-
-      {/* The create menu: compact column of labeled pills rising from the
-          center button. Hidden (not mounted-away) so it can animate both
-          ways; only interactive while the menu is actually open. */}
-      <View
-        pointerEvents={expanded ? 'auto' : 'none'}
-        style={[styles.menu, { bottom: menuBottom, gap: spacing.sm }]}
-      >
-        <CreateMenuItem
-          animatedOpen={open}
-          colors={colors}
-          icon="folderPlus"
-          index={0}
-          label="New Folder"
-          onPress={() => pushForm('/folder/form')}
-          radius={radius}
-        />
-        <CreateMenuItem
-          animatedOpen={open}
-          colors={colors}
-          icon="wallet"
-          index={1}
-          label="New Budget"
-          onPress={() => pushForm('/budget/form')}
-          radius={radius}
-        />
       </View>
     </View>
   );
@@ -482,12 +280,6 @@ export function BottomTabBar({ state, descriptors, navigation }) {
 const styles = StyleSheet.create({
   band: {
     width: '100%',
-  },
-  backdrop: {
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: -10000,
   },
   cardWrap: {
     height: BAR_H,
@@ -523,45 +315,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     width: PILL_W,
-  },
-  fab: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    left: '50%',
-    position: 'absolute',
-    top: -FAB_OVERHANG,
-  },
-  fabRing: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  fabCore: {
-    alignItems: 'center',
-    height: FAB_GREEN,
-    justifyContent: 'center',
-    width: FAB_GREEN,
-  },
-  menu: {
-    alignItems: 'center',
-    alignSelf: 'center',
-    flexDirection: 'column',
-    position: 'absolute',
-  },
-  menuItemWrap: {
-    borderWidth: 1,
-    height: MENU_H,
-  },
-  menuItem: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexGrow: 1,
-    gap: 8,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  menuLabel: {
-    // Manrope's static weights carry the weight in the font file; no
-    // synthetic bold.
-    fontFamily: 'Manrope_600SemiBold',
-    fontSize: 15,
   },
 });

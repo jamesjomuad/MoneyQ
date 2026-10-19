@@ -11,6 +11,7 @@ import {
 import Animated, { FadeInDown, useReducedMotion } from "react-native-reanimated";
 
 import { BudgetCard } from "../../components/budgets/BudgetCard";
+import { CreateFab, CREATE_FAB_SIZE } from "../../components/budgets/CreateFab";
 import { FolderGroupCard } from "../../components/budgets/FolderGroupCard";
 import { FolderPickerSheet } from "../../components/budgets/FolderPickerSheet";
 import { PinnedFolders } from "../../components/budgets/PinnedFolders";
@@ -60,6 +61,15 @@ export default function BudgetsScreen() {
   const currency = useSettingsStore((state) => state.currency);
 
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // The pinned-folders strip is laid out in normal flow under the list, so the
+  // floating create action measures it and anchors above it rather than over
+  // the chips. The value is only read while that strip is actually on screen.
+  const [stripHeight, setStripHeight] = useState(0);
+  const handleStripLayout = useCallback((event) => {
+    const { height } = event.nativeEvent.layout;
+    setStripHeight((current) => (current === height ? current : height));
+  }, []);
 
   // The ids whose archive can still be undone. Undo reads and clears this in
   // the same tick, so a repeated tap is a no-op rather than a second restore.
@@ -451,11 +461,15 @@ export default function BudgetsScreen() {
         return (
           <View style={styles.fill}>
             {/* The screen animates its own items, so the scroll body stays put. */}
-            {/* The tab bar is in normal flow, so no large reserved clearance is
-                needed; a modest gap keeps the last card off the pinned strip. */}
+            {/* The tab bar is in normal flow, so only the floating create
+                button needs reserved clearance; the button itself carries the
+                gap that keeps the last card off the pinned strip. */}
             <Screen
               topInset
               enter={false}
+              // Room for the floating create button under the last row, so the
+              // end of the list never hides behind it.
+              bottomSpace={CREATE_FAB_SIZE + spacing.xl}
               scrollRef={scrollRef}
               onScroll={handleScroll}
               scrollEnabled={liftedKey === null}
@@ -705,9 +719,19 @@ export default function BudgetsScreen() {
             {sel.selectionMode && !searching ? (
               sel.toolbar
             ) : searching ? null : (
-              <Animated.View entering={introEnter(7)}>
+              <Animated.View entering={introEnter(7)} onLayout={handleStripLayout}>
                 <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
               </Animated.View>
+            )}
+
+            {/* The one create action: floating, horizontally centered, and
+                hidden while a selection is active so it can never sit on the
+                move bar. It anchors above the pinned strip when that strip is
+                on screen, otherwise just above the navigation bar. */}
+            {sel.selectionMode ? null : (
+              <CreateFab
+                bottomOffset={!searching && pinnedBudgets.length > 0 ? stripHeight : 0}
+              />
             )}
 
             {pickerOpen ? (
