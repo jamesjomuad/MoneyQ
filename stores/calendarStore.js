@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { getReminders } from '../storage/repositories/reminderRepository';
+import { getRemindersInRange } from '../storage/repositories/reminderRepository';
 import {
   getBreakdownItemsInRange,
   getTransactionsByDueDateRange,
@@ -40,7 +40,10 @@ export const useCalendarStore = create((set, get) => ({
       const { start, end } = monthRange(monthKey);
       const [rows, allReminders, purchases, paymentParents] = await Promise.all([
         getTransactionsInRange(start, end),
-        getReminders(),
+        // Only this month's reminders: the engine narrows the range (and hides
+        // archived budgets' rows), so the read never scales with the whole
+        // reminder table.
+        getRemindersInRange(start, end),
         getBreakdownItemsInRange(start, end),
         getTransactionsByDueDateRange(start, end),
       ]);
@@ -58,9 +61,9 @@ export const useCalendarStore = create((set, get) => ({
         ...row,
         reminder: reminderByTransaction.get(row.id) ?? null,
       }));
-      const reminders = allReminders.filter(
-        (reminder) => reminder.enabled === 1 && isWithin(reminder.remind_date, start, end),
-      );
+      // The month range is already applied by the read; only the enabled flag
+      // is left to check here.
+      const reminders = allReminders.filter((reminder) => reminder.enabled === 1);
 
       // Keep the selection when it belongs to the new month; otherwise fall
       // back to today (or the first of the month for past/future months).

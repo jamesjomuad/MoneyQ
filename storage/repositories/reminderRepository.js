@@ -28,9 +28,34 @@ import {
  * backup snapshot and the launch-time resync) opt in, because a restored
  * budget's reminders must round-trip and a live schedule must not change just
  * because a budget was archived.
+ *
+ * A caller that needs only a slice uses the scoped reads below — same
+ * projection, same order and same archive rule, narrowed by the engine — so a
+ * screen never reads the whole table to filter it in JS.
  */
 export async function getReminders({ includeArchived = false } = {}) {
   return storage.listReminders({ includeArchived });
+}
+
+/**
+ * Reminders whose own date falls inside an ISO range: the Calendar's month
+ * read, and its single-day read (`start === end`).
+ */
+export async function getRemindersInRange(startIso, endIso, { includeArchived = false } = {}) {
+  return storage.listRemindersInRange(startIso, endIso, { includeArchived });
+}
+
+/**
+ * Every reminder linked to one budget's transactions — the budget detail view,
+ * and the cancellation that precedes a permanent delete.
+ */
+export async function getRemindersForBudget(budgetId, { includeArchived = false } = {}) {
+  return storage.listRemindersForBudget(budgetId, { includeArchived });
+}
+
+/** Every reminder linked to one transaction — the transaction form's list. */
+export async function getRemindersForTransaction(transactionId, { includeArchived = false } = {}) {
+  return storage.listRemindersForTransaction(transactionId, { includeArchived });
 }
 
 export async function getReminder(id) {

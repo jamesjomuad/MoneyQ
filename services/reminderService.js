@@ -20,6 +20,7 @@ import {
   getReminder,
   getReminderForTransaction,
   getReminders,
+  getRemindersForBudget,
   saveReminder,
   saveReminderNotification,
   updateReminder as updateReminderRow,
@@ -215,9 +216,8 @@ export async function removeReminder(id) {
 export async function cancelScheduledRemindersForBudget(budgetId) {
   // Archived rows included: this runs on permanent deletion, which can target
   // a budget that was archived first, and its alarms must still be cancelled.
-  const rows = (await getReminders({ includeArchived: true })).filter(
-    (row) => row.budget_id === budgetId,
-  );
+  // Scoped to the budget's own transactions rather than every reminder.
+  const rows = await getRemindersForBudget(budgetId, { includeArchived: true });
   for (const row of rows) {
     if (row.notification_id) await notifications.cancelAsync(row.notification_id);
   }

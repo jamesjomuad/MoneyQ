@@ -651,6 +651,52 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
         .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
     },
 
+    /**
+     * Reminders whose own date falls inside a range — the Calendar's month and
+     * day reads. Same projection, ordering and archive rule as `listReminders`,
+     * narrowed to the rows asked for. ISO dates compare correctly as text.
+     */
+    async listRemindersInRange(startIso, endIso, { includeArchived = false } = {}) {
+      const archived = includeArchived ? null : archivedBudgetIds();
+      return store.reminders
+        .filter((reminder) => reminder.remind_date >= startIso && reminder.remind_date <= endIso)
+        .map(projectReminder)
+        .filter(
+          (reminder) => !archived || reminder.budget_id == null || !archived.has(reminder.budget_id),
+        )
+        .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
+    },
+
+    /**
+     * Every reminder linked to one budget's transactions — the budget detail
+     * view and the cancellation before a permanent delete. Mirrors SQLite's
+     * join on `t.budget_id`; standalone reminders are never in this set.
+     */
+    async listRemindersForBudget(budgetId, { includeArchived = false } = {}) {
+      const archived = includeArchived ? null : archivedBudgetIds();
+      const linked = new Set(
+        store.transactions.filter((tx) => tx.budget_id === budgetId).map((tx) => tx.id),
+      );
+      return store.reminders
+        .filter((reminder) => linked.has(reminder.transaction_id))
+        .map(projectReminder)
+        .filter((reminder) => !archived || !archived.has(reminder.budget_id))
+        .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
+    },
+
+    /** Every reminder linked to one transaction, oldest instant first. */
+    async listRemindersForTransaction(transactionId, { includeArchived = false } = {}) {
+      if (transactionId == null) return [];
+      const archived = includeArchived ? null : archivedBudgetIds();
+      return store.reminders
+        .filter((reminder) => reminder.transaction_id === transactionId)
+        .map(projectReminder)
+        .filter(
+          (reminder) => !archived || reminder.budget_id == null || !archived.has(reminder.budget_id),
+        )
+        .sort((a, b) => a.remind_at.localeCompare(b.remind_at));
+    },
+
     async getReminder(id) {
       return projectReminder(store.reminders.find((reminder) => reminder.id === id) ?? null);
     },

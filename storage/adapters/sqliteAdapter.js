@@ -598,6 +598,82 @@ export function createSqliteAdapter(getDb) {
       `);
     },
 
+    /**
+     * Reminders whose own date falls inside a range — the Calendar's month and
+     * day reads. Same projection and same archive rule as `listReminders`, but
+     * the rows are narrowed by the engine (`idx_reminders_date` serves the
+     * range) instead of read in full and filtered afterwards, so one month
+     * never pays for every reminder in the database.
+     */
+    async listRemindersInRange(startIso, endIso, { includeArchived = false } = {}) {
+      return query(
+        `
+        SELECT r.*,
+               t.budget_id            AS budget_id,
+               t.amount               AS amount,
+               t.description          AS description,
+               t.transaction_date    AS transaction_date
+          FROM reminders r
+          LEFT JOIN transactions t ON t.id = r.transaction_id
+          LEFT JOIN budgets b ON b.id = t.budget_id
+         WHERE r.remind_date BETWEEN ? AND ?
+           ${includeArchived ? '' : 'AND (t.id IS NULL OR b.deleted_at IS NULL)'}
+         ORDER BY r.remind_at ASC
+      `,
+        startIso,
+        endIso,
+      );
+    },
+
+    /**
+     * Every reminder linked to one budget's transactions — the budget detail
+     * view and the cancellation that precedes a permanent delete. Scoped by
+     * budget through the transaction join, so no id list and no full read.
+     * Standalone reminders belong to no budget and are never in this set.
+     */
+    async listRemindersForBudget(budgetId, { includeArchived = false } = {}) {
+      return query(
+        `
+        SELECT r.*,
+               t.budget_id            AS budget_id,
+               t.amount               AS amount,
+               t.description          AS description,
+               t.transaction_date    AS transaction_date
+          FROM reminders r
+          JOIN transactions t ON t.id = r.transaction_id
+          LEFT JOIN budgets b ON b.id = t.budget_id
+         WHERE t.budget_id = ?
+           ${includeArchived ? '' : 'AND b.deleted_at IS NULL'}
+         ORDER BY r.remind_at ASC
+      `,
+        budgetId,
+      );
+    },
+
+    /**
+     * Every reminder linked to one transaction, oldest instant first — the
+     * transaction form reads exactly this list instead of the whole table.
+     */
+    async listRemindersForTransaction(transactionId, { includeArchived = false } = {}) {
+      if (transactionId == null) return [];
+      return query(
+        `
+        SELECT r.*,
+               t.budget_id            AS budget_id,
+               t.amount               AS amount,
+               t.description          AS description,
+               t.transaction_date    AS transaction_date
+          FROM reminders r
+          JOIN transactions t ON t.id = r.transaction_id
+          LEFT JOIN budgets b ON b.id = t.budget_id
+         WHERE r.transaction_id = ?
+           ${includeArchived ? '' : 'AND b.deleted_at IS NULL'}
+         ORDER BY r.remind_at ASC
+      `,
+        transactionId,
+      );
+    },
+
     async getReminder(id) {
       return first(`
         SELECT r.*,

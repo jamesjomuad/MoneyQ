@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { getAttachments, createAttachment } from '../storage/repositories/attachmentRepository';
 import { getBudget } from '../storage/repositories/budgetRepository';
-import { getReminders } from '../storage/repositories/reminderRepository';
+import { getRemindersForBudget } from '../storage/repositories/reminderRepository';
 import { getTags } from '../storage/repositories/tagRepository';
 import {
   createTransaction,
@@ -65,8 +65,9 @@ export const useBudgetDetailStore = create((set, get) => {
           getTags(),
           getTransactionsForBudget(budgetId),
           // Archived rows included: the budget's own detail view stays
-          // archive-agnostic, exactly like its row and its transactions.
-          getReminders({ includeArchived: true }),
+          // archive-agnostic, exactly like its row and its transactions. Scoped
+          // to this budget's transactions instead of reading every reminder.
+          getRemindersForBudget(budgetId, { includeArchived: true }),
           getSubTransactionsForBudget(budgetId),
         ]);
 

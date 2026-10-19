@@ -1635,6 +1635,60 @@ async function runScenario(store) {
   snapshot.arcRemindersAll = (await store.listReminders({ includeArchived: true })).map(
     (row) => row.id,
   );
+  // The scoped reads the Calendar, the budget detail view and the transaction
+  // form use: same rows, same order and same archive rule as the full read,
+  // but narrowed by the engine instead of filtered in JS.
+  snapshot.arcRemindersMonth = (await store.listRemindersInRange('2026-10-01', '2026-10-31')).map(
+    (row) => row.id,
+  );
+  snapshot.arcRemindersMonthAll = (
+    await store.listRemindersInRange('2026-10-01', '2026-10-31', { includeArchived: true })
+  ).map((row) => row.id);
+  snapshot.arcRemindersOtherMonth = (await store.listRemindersInRange('2026-09-01', '2026-09-30')).map(
+    (row) => row.id,
+  );
+  snapshot.arcRemindersLiveDay = (
+    await store.listRemindersInRange('2026-10-26', '2026-10-26')
+  ).map((row) => row.id);
+  snapshot.arcRemindersArchivedDay = (
+    await store.listRemindersInRange('2026-10-23', '2026-10-23')
+  ).map((row) => row.id);
+  snapshot.arcRemindersLiveBudget = (await store.listRemindersForBudget('p_live_budget')).map(
+    (row) => row.id,
+  );
+  snapshot.arcRemindersArchivedBudget = (await store.listRemindersForBudget('p_arc_budget')).map(
+    (row) => row.id,
+  );
+  snapshot.arcRemindersArchivedBudgetAll = (
+    await store.listRemindersForBudget('p_arc_budget', { includeArchived: true })
+  ).map((row) => row.id);
+  snapshot.arcRemindersLiveTransaction = (
+    await store.listRemindersForTransaction('p_live_tx')
+  ).map((row) => row.id);
+  snapshot.arcRemindersArchivedTransaction = (
+    await store.listRemindersForTransaction('p_arc_tx')
+  ).map((row) => row.id);
+  snapshot.arcRemindersArchivedTransactionAll = (
+    await store.listRemindersForTransaction('p_arc_tx', { includeArchived: true })
+  ).map((row) => row.id);
+  // Standing in for a caller that asks for something that is not there.
+  snapshot.arcRemindersMissingBudget = (await store.listRemindersForBudget('no_such_budget')).length;
+  snapshot.arcRemindersMissingTransaction = (await store.listRemindersForTransaction(null)).length;
+  // The scoped reads must be exactly what the old full read plus a JS filter
+  // produced — filtering a sorted list preserves the order.
+  const fullReminders = await store.listReminders({ includeArchived: true });
+  snapshot.arcScopedMatchesFullRead =
+    JSON.stringify(
+      fullReminders
+        .filter((row) => row.remind_date >= '2026-10-01' && row.remind_date <= '2026-10-31')
+        .map((row) => row.id),
+    ) === JSON.stringify(snapshot.arcRemindersMonthAll) &&
+    JSON.stringify(
+      fullReminders.filter((row) => row.budget_id === 'p_arc_budget').map((row) => row.id),
+    ) === JSON.stringify(snapshot.arcRemindersArchivedBudgetAll) &&
+    JSON.stringify(
+      fullReminders.filter((row) => row.transaction_id === 'p_arc_tx').map((row) => row.id),
+    ) === JSON.stringify(snapshot.arcRemindersArchivedTransactionAll);
   snapshot.arcReminderRow = await store.getReminder('p_arc_reminder');
   snapshot.arcEvents = (await store.listTransactionsInRange('2026-10-01', '2026-10-31')).map(
     (row) => row.id,
@@ -1905,6 +1959,39 @@ check(
     JSON.stringify(sqliteResult.arcRemindersAfterRestore) ===
       JSON.stringify(memoryResult.arcRemindersAfterRestore),
   JSON.stringify(sqliteResult.arcRemindersAfterRestore),
+);
+check(
+  'the scoped reminder reads return exactly what a full read plus a filter returned on both engines',
+  sqliteResult.arcScopedMatchesFullRead === true && memoryResult.arcScopedMatchesFullRead === true,
+  String(sqliteResult.arcScopedMatchesFullRead),
+);
+check(
+  'a range read narrows to the month and the day, hiding archived budgets by default',
+  sqliteResult.arcRemindersMonth.includes('p_live_reminder') &&
+    sqliteResult.arcRemindersMonth.includes('p_arc_reminder') === false &&
+    sqliteResult.arcRemindersMonthAll.includes('p_arc_reminder') &&
+    sqliteResult.arcRemindersOtherMonth.includes('p_live_reminder') === false &&
+    sqliteResult.arcRemindersLiveDay.includes('p_live_reminder') &&
+    sqliteResult.arcRemindersArchivedDay.includes('p_arc_reminder') === false,
+  JSON.stringify([sqliteResult.arcRemindersMonth, sqliteResult.arcRemindersLiveDay]),
+);
+check(
+  'a budget or transaction read stays scoped to that scope on both engines',
+  sqliteResult.arcRemindersLiveBudget.includes('p_live_reminder') &&
+    sqliteResult.arcRemindersLiveBudget.includes('p_arc_reminder') === false &&
+    sqliteResult.arcRemindersArchivedBudget.length === 0 &&
+    sqliteResult.arcRemindersArchivedBudgetAll.includes('p_arc_reminder') &&
+    sqliteResult.arcRemindersLiveTransaction.length === 1 &&
+    sqliteResult.arcRemindersLiveTransaction[0] === 'p_live_reminder' &&
+    sqliteResult.arcRemindersArchivedTransaction.length === 0 &&
+    sqliteResult.arcRemindersArchivedTransactionAll.length === 1 &&
+    sqliteResult.arcRemindersArchivedTransactionAll[0] === 'p_arc_reminder' &&
+    sqliteResult.arcRemindersMissingBudget === 0 &&
+    sqliteResult.arcRemindersMissingTransaction === 0,
+  JSON.stringify([
+    sqliteResult.arcRemindersArchivedBudget,
+    sqliteResult.arcRemindersLiveTransaction,
+  ]),
 );
 check(
   'deleting a transaction or budget cascades its attachments on both engines',

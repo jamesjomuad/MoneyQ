@@ -11,7 +11,11 @@ import {
   removeReminder,
   resyncReminders,
 } from '../services/reminderService';
-import { getReminder, getReminders } from '../storage/repositories/reminderRepository';
+import {
+  getReminder,
+  getRemindersForTransaction,
+  getRemindersInRange,
+} from '../storage/repositories/reminderRepository';
 import {
   getTransaction,
   searchTransactions,
@@ -100,13 +104,12 @@ export const useRemindersStore = create((set, get) => {
       set({ dayDate: date, dayIsLoading: true, dayError: null });
 
       try {
-        // The repository hides reminders of archived budgets, so this day can
-        // only ever show rows belonging to live budgets.
-        const rows = await getReminders();
+        // The repository hides reminders of archived budgets and narrows the
+        // read to this one day, so a day can only ever show rows belonging to
+        // live budgets — and the read never scales with the whole table.
+        const rows = await getRemindersInRange(date, date);
         if (id !== dayRequestId) return;
-        const dayReminders = rows.filter(
-          (reminder) => reminder.enabled === 1 && reminder.remind_date === date,
-        );
+        const dayReminders = rows.filter((reminder) => reminder.enabled === 1);
         set((state) => ({
           dayCache: { ...state.dayCache, [date]: dayReminders },
           dayIsLoading: false,
@@ -146,12 +149,10 @@ export const useRemindersStore = create((set, get) => {
         // Archived rows included: this list belongs to the transaction form,
         // which manages the reminder row that already exists — hiding it here
         // would make the form's switch look off for a row that is still there.
-        const rows = await getReminders({ includeArchived: true });
+        // Scoped to the one transaction instead of reading every reminder.
+        const rows = await getRemindersForTransaction(transactionId, { includeArchived: true });
         if (id !== transactionRequestId) return;
-        const transactionReminders = rows.filter(
-          (reminder) => reminder.transaction_id === transactionId,
-        );
-        set({ transactionReminders, transactionIsLoading: false });
+        set({ transactionReminders: rows, transactionIsLoading: false });
       } catch (error) {
         if (id !== transactionRequestId) return;
         set({ transactionError: error, transactionIsLoading: false });

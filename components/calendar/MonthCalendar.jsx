@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
@@ -22,7 +22,7 @@ import { useTheme } from '../ui/ThemeProvider';
  * without relying on color alone. All dates are plain local 'YYYY-MM-DD'
  * strings; nothing here constructs a Date from a timestamp.
  */
-export function MonthCalendar({
+function MonthCalendarView({
   monthKey,
   selectedDate,
   activityDates,
@@ -32,8 +32,8 @@ export function MonthCalendar({
 }) {
   const { colors, spacing } = useTheme();
   // The clock read and the 42-cell grid depend on nothing else, so they are
-  // computed once per day/month rather than on every parent re-render
-  // (date taps, reminder loads, month slides all re-render this component).
+  // computed once per day/month rather than on every re-render (date taps,
+  // month slides and the memo wrapper below all re-render this component).
   const today = useMemo(() => todayIso(), []);
   const weeks = useMemo(() => monthWeeks(monthKey), [monthKey]);
 
@@ -149,6 +149,15 @@ export function MonthCalendar({
     </View>
   );
 }
+
+/**
+ * Memoized grid: every prop is a primitive, a stable `Set` (the parent's
+ * memos) or a stable callback (a store action), so the 42 cells only rebuild
+ * when the month, the selection or the two dot sets really change — never
+ * because the day list, a reminder load or another part of the Calendar screen
+ * moved.
+ */
+export const MonthCalendar = memo(MonthCalendarView);
 
 const styles = StyleSheet.create({
   monthRow: {
