@@ -27,6 +27,9 @@ export function TextField({ label, hint, error, style, inputStyle, clearable = t
 
       <View style={styles.control}>
         <TextInput
+          // RN never links the visible Text above to the input, so carry the
+          // label into the a11y tree explicitly; an explicit prop still wins.
+          accessibilityLabel={label ?? undefined}
           placeholderTextColor={colors.textFaint}
           selectionColor={colors.primary}
           style={[
@@ -67,7 +70,14 @@ export function TextField({ label, hint, error, style, inputStyle, clearable = t
       </View>
 
       {error ? (
-        <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
+        <Text
+          variant="caption"
+          tone="expense"
+          // Announce validation failures to TalkBack/VoiceOver; a visible-only
+          // error leaves screen-reader users stuck on an unexplained Save.
+          accessibilityLiveRegion="polite"
+          style={{ marginTop: spacing.xs }}
+        >
           {error}
         </Text>
       ) : hint ? (

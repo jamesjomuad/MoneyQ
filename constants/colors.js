@@ -48,8 +48,10 @@ export const lightColors = {
   text: DEEP_EVERGREEN,
   textSecondary: mixHex(FOREST_GREEN, WARM_IVORY, 0.15),
   textMuted: mixHex(FOREST_GREEN, WARM_IVORY, 0.15),
-  textFaint: mixHex(FOREST_GREEN, WARM_IVORY, 0.21),
-  placeholder: mixHex(FOREST_GREEN, WARM_IVORY, 0.21),
+  // 0.21 measured ~4.1:1 on the ivory canvas (below AA). 0.18 keeps faint
+  // visually lighter than muted while clearing 4.5:1 on every light surface.
+  textFaint: mixHex(FOREST_GREEN, WARM_IVORY, 0.18),
+  placeholder: mixHex(FOREST_GREEN, WARM_IVORY, 0.18),
   disabled: mixHex(FOREST_GREEN, WARM_IVORY, 0.76),
   primary: FOREST_GREEN,
   primaryInk: FOREST_GREEN,

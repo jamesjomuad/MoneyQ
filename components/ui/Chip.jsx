@@ -5,7 +5,7 @@ import { useTheme } from './ThemeProvider';
 
 /** Small selectable pill used for date shortcuts and tag pickers. */
 export function Chip({ label, emoji, active = false, onPress, style }) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
 
   return (
     <Pressable
@@ -18,7 +18,7 @@ export function Chip({ label, emoji, active = false, onPress, style }) {
         {
           backgroundColor: active ? colors.primarySoft : colors.surface,
           borderColor: active ? colors.primary : colors.border,
-          borderRadius: 50,
+          borderRadius: radius.pill,
           paddingVertical: spacing.sm,
           paddingHorizontal: spacing.md,
           opacity: pressed ? 0.75 : 1,
@@ -40,8 +40,11 @@ const styles = StyleSheet.create({
   chip: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    marginRight: 6,
-    marginBottom: 6,
+    // 44dp tap target and 8dp separation between adjacent chips.
+    justifyContent: 'center',
+    marginBottom: 8,
+    marginRight: 8,
+    minHeight: 44,
   },
   row: {
     alignItems: 'center',

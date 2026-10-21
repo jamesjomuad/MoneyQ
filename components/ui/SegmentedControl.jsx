@@ -6,7 +6,7 @@ import { useTheme } from './ThemeProvider';
 
 /** options: [{ value, label, icon? }] — `icon` is an Icon name shown before the label. */
 export function SegmentedControl({ options, value, onChange, style, dense = false }) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
 
   return (
     <View
@@ -17,7 +17,7 @@ export function SegmentedControl({ options, value, onChange, style, dense = fals
           backgroundColor: colors.surfaceMuted,
           // The segments are capsules; the track is the capsule radius plus
           // the padding so the outline wraps the segments concentrically.
-          borderRadius: 54,
+          borderRadius: radius.pill,
           padding: spacing.xs,
         },
         style,
@@ -37,7 +37,7 @@ export function SegmentedControl({ options, value, onChange, style, dense = fals
               {
                 backgroundColor: active ? colors.surface : 'transparent',
                 borderColor: active ? colors.border : 'transparent',
-                borderRadius: 50,
+                borderRadius: radius.pill,
                 opacity: pressed ? 0.75 : 1,
               },
             ]}
@@ -74,7 +74,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   optionDense: {
-    minHeight: 36,
-    paddingVertical: 4,
+    // Dense keeps the tighter label, but the segment is still a primary
+    // one-tap control: it must clear the 44dp minimum.
+    minHeight: 44,
+    paddingVertical: 6,
   },
 });

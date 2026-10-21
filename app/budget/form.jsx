@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { DatePicker } from "../../components/dates/DatePicker";
 import { FolderColorField } from "../../components/budgets/FolderColorField";
@@ -312,6 +312,19 @@ export default function BudgetFormScreen() {
     }
   }
 
+  // removeBudget() is not reversible here (unlike the detail screen's
+  // archiveMany), so a stray tap must never destroy a budget outright.
+  function confirmDelete() {
+    Alert.alert(
+      "Delete this budget?",
+      "Deleting removes the budget and all of its transactions permanently. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: handleDelete },
+      ],
+    );
+  }
+
   if (loading) {
     return (
       <Screen contentContainerStyle={{ paddingBottom: 48 }}>
@@ -473,7 +486,7 @@ export default function BudgetFormScreen() {
           label="Delete budget"
           icon="trash"
           variant="danger"
-          onPress={handleDelete}
+          onPress={confirmDelete}
           disabled={saving}
           style={{ marginTop: spacing.md }}
         />

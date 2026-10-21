@@ -1,5 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { useContext, useEffect, useState } from 'react';
+import { BottomTabBarHeightContext } from 'expo-router/js-tabs';
+import {
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  useReducedMotion,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from './Icon';
@@ -8,6 +16,8 @@ import { useTheme } from './ThemeProvider';
 import { useToastStore } from '../../stores/toastStore';
 
 const TONE_KEYS = { success: 'success', warning: 'warning', error: 'expense' };
+const TONE_ICONS = { success: 'check', warning: 'warning', error: 'close' };
+const TONE_WORDS = { success: 'Success', warning: 'Warning', error: 'Error' };
 const VISIBLE_MS = 2400;
 const ACTION_VISIBLE_MS = 6000;
 
@@ -18,6 +28,8 @@ const ACTION_VISIBLE_MS = 6000;
 export function ToastView() {
   const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
+  const tabBandHeight = useContext(BottomTabBarHeightContext);
   const current = useToastStore((state) => state.current);
   const dismiss = useToastStore((state) => state.dismiss);
   const [opacity] = useState(() => new Animated.Value(0));
@@ -27,7 +39,7 @@ export function ToastView() {
 
     Animated.timing(opacity, {
       toValue: 1,
-      duration: 160,
+      duration: reducedMotion ? 0 : 160,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
     }).start();
@@ -36,7 +48,7 @@ export function ToastView() {
     const timer = setTimeout(() => {
       Animated.timing(opacity, {
         toValue: 0,
-        duration: 220,
+        duration: reducedMotion ? 0 : 220,
         easing: Easing.in(Easing.quad),
         useNativeDriver: true,
       }).start(({ finished }) => {
@@ -48,10 +60,11 @@ export function ToastView() {
       clearTimeout(timer);
       opacity.stopAnimation();
     };
-  }, [current, dismiss, opacity]);
+  }, [current, dismiss, opacity, reducedMotion]);
 
   if (!current) return null;
-  const toneColor = colors[TONE_KEYS[current.tone] ?? 'success'];
+  const toneKey = current.tone ?? 'success';
+  const toneColor = colors[TONE_KEYS[toneKey] ?? 'success'];
 
   return (
     <View
@@ -62,24 +75,32 @@ export function ToastView() {
         // touches (and just its own box).
         {
           pointerEvents: current.action ? 'box-none' : 'none',
-          bottom: insets.bottom + spacing.xl,
+          // Float above the bottom tab capsule on tab screens so the pill
+          // never lands on top of it.
+          bottom:
+            insets.bottom +
+            spacing.xl +
+            (tabBandHeight != null ? tabBandHeight + spacing.md : 0),
         },
       ]}
     >
       <Animated.View
         accessibilityLiveRegion="polite"
+        // The dot color was the only severity cue; speak the tone too.
+        accessibilityLabel={`${TONE_WORDS[toneKey] ?? 'Notice'}: ${current.message}`}
         style={[
           styles.pill,
           {
             backgroundColor: colors.surface,
             borderColor: colors.border,
             borderRadius: radius.pill,
+            boxShadow: `0 2px 6px ${colors.shadow}`,
             opacity,
           },
         ]}
       >
-        <View style={[styles.dot, { backgroundColor: toneColor }]} />
-        <Text variant="label" style={{ color: colors.text }}>
+        <Icon name={TONE_ICONS[toneKey] ?? 'check'} size={16} color={toneColor} />
+        <Text variant="label" style={{ color: colors.text, flexShrink: 1 }}>
           {current.message}
         </Text>
         {current.action ? (
@@ -133,12 +154,11 @@ const styles = StyleSheet.create({
   pill: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
     flexDirection: 'row',
     gap: 8,
-    maxHeight: 80,
+    // No maxHeight cap: long restore/error strings must wrap, not clip.
+    maxWidth: '92%',
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  dot: { borderRadius: 4, height: 8, width: 8 },
 });

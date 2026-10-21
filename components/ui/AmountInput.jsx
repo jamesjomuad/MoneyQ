@@ -1,6 +1,7 @@
 import { StyleSheet, TextInput, View } from 'react-native';
 
-import { sanitizeAmount } from '../../utils/currency';
+import { getCurrency, sanitizeAmount } from '../../utils/currency';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { ClearButton } from './ClearButton';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
@@ -12,7 +13,7 @@ import { useTheme } from './ThemeProvider';
  * units.
  */
 export function AmountInput({
-  symbol = '₱',
+  symbol,
   value,
   onChangeText,
   autoFocus,
@@ -26,7 +27,11 @@ export function AmountInput({
   centered = false,
   large = false,
 }) {
-  const { colors, spacing } = useTheme();
+  const { colors, radius, spacing } = useTheme();
+  // No hard-coded glyph: a caller that forgets `symbol` still shows the
+  // user's saved currency (AGENTS.md: never hard-code a currency symbol).
+  const currencyCode = useSettingsStore((state) => state.currency);
+  const displaySymbol = symbol ?? getCurrency(currencyCode).symbol;
 
   function handleChange(text) {
     if (!onChangeText) return;
@@ -46,7 +51,7 @@ export function AmountInput({
           : {
               backgroundColor: colors.surface,
               borderColor: colors.border,
-              borderRadius: 50,
+              borderRadius: radius.pill,
               borderWidth: StyleSheet.hairlineWidth,
             },
         { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
@@ -62,10 +67,13 @@ export function AmountInput({
         // stray glyph: 40px digits in the large card, 30px digits otherwise.
         style={{ marginRight: spacing.sm, fontSize: large ? 30 : 20, ...(ink ? { color: ink } : null) }}
       >
-        {symbol}
+        {displaySymbol}
       </Text>
       <TextInput
         ref={inputRef}
+        // Unlabeled numeric fields announce as anonymous "Edit field"; the
+        // symbol alone is not a usable screen-reader name.
+        accessibilityLabel="Amount"
         value={value}
         onChangeText={handleChange}
         editable={editable}
