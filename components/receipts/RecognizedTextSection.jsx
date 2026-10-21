@@ -28,7 +28,10 @@ import { useTheme } from '../ui/ThemeProvider';
  */
 
 const FIELDS = [
-  { key: 'description', label: 'Description', icon: 'bills' },
+  // `append` marks the one free-text destination: a word can join what is
+  // already there. Amount and Date hold single parsed values, so they only
+  // ever replace.
+  { key: 'description', label: 'Description', icon: 'bills', append: true },
   { key: 'amount', label: 'Amount', icon: 'wallet' },
   { key: 'date', label: 'Date', icon: 'calendar' },
 ];
@@ -63,9 +66,9 @@ export function RecognizedTextSection({
     setSheetError(null);
   };
 
-  const applyToField = (field) => {
+  const applyToField = (field, mode) => {
     if (!selected) return;
-    const result = onAssign(field.key, selected);
+    const result = onAssign(field.key, selected, mode);
     if (result?.ok) closeSheet();
     else setSheetError(result?.message ?? 'The value could not be applied.');
   };
@@ -73,7 +76,16 @@ export function RecognizedTextSection({
   const chooseField = (field) => {
     const current = String(values?.[field.key] ?? '').trim();
     if (!current) {
-      applyToField(field);
+      applyToField(field, 'replace');
+      return;
+    }
+    if (field.append) {
+      // Free text can grow instead of being overwritten: offer both.
+      Alert.alert(`Add to ${field.label}?`, `This field already holds “${current}”.`, [
+        { text: 'Keep current', style: 'cancel' },
+        { text: 'Add', onPress: () => applyToField(field, 'append') },
+        { text: 'Replace', style: 'destructive', onPress: () => applyToField(field, 'replace') },
+      ]);
       return;
     }
     // Never overwrite silently: the user confirms the replacement first.
@@ -82,7 +94,7 @@ export function RecognizedTextSection({
       'This field already has a value. The recognized text will take its place.',
       [
         { text: 'Keep current', style: 'cancel' },
-        { text: 'Replace', style: 'destructive', onPress: () => applyToField(field) },
+        { text: 'Replace', style: 'destructive', onPress: () => applyToField(field, 'replace') },
       ],
     );
   };
@@ -257,7 +269,9 @@ export function RecognizedTextSection({
                     accessibilityRole="button"
                     accessibilityLabel={
                       current
-                        ? `Replace ${field.label} with this text`
+                        ? field.append
+                          ? `Use in ${field.label} — replace or add to the current text`
+                          : `Replace ${field.label} with this text`
                         : `Put this text in ${field.label}`
                     }
                     onPress={() => chooseField(field)}
@@ -278,7 +292,9 @@ export function RecognizedTextSection({
                       <Text variant="label">{field.label}</Text>
                       {current ? (
                         <Text variant="caption" tone="muted" numberOfLines={1}>
-                          Replaces “{current}”
+                          {field.append
+                            ? `Adds to or replaces “${current}”`
+                            : `Replaces “${current}”`}
                         </Text>
                       ) : null}
                     </View>

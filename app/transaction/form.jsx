@@ -227,6 +227,19 @@ function validateFields(f, currency) {
 }
 
 /**
+ * Validation that stays inline can hide below the fold — the blocking figure
+ * may sit under the sticky amount card or off-screen. Carry the same concrete
+ * messages onto the app-wide toast pill so the save tap answers immediately.
+ */
+function toastValidationErrors(nextErrors) {
+  const messages = Object.values(nextErrors).filter(Boolean);
+  showToast(
+    messages.join(' ') || 'Some fields need attention before this can be saved.',
+    'warning'
+  );
+}
+
+/**
  * Assumes validateFields passed. Reminders are not part of the transaction
  * payload: an edit leaves them untouched, and a new transaction's staged
  * reminders are created separately once the row exists. While a breakdown is
@@ -618,8 +631,9 @@ export default function TransactionFormScreen() {
   // A chip tap only becomes a field write through the same conservative
   // validators the automatic path uses: an unparsable amount or ambiguous
   // date explains itself and leaves the field exactly as it was. Description
-  // takes the chip text verbatim — there the user is the parser.
-  const handleOcrAssign = (fieldKey, chip) => {
+  // takes the chip text verbatim — there the user is the parser — and mode
+  // 'append' lets one more word join what the description already says.
+  const handleOcrAssign = (fieldKey, chip, mode = 'replace') => {
     if (fieldKey === 'amount') {
       const parsed = parseChipAmount(chip.text);
       if (!parsed.ok) return { ok: false, message: parsed.reason };
@@ -641,7 +655,11 @@ export default function TransactionFormScreen() {
       }));
       return { ok: true };
     }
-    setDescription(chip.text);
+    setDescription((prev) =>
+      mode === 'append' && String(prev ?? '').trim()
+        ? `${String(prev).trim()} ${chip.text}`
+        : chip.text
+    );
     setOcr((prev) => ({
       ...prev,
       assignments: { ...prev.assignments, description: chip.id },
@@ -983,7 +1001,7 @@ export default function TransactionFormScreen() {
         // Invalid edits are never silently dropped: hold the departure and
         // show what needs fixing.
         setErrors(nextErrors);
-        showToast('Some fields need attention before this can be saved.', 'warning');
+        toastValidationErrors(nextErrors);
         return 'invalid';
       }
 
@@ -1101,6 +1119,7 @@ export default function TransactionFormScreen() {
     const nextErrors = validateFields(fields, currency);
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
+      toastValidationErrors(nextErrors);
       return;
     }
 

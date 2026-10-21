@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { FolderPickerSheet } from '../../components/budgets/FolderPickerSheet';
 import { TagSpendRow } from '../../components/tags/TagSpendRow';
@@ -546,6 +547,33 @@ export default function BudgetDetailScreen() {
             zIndex: 2,
           }}
         >
+          {/* Fading texture: an ink wash that soaks into the surface from the
+              top of the card, same SVG gradient pattern the transaction form
+              uses for its tag-strip fades. It is the first child and carries
+              no touches, so the figures below it stay crisp. */}
+          <View pointerEvents="none" style={styles.fadeClip}>
+            <Svg height="100%" width="100%">
+              <Defs>
+                <LinearGradient
+                  id={`remaining-fade-${budgetId}`}
+                  x1="0%"
+                  x2="0%"
+                  y1="0%"
+                  y2="100%"
+                >
+                  <Stop offset="0" stopColor={folderInk ?? colors.primary} stopOpacity={0.16} />
+                  <Stop offset="1" stopColor={folderInk ?? colors.primary} stopOpacity={0} />
+                </LinearGradient>
+              </Defs>
+              <Rect
+                x="0"
+                y="0"
+                width="100%"
+                height="100%"
+                fill={`url(#remaining-fade-${budgetId})`}
+              />
+            </Svg>
+          </View>
           <SectionHeader
             title="Remaining"
             color={folderInk}
@@ -824,6 +852,16 @@ const styles = StyleSheet.create({
   // and the eye button sits flush with the card's right edge, optically
   // centered against the 40px display text.
   remainingRow: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
+  // Clips the fade wash to the Remaining card's 25px corners.
+  fadeClip: {
+    borderRadius: 25,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
   visibilityButton: { marginRight: 30, padding: 2 },
   // Folder quick-move row under the date caption: icon, label, chevron.
   folderRow: { alignItems: 'center', flexDirection: 'row', gap: 6 },
