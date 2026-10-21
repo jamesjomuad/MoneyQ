@@ -62,6 +62,11 @@ export default function BudgetsScreen() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  // Pull-to-refresh re-reads the same sources as focus, plus the active
+  // transaction search when one is running. Only the native spinner is owned
+  // here; the lists keep rendering their current rows while the reads run.
+  const [refreshing, setRefreshing] = useState(false);
+
   // The pinned-folders strip is laid out in normal flow under the list, so the
   // floating create action measures it and anchors above it rather than over
   // the chips. The value is only read while that strip is actually on screen.
@@ -231,6 +236,19 @@ export default function BudgetsScreen() {
       else resetSearch();
     }, [debouncedTerm, runSearch, resetSearch]),
   );
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        load(),
+        loadFolders(),
+        debouncedTerm ? runSearch(debouncedTerm) : Promise.resolve(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load, loadFolders, debouncedTerm, runSearch]);
 
   const openFolder = useCallback(
     (budget) =>
@@ -475,6 +493,8 @@ export default function BudgetsScreen() {
               scrollRef={scrollRef}
               onScroll={handleScroll}
               scrollEnabled={liftedKey === null}
+              refreshing={refreshing}
+              onRefresh={refresh}
             >
               {budgets.length > 0 && !searching ? (
                 <Animated.View entering={introEnter(1)}>

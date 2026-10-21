@@ -158,6 +158,10 @@ export function SectionHeader({
         <Text
           variant="label"
           tone="muted"
+          // A section title is a heading for screen readers; when the whole
+          // header folds the section, the Pressable below already carries the
+          // title in its label, so don't nest a heading inside a button.
+          accessibilityRole={onToggle ? undefined : 'header'}
           style={[{ fontFamily: 'Manrope_700Bold' }, color ? { color } : null, fontSize ? { fontSize } : null]}
         >
           {title.toUpperCase()}

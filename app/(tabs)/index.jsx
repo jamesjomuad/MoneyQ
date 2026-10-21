@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 import { TransactionRow } from "../../components/transactions/TransactionRow";
@@ -44,6 +44,38 @@ function attentionReason(row) {
 }
 
 /**
+ * Disclosure row for a list the dashboard caps. It expands the list in place
+ * instead of hiding rows silently, and collapses it again on a second tap.
+ */
+function ShowAllRow({ count, expanded, noun, onPress }) {
+  const { colors, spacing } = useTheme();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      accessibilityLabel={expanded ? `Show fewer ${noun}` : `Show all ${count} ${noun}`}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.row,
+        styles.rowCenter,
+        {
+          borderTopColor: colors.border,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          justifyContent: "center",
+          padding: spacing.lg,
+        },
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text variant="caption" tone="primary">
+        {expanded ? "Show less" : `Show all ${count}`}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
  * Home tab: the Insights dashboard. It answers "how am I doing, what is coming
  * up, and what did I just record" from data that already exists — the active
  * budgets the Budgets tab manages, this month's transactions, the payments and
@@ -77,6 +109,24 @@ export default function HomeScreen() {
   const tags = useTagsStore((state) => state.tags);
   const loadTags = useTagsStore((state) => state.load);
 
+  // One disclosure per capped list. Collapsed by default: the dashboard stays
+  // a glance, but every hidden row is now reachable without leaving Home.
+  const [showAllAttention, setShowAllAttention] = useState(false);
+  const [showAllPayments, setShowAllPayments] = useState(false);
+  const [showAllReminders, setShowAllReminders] = useState(false);
+
+  // Pull-to-refresh owns only the native spinner — the stores keep the last
+  // data on screen while they re-read, so the dashboard never blanks.
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([load(), loadBudgets(), loadTags()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load, loadBudgets, loadTags]);
+
   useFocusEffect(
     useCallback(() => {
       load();
@@ -108,7 +158,7 @@ export default function HomeScreen() {
    * rather than capping them, so the bar tracks the period itself — there is no
    * limit to compare against.
    */
-  const attention = useMemo(() => {
+  const attentionAll = useMemo(() => {
     const rows = [];
     for (const budget of budgets) {
       const remaining = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
@@ -127,20 +177,21 @@ export default function HomeScreen() {
       });
     }
     rows.sort((a, b) => Number(b.overBalance) - Number(a.overBalance) || a.daysLeft - b.daysLeft);
-    return rows.slice(0, ATTENTION_LIMIT);
+    return rows;
   }, [budgets, today]);
+  const attention = showAllAttention ? attentionAll : attentionAll.slice(0, ATTENTION_LIMIT);
 
   // The due-date read starts a month back, which is what keeps an overdue
   // payment on the list instead of letting it fall off silently.
-  const duePayments = useMemo(
-    () =>
-      upcomingPayments
-        .filter((entry) => derivePaymentEventStatus(entry, today) !== "paid")
-        .slice(0, UPCOMING_LIMIT),
+  const duePaymentsAll = useMemo(
+    () => upcomingPayments.filter((entry) => derivePaymentEventStatus(entry, today) !== "paid"),
     [upcomingPayments, today],
   );
+  const duePayments = showAllPayments ? duePaymentsAll : duePaymentsAll.slice(0, UPCOMING_LIMIT);
 
-  const dueReminders = useMemo(() => upcomingReminders.slice(0, UPCOMING_LIMIT), [upcomingReminders]);
+  const dueReminders = showAllReminders
+    ? upcomingReminders
+    : upcomingReminders.slice(0, UPCOMING_LIMIT);
 
   const openTransaction = useCallback(
     (entry) =>
@@ -164,10 +215,13 @@ export default function HomeScreen() {
   const nothingYet = budgets.length === 0 && recent.length === 0;
   const loadingFirst = isLoading && recent.length === 0;
   const failed = Boolean(error) && recent.length === 0;
+  // A refresh that fails while data is already on screen must not wipe the
+  // dashboard; it surfaces as a non-blocking banner instead.
+  const staleError = Boolean(error) && !failed;
   const ready = !loadingFirst && !failed && !nothingYet;
 
   return (
-    <Screen topInset>
+    <Screen topInset refreshing={refreshing} onRefresh={refresh}>
       <SectionHeader title={range ? `Overview · ${range.label}` : "Overview"} />
 
       {loadingFirst ? (
@@ -187,6 +241,24 @@ export default function HomeScreen() {
         >
           <Button label="Try again" icon="refresh" onPress={() => load()} />
         </EmptyState>
+      ) : null}
+
+      {staleError ? (
+        <Card style={{ marginBottom: spacing.lg }}>
+          <Text variant="label" tone="warning">
+            Some insights could not be refreshed
+          </Text>
+          <Text variant="caption" tone="muted" style={{ marginTop: spacing.xs }}>
+            Showing the last data that loaded. Your data is still on this device.
+          </Text>
+          <Button
+            label="Try again"
+            icon="refresh"
+            variant="secondary"
+            onPress={() => load()}
+            style={{ marginTop: spacing.md }}
+          />
+        </Card>
       ) : null}
 
       {nothingYet ? (
@@ -319,6 +391,14 @@ export default function HomeScreen() {
                     </View>
                   </Pressable>
                 ))}
+                {attentionAll.length > ATTENTION_LIMIT ? (
+                  <ShowAllRow
+                    count={attentionAll.length}
+                    expanded={showAllAttention}
+                    noun="budgets needing attention"
+                    onPress={() => setShowAllAttention((value) => !value)}
+                  />
+                ) : null}
               </Card>
             </View>
           ) : null}
@@ -395,6 +475,15 @@ export default function HomeScreen() {
                 })
               )}
 
+              {duePaymentsAll.length > UPCOMING_LIMIT ? (
+                <ShowAllRow
+                  count={duePaymentsAll.length}
+                  expanded={showAllPayments}
+                  noun="payments due"
+                  onPress={() => setShowAllPayments((value) => !value)}
+                />
+              ) : null}
+
               <View
                 style={[
                   styles.groupHead,
@@ -468,6 +557,15 @@ export default function HomeScreen() {
                   );
                 })
               )}
+
+              {upcomingReminders.length > UPCOMING_LIMIT ? (
+                <ShowAllRow
+                  count={upcomingReminders.length}
+                  expanded={showAllReminders}
+                  noun="reminders"
+                  onPress={() => setShowAllReminders((value) => !value)}
+                />
+              ) : null}
             </Card>
           </View>
 

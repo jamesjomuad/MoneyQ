@@ -119,10 +119,15 @@ export function CreateFab({ bottomOffset = 0 }) {
     <View pointerEvents="box-none" style={[styles.layer, { bottom: bottomOffset }]}>
       {expanded ? (
         // Tap-catcher rendered BEFORE the button, so it swallows taps anywhere
-        // on the screen above the button while the button stays reachable.
+        // on the screen above the button while the button stays reachable. It
+        // is deliberately not a focus stop: screen-reader users close the menu
+        // with the button itself, which is labelled "Close create menu" when
+        // open.
         <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss create menu"
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          aria-hidden
           onPress={() => setExpanded(false)}
           style={styles.backdrop}
         />
@@ -134,6 +139,12 @@ export function CreateFab({ bottomOffset = 0 }) {
             interactive while the menu is actually open. */}
         <View
           pointerEvents={expanded ? 'auto' : 'none'}
+          // Collapsed items only fade out visually, so keep them out of the
+          // screen-reader tree as well — otherwise TalkBack/VoiceOver can still
+          // focus "New Folder" and "New Budget" while they are invisible.
+          accessibilityElementsHidden={!expanded}
+          importantForAccessibility={expanded ? 'auto' : 'no-hide-descendants'}
+          aria-hidden={!expanded}
           style={[styles.menu, { bottom: CREATE_FAB_SIZE + spacing.sm, gap: spacing.sm }]}
         >
           <CreateMenuItem
