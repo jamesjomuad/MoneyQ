@@ -10,6 +10,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../ui/ThemeProvider';
+import { setTabBandHeight } from './tabBand';
 
 /**
  * Floating capsule navigation.
@@ -202,6 +203,14 @@ export function BottomTabBar({ state, descriptors, navigation }) {
     });
   }, [activeKey, measuredTick, reduced, pillX, pillTop, pillVisible]);
 
+  // Cold modals or a tab-bar swap must not leave a stale band behind.
+  useEffect(
+    () => () => {
+      setTabBandHeight(null);
+    },
+    []
+  );
+
   const pillStyle = useAnimatedStyle(() => ({
     opacity: pillVisible.value,
     top: pillTop.value,
@@ -218,6 +227,9 @@ export function BottomTabBar({ state, descriptors, navigation }) {
 
   return (
     <View
+      // Publish the band height so the app-wide toast can float above the
+      // capsule instead of landing on it.
+      onLayout={(event) => setTabBandHeight(event.nativeEvent.layout.height)}
       style={[
         styles.band,
         {

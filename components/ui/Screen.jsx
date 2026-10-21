@@ -1,5 +1,5 @@
-import { BottomTabBarHeightContext } from "expo-router/js-tabs";
-import { useContext, useEffect } from "react";
+import { useNavigation } from "expo-router";
+import { useEffect } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import Animated, {
   FadeInDown,
@@ -48,10 +48,12 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const entering = useEnter(enter);
   // Inside a bottom-tab screen the floating tab bar is laid out in-flow below
-  // the scene, and its band already reserves the bottom safe-area inset. We
-  // only need the context's presence (undefined on stack/modal screens) to
-  // avoid double-counting the inset.
-  const inTabScreen = useContext(BottomTabBarHeightContext) !== undefined;
+  // the scene, and its band already reserves the bottom safe-area inset. The
+  // screen's own navigator answers the question directly — expo-router 57
+  // vendors react-navigation, so the official tab-bar-height context is not
+  // importable from any public entry point.
+  const navigation = useNavigation();
+  const inTabScreen = navigation?.getState?.().type === "tab";
 
   const contentStyle = [
     styles.content,

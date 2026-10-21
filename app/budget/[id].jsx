@@ -271,13 +271,13 @@ function TagsDrawer({
           </ScrollView>
         </View>
 
-        {/* Handle strip: the drawer's bottom edge — the Tags label sits
+        {/* Handle strip: the drawer's bottom edge — the Insights label sits
             beside the chevron, both horizontally centered. It rides with
             the drawer, so collapsed it is the only part in view and also
             the toggle. */}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={open ? 'Collapse tags drawer' : 'Expand tags drawer'}
+          accessibilityLabel={open ? 'Collapse insights drawer' : 'Expand insights drawer'}
           accessibilityState={{ expanded: open }}
           hitSlop={6}
           onPress={onToggle}
@@ -286,7 +286,7 @@ function TagsDrawer({
             { borderTopColor: colors.border, opacity: pressed ? 0.6 : 1 },
           ]}
         >
-          <Text variant="label">{`Tags · ${tagSummaries.length}`}</Text>
+          <Text variant="label">{`Insights · ${tagSummaries.length}`}</Text>
           <Animated.View style={chevronStyle}>
             <Icon name="chevronDown" size={18} color={colors.textMuted} />
           </Animated.View>

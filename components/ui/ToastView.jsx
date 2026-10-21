@@ -1,15 +1,15 @@
-import { useContext, useEffect, useState } from 'react';
-import { BottomTabBarHeightContext } from 'expo-router/js-tabs';
+import { useEffect, useState } from 'react';
 import {
   Animated,
   Easing,
   Pressable,
   StyleSheet,
-  useReducedMotion,
   View,
 } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useTabBandHeight } from '../navigation/tabBand';
 import { Icon } from './Icon';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
@@ -29,7 +29,7 @@ export function ToastView() {
   const { colors, radius, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
-  const tabBandHeight = useContext(BottomTabBarHeightContext);
+  const tabBandHeight = useTabBandHeight();
   const current = useToastStore((state) => state.current);
   const dismiss = useToastStore((state) => state.dismiss);
   const [opacity] = useState(() => new Animated.Value(0));
@@ -75,12 +75,12 @@ export function ToastView() {
         // touches (and just its own box).
         {
           pointerEvents: current.action ? 'box-none' : 'none',
-          // Float above the bottom tab capsule on tab screens so the pill
-          // never lands on top of it.
+          // The measured band already contains its own bottom inset, so on
+          // tab screens float the pill above it; elsewhere clear the inset.
           bottom:
-            insets.bottom +
-            spacing.xl +
-            (tabBandHeight != null ? tabBandHeight + spacing.md : 0),
+            tabBandHeight != null
+              ? tabBandHeight + spacing.md
+              : insets.bottom + spacing.xl,
         },
       ]}
     >
