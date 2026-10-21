@@ -99,6 +99,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 6,
     maxWidth: 180,
+    // 44 px keeps the chip a full-size touch target without a hitSlop that
+    // would overlap its neighbours in the horizontal strip.
+    minHeight: 44,
   },
   chipLabel: {
     flexShrink: 1,

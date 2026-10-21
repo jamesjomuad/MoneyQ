@@ -69,7 +69,7 @@ const EDGE = 56; // distance from the viewport edge that triggers auto-scroll
  */
 export function DraggableRows({
   items,
-  renderItem, // (item, index, total, lifted) => element
+  renderItem, // (item, index, total, lifted, reorder) => element
   onReorder, // async (item, targetIndex) — targetIndex is the final index in items
   onLongPressIdle, // (item) — lifted row released without dragging
   onLiftChange, // (key | null) — parent should lock its scroll while non-null
@@ -420,9 +420,50 @@ export function DraggableRows({
         fnsRef.current.dragMove(key, translationY, localY),
       dragEnd: (key) => fnsRef.current.dragEnd(key),
       gestureFinalize: (key) => fnsRef.current.gestureFinalize(key),
+      // Accessibility equivalent of a drag: move one slot, clamped through the
+      // same resolveTarget the gesture uses, so it can never cross a section
+      // boundary the list forbids. No-ops at the ends and while disabled.
+      reorder(key, delta) {
+        const list = itemsRef.current;
+        if (!list?.length) return;
+        const from = list.findIndex((entry) => entry.key === key);
+        if (from === -1) return;
+        const item = list[from];
+        let to = from + delta;
+        const resolve = hooksRef.current?.resolveTarget;
+        if (typeof resolve === 'function') to = resolve(item, from, to, list);
+        if (!Number.isFinite(to)) return;
+        to = Math.max(0, Math.min(list.length - 1, to));
+        if (to === from) return;
+        hooksRef.current?.onReorder?.(item, to);
+      },
     }),
     [],
   );
+
+  // What each row advertises to assistive tech: the directions it can actually
+  // move. Computed against the same resolver as the drag, so the announced
+  // actions always match the gesture's limits.
+  const reorderFor = (item, index) => {
+    if (disabled) return null;
+    const total = items.length;
+    const target = (candidate) => {
+      if (candidate < 0 || candidate > total - 1) return candidate;
+      return typeof resolveTarget === 'function'
+        ? resolveTarget(item, index, candidate, items)
+        : candidate;
+    };
+    const upTarget = index > 0 ? target(index - 1) : index;
+    const downTarget = index < total - 1 ? target(index + 1) : index;
+    const canMoveUp = index > 0 && upTarget !== index;
+    const canMoveDown = index < total - 1 && downTarget !== index;
+    if (!canMoveUp && !canMoveDown) return null;
+    return {
+      canMoveUp,
+      canMoveDown,
+      move: (delta) => controller.reorder(item.key, delta),
+    };
+  };
 
   // The commit step: the moment the parent hands us a different key order,
   // the drag's visual result and the persisted order describe the SAME
@@ -460,6 +501,7 @@ export function DraggableRows({
           item={item}
           lifted={liftedKey === item.key}
           renderItem={renderItem}
+          reorder={reorderFor(item, index)}
           total={items.length}
         />
       ))}
@@ -473,7 +515,7 @@ export function DraggableRows({
  * Pan inside is manually activated — it only ever takes the touch after the
  * container's hold timer wins, so taps and scrolling are untouched.
  */
-function RowCell({ item, index, total, renderItem, controller, lifted, armedGuard }) {
+function RowCell({ item, index, total, renderItem, reorder, controller, lifted, armedGuard }) {
   const { colors } = useTheme();
   const reduced = useReducedMotion();
   const shift = useSharedValue(0);
@@ -576,7 +618,7 @@ function RowCell({ item, index, total, renderItem, controller, lifted, armedGuar
           animatedStyle,
         ]}
       >
-        {renderItem(item, index, total, lifted)}
+        {renderItem(item, index, total, lifted, reorder)}
       </Animated.View>
     </GestureDetector>
   );

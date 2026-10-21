@@ -31,7 +31,7 @@ import { formatDateRange } from '../../utils/dates';
  * open a budget. The chevron stays in place so rows don't jump.
  * Folders have no checkbox: only budgets are ever eligible to move.
  */
-export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, selected = false, selectable = false, onToggleSelect, isLast = false }) {
+export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePin, pinned = false, currency, selected = false, selectable = false, onToggleSelect, isLast = false, reorder = null }) {
   const { colors, radius, spacing } = useTheme();
   const balance = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
   // A user-selected color paints the chip exactly in every theme; budgets
@@ -43,10 +43,27 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
   const handleToggleSelect = useCallback(() => onToggleSelect?.(budget.id), [onToggleSelect, budget.id]);
   const handleTogglePin = useCallback(() => onTogglePin?.(budget.id), [onTogglePin, budget.id]);
 
+  // Screen-reader and switch-control users cannot long-press and drag, so the
+  // row exposes the same reorder as accessibility actions when its list is
+  // reorderable. Edge rows advertise only the move they can actually make.
+  const accessibilityActions = [];
+  if (reorder?.canMoveUp) accessibilityActions.push({ name: 'decrement', label: 'Move up' });
+  if (reorder?.canMoveDown) accessibilityActions.push({ name: 'increment', label: 'Move down' });
+  const handleAccessibilityAction = useCallback(
+    (event) => {
+      const { actionName } = event.nativeEvent;
+      if (actionName === 'decrement') reorder?.move?.(-1);
+      else if (actionName === 'increment') reorder?.move?.(1);
+    },
+    [reorder],
+  );
+
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${budget.name}, ${formatCurrency(budget.spent, { currency })} spent, ${formatCurrency(balance, { currency })} balance`}
+      accessibilityActions={accessibilityActions.length > 0 ? accessibilityActions : undefined}
+      onAccessibilityAction={accessibilityActions.length > 0 ? handleAccessibilityAction : undefined}
       onPress={handlePress}
       style={({ pressed }) => [
         styles.row,
@@ -67,7 +84,7 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
           onPress={handleToggleSelect}
           accessibilityLabel={selected ? `Deselect ${budget.name}` : `Select ${budget.name}`}
           nested
-          hitSlop={10}
+          hitSlop={11}
         />
       ) : null}
 
@@ -114,7 +131,7 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
           accessibilityLabel={pinned ? `Unpin ${budget.name}` : `Pin ${budget.name}`}
           accessibilityState={{ selected: pinned }}
           onPress={handleTogglePin}
-          hitSlop={8}
+          hitSlop={14}
           style={pinned ? null : styles.pinDimmed}
         >
           <Icon name={pinned ? 'pinFilled' : 'pin'} size={16} color={chip.onSurface} />

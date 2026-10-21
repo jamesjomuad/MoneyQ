@@ -9,7 +9,7 @@ const TONE_COLORS = {
   income: 'income',
   expense: 'expense',
   warning: 'warning',
-  primary: 'primary',
+  primary: 'primaryInk',
   onPrimary: 'onPrimary',
 };
 

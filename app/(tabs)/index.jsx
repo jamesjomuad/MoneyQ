@@ -480,6 +480,7 @@ export default function HomeScreen() {
                     accessibilityRole="button"
                     accessibilityLabel="Open the Budgets tab"
                     onPress={() => router.push("/budgets")}
+                    hitSlop={14}
                     style={({ pressed }) => [pressed && styles.pressed]}
                   >
                     <Text variant="caption" tone="primary">

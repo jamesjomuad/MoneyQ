@@ -12,14 +12,26 @@ import { useTheme } from '../ui/ThemeProvider';
  * separated by hairlines, so a folder and a budget read as one family.
  * Folders hold no money — there are deliberately no totals here.
  */
-export function FolderGroupCard({ folder, budgetCount, onPress, isLast = false }) {
+export function FolderGroupCard({ folder, budgetCount, onPress, isLast = false, reorder = null }) {
   const { colors, radius, spacing } = useTheme();
   const chip = resolveRowChip(folder.color, colors);
+  // Folders reorder in the same mixed list as budgets, so they advertise the
+  // same accessibility actions for screen-reader and switch-control users.
+  const accessibilityActions = [];
+  if (reorder?.canMoveUp) accessibilityActions.push({ name: 'decrement', label: 'Move up' });
+  if (reorder?.canMoveDown) accessibilityActions.push({ name: 'increment', label: 'Move down' });
+  const handleAccessibilityAction = (event) => {
+    const { actionName } = event.nativeEvent;
+    if (actionName === 'decrement') reorder?.move?.(-1);
+    else if (actionName === 'increment') reorder?.move?.(1);
+  };
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${folder.name}, folder, ${budgetCount} ${budgetCount === 1 ? 'budget' : 'budgets'}`}
+      accessibilityActions={accessibilityActions.length > 0 ? accessibilityActions : undefined}
+      onAccessibilityAction={accessibilityActions.length > 0 ? handleAccessibilityAction : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,

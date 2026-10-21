@@ -367,7 +367,7 @@ export default function FolderDetailScreen() {
                         accessibilityRole="button"
                         accessibilityLabel="Create a new budget in this folder"
                         onPress={openCreateBudget}
-                        hitSlop={8}
+                        hitSlop={16}
                       >
                         <Text variant="label" tone="primary">
                           New budget
@@ -383,7 +383,7 @@ export default function FolderDetailScreen() {
                       scroll={dragScroll}
                       onLiftChange={setLiftedKey}
                       onReorder={handleReorder}
-                      renderItem={(item, index, total, lifted) => (
+                      renderItem={(item, index, total, lifted, reorder) => (
                         <BudgetCard
                           key={item.key}
                           budget={item.budget}
@@ -395,6 +395,7 @@ export default function FolderDetailScreen() {
                           onToggleSelect={sel.toggleItem}
                           onPress={lifted ? undefined : openBudget}
                           isLast={index === total - 1}
+                          reorder={reorder}
                         />
                       )}
                     />

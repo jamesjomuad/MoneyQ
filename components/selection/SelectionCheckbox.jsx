@@ -25,7 +25,7 @@ export function SelectionCheckbox({
   onPress,
   accessibilityLabel,
   nested = false,
-  hitSlop = 8,
+  hitSlop = 11,
 }) {
   const { colors } = useTheme();
   const boxStyle = [

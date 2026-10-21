@@ -391,7 +391,7 @@ export default function BudgetsScreen() {
         // One row renderer for both the unified budget list and search results,
         // so folder and budget rows stay pixel-identical in every context.
         // Search rows keep pinning but never enter bulk-move selection.
-        const renderRow = (item, index, total, forSearch, lifted = false) => (
+        const renderRow = (item, index, total, forSearch, lifted = false, reorder = null) => (
           <Animated.View
             key={item.key}
             entering={introEnter(2 + Math.min(index, 4))}
@@ -401,6 +401,7 @@ export default function BudgetsScreen() {
                 folder={item.folder}
                 budgetCount={folderCounts.get(item.folder.id) ?? 0}
                 isLast={index === total - 1}
+                reorder={forSearch ? null : reorder}
                 onPress={
                   lifted
                     ? undefined
@@ -422,6 +423,7 @@ export default function BudgetsScreen() {
                 onToggleSelect={sel.toggleItem}
                 onPress={lifted ? undefined : openFolder}
                 isLast={index === total - 1}
+                reorder={forSearch ? null : reorder}
               />
             )}
           </Animated.View>
@@ -643,7 +645,7 @@ export default function BudgetsScreen() {
                             <Text variant="label" tone="primary" numberOfLines={1}>
                               {group.name.toUpperCase()} · {group.items.length}
                             </Text>
-                            <Icon name="chevronRight" size={14} color={colors.primary} />
+                            <Icon name="chevronRight" size={14} color={colors.primaryInk} />
                           </Pressable>
                           <Card padded={false}>
                             {group.items.map((transaction, index) => (
@@ -689,8 +691,8 @@ export default function BudgetsScreen() {
                       onLiftChange={setLiftedKey}
                       resolveTarget={resolveMixedTarget}
                       onReorder={handleReorder}
-                      renderItem={(item, index, total, lifted) =>
-                        renderRow(item, index, total, false, lifted)
+                      renderItem={(item, index, total, lifted, reorder) =>
+                        renderRow(item, index, total, false, lifted, reorder)
                       }
                     />
                   </Card>
@@ -703,7 +705,7 @@ export default function BudgetsScreen() {
                         accessibilityRole="button"
                         accessibilityLabel="Create a new budget"
                         onPress={() => router.push("/budget/form")}
-                        hitSlop={8}
+                        hitSlop={16}
                         style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
                       >
                         <Text variant="label" tone="primary">
