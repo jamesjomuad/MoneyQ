@@ -1,6 +1,7 @@
 import { StyleSheet, TextInput, View } from 'react-native';
 
 import { sanitizeAmount } from '../../utils/currency';
+import { ClearButton } from './ClearButton';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
@@ -31,6 +32,8 @@ export function AmountInput({
     if (!onChangeText) return;
     onChangeText(sanitizeAmount(text, decimalPlaces));
   }
+
+  const canClear = editable && typeof onChangeText === 'function' && Boolean(value);
 
   return (
     <View
@@ -80,6 +83,15 @@ export function AmountInput({
           centered && { flex: 0, minWidth: 44, textAlign: 'center' },
         ]}
       />
+      {canClear ? (
+        <ClearButton
+          label="Clear amount"
+          onPress={() => handleChange('')}
+          color={ink ?? colors.textMuted}
+          size={large ? 18 : 16}
+          style={{ marginLeft: spacing.sm }}
+        />
+      ) : null}
     </View>
   );
 }

@@ -1,10 +1,21 @@
 import { StyleSheet, TextInput, View } from 'react-native';
 
+import { ClearButton } from './ClearButton';
 import { Text } from './Text';
 import { useTheme } from './ThemeProvider';
 
-export function TextField({ label, hint, error, style, inputStyle, ...rest }) {
+export function TextField({ label, hint, error, style, inputStyle, clearable = true, ...rest }) {
   const { colors, spacing } = useTheme();
+  const { value, onChangeText, editable, multiline } = rest;
+  // Only a controlled, editable field with something in it gets the button;
+  // read-only and empty fields stay as they were.
+  const canClear =
+    clearable &&
+    editable !== false &&
+    typeof onChangeText === 'function' &&
+    value !== undefined &&
+    value !== null &&
+    String(value).length > 0;
 
   return (
     <View style={[{ marginBottom: spacing.lg }, style]}>
@@ -14,23 +25,46 @@ export function TextField({ label, hint, error, style, inputStyle, ...rest }) {
         </Text>
       ) : null}
 
-      <TextInput
-        placeholderTextColor={colors.textFaint}
-        selectionColor={colors.primary}
-        style={[
-          styles.input,
-          {
-            backgroundColor: colors.surfaceMuted,
-            borderColor: error ? colors.expense : colors.border,
-            borderRadius: 50,
-            color: colors.text,
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.md,
-          },
-          inputStyle,
-        ]}
-        {...rest}
-      />
+      <View style={styles.control}>
+        <TextInput
+          placeholderTextColor={colors.textFaint}
+          selectionColor={colors.primary}
+          style={[
+            styles.input,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: error ? colors.expense : colors.border,
+              borderRadius: 50,
+              color: colors.text,
+              paddingHorizontal: spacing.md,
+              paddingVertical: spacing.md,
+              // Reserve the trailing edge so the value never runs under the
+              // clear button.
+              paddingRight: canClear ? spacing.xxl + spacing.md : spacing.md,
+            },
+            inputStyle,
+          ]}
+          {...rest}
+        />
+
+        {canClear ? (
+          <View
+            style={[
+              styles.clearSlot,
+              { right: spacing.xs },
+              // Multi-line fields grow downwards, so the mark stays at the top
+              // of the first line instead of floating in the middle of the box.
+              multiline ? { justifyContent: 'flex-start', paddingTop: spacing.xs } : null,
+            ]}
+          >
+            <ClearButton
+              label={label ? `Clear ${label}` : 'Clear field'}
+              onPress={() => onChangeText('')}
+              color={colors.textMuted}
+            />
+          </View>
+        ) : null}
+      </View>
 
       {error ? (
         <Text variant="caption" tone="expense" style={{ marginTop: spacing.xs }}>
@@ -51,5 +85,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_500Medium',
     fontSize: 15,
     width: '100%',
+  },
+  control: {
+    position: 'relative',
+  },
+  clearSlot: {
+    position: 'absolute',
+    bottom: 0,
+    justifyContent: 'center',
+    top: 0,
   },
 });
