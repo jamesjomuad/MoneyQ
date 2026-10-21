@@ -414,7 +414,7 @@ export default function BudgetFormScreen() {
         )}
         <View style={styles.folderFieldText}>
           <Text variant="body">{selectedFolder ? selectedFolder.name : 'No folder'}</Text>
-          <Text variant="caption" tone="faint">
+          <Text variant="caption" tone="muted">
             {selectedFolder ? 'Grouped in Budgets' : 'Sits in the main budget list'}
           </Text>
         </View>
@@ -464,7 +464,7 @@ export default function BudgetFormScreen() {
       {editing ? (
         <Text
           variant="caption"
-          tone="faint"
+          tone="muted"
           style={{ marginTop: spacing.md, textAlign: "center" }}
         >
           Changes save automatically when you leave this screen.
@@ -494,8 +494,8 @@ export default function BudgetFormScreen() {
 
       <Text
         variant="caption"
-        tone="faint"
-        style={{ marginTop: spacing.md, color: colors.textFaint }}
+        tone="muted"
+        style={{ marginTop: spacing.md, color: colors.textMuted }}
       >
         Everything stays on this device.
       </Text>

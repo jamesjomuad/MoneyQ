@@ -60,40 +60,48 @@ export default function ReceiptImportScreen() {
   const receive = useCallback(async () => {
     if (!receiptShareService.supported) return;
     const generation = ++generationRef.current;
-    const shared = await collectSharedReceipt();
-    const text = String(shared.text ?? '');
-    if (text.trim() === '' && !shared.imageUri) {
-      // Nothing new arrived (a plain app resume, or a share the source app
-      // cancelled). Keep whatever this screen already prepared.
-      setStatus((current) => (ownedIdRef.current ? 'ready' : current === 'ready' ? current : 'empty'));
-      return;
-    }
+    try {
+      const shared = await collectSharedReceipt();
+      const text = String(shared.text ?? '');
+      if (text.trim() === '' && !shared.imageUri) {
+        // Nothing new arrived (a plain app resume, or a share the source app
+        // cancelled). Keep whatever this screen already prepared.
+        setStatus((current) => (ownedIdRef.current ? 'ready' : current === 'ready' ? current : 'empty'));
+        return;
+      }
 
-    // A fresh share replaces any record still owned here. One already
-    // handed off to the transaction form stays untouched.
-    if (!handedOffRef.current) discard();
+      // A fresh share replaces any record still owned here. One already
+      // handed off to the transaction form stays untouched.
+      if (!handedOffRef.current) discard();
 
-    const staged = shared.imageUri
-      ? await stageSharedImage(shared.imageUri, shared.mimeType)
-      : null;
-    if (!mountedRef.current || generation !== generationRef.current) {
-      // Screen unmounted or superseded mid-receive: leave no stray copy.
-      if (staged) removeStagedFile(staged);
-      return;
+      const staged = shared.imageUri
+        ? await stageSharedImage(shared.imageUri, shared.mimeType)
+        : null;
+      if (!mountedRef.current || generation !== generationRef.current) {
+        // Screen unmounted or superseded mid-receive: leave no stray copy.
+        if (staged) removeStagedFile(staged);
+        return;
+      }
+      const record = {
+        id: createId('import'),
+        text,
+        imageUri: staged,
+        previewUnavailable: Boolean(shared.imageUri) && !staged,
+        parsed: parseReceiptText(text),
+        createdAt: Date.now(),
+      };
+      ownedIdRef.current = record.id;
+      setPreviewFailed(false);
+      useReceiptImportStore.getState().setPending(record);
+      setStatus('ready');
+      loadBudgets();
+    } catch {
+      // A permission denial or unreadable URI during share collection must
+      // not strand the screen on its initial "loading" state forever.
+      if (mountedRef.current && generation === generationRef.current) {
+        setStatus('error');
+      }
     }
-    const record = {
-      id: createId('import'),
-      text,
-      imageUri: staged,
-      previewUnavailable: Boolean(shared.imageUri) && !staged,
-      parsed: parseReceiptText(text),
-      createdAt: Date.now(),
-    };
-    ownedIdRef.current = record.id;
-    setPreviewFailed(false);
-    useReceiptImportStore.getState().setPending(record);
-    setStatus('ready');
-    loadBudgets();
   }, [discard, loadBudgets]);
 
   // Cold start: +native-intent routed here already. Warm start: the share
@@ -170,6 +178,19 @@ export default function ReceiptImportScreen() {
     );
   }
 
+  if (status === 'error') {
+    return (
+      <EmptyState
+        icon="warning"
+        title="The receipt could not be received"
+        description="Sharing the receipt into the app failed — the file could not be read. Check the app's storage permissions and share it again."
+      >
+        <Button label="Try again" onPress={receive} />
+        <Button label="Back" variant="secondary" onPress={() => router.back()} style={{ marginTop: spacing.sm }} />
+      </EmptyState>
+    );
+  }
+
   if (status === 'empty' || !pending) {
     return (
       <EmptyState
@@ -226,9 +247,18 @@ export default function ReceiptImportScreen() {
 
         <SectionHeader title="Budget" />
         {budgets.length === 0 ? (
-          <Text variant="body" tone="muted">
-            No budgets yet — create one before importing this receipt.
-          </Text>
+          <>
+            <Text variant="body" tone="muted">
+              No budgets yet — create one before importing this receipt.
+            </Text>
+            <Button
+              label="Create budget"
+              icon="add"
+              variant="secondary"
+              onPress={() => router.push('/budget/form')}
+              style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}
+            />
+          </>
         ) : (
           <View style={{ gap: spacing.sm }}>
             {budgets.map((budget) => {
@@ -238,6 +268,7 @@ export default function ReceiptImportScreen() {
                   key={budget.id}
                   onPress={() => setSelectedBudgetId(budget.id)}
                   accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
                   style={({ pressed }) => [
                     styles.budgetRow,
                     {

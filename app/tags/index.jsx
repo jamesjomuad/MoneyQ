@@ -201,7 +201,7 @@ export default function TagsScreen() {
         {tags.length > 0 ? (
           <Text
             variant="caption"
-            tone="faint"
+            tone="muted"
             style={{ marginTop: spacing.sm }}
           >
             Deleting a tag keeps its transactions; only the tag reference is

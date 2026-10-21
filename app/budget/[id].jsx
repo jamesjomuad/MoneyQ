@@ -588,7 +588,7 @@ export default function BudgetDetailScreen() {
             tone="muted"
             style={{
               marginTop: spacing.xs,
-              ...(folderInk ? { color: folderInk, opacity: 0.85 } : null),
+              ...(folderInk ? { color: folderInk } : null),
             }}
           >
             {formatDateRange(budget.start_date, budget.end_date)}
@@ -613,7 +613,7 @@ export default function BudgetDetailScreen() {
               variant="caption"
               tone="muted"
               numberOfLines={1}
-              style={{ flexShrink: 1, ...(folderInk ? { color: folderInk, opacity: 0.85 } : null) }}
+              style={{ flexShrink: 1, ...(folderInk ? { color: folderInk } : null) }}
             >
               {budgetFolder ? `In “${budgetFolder.name}”` : 'Add to folder'}
             </Text>
@@ -642,7 +642,7 @@ export default function BudgetDetailScreen() {
           <Text
             variant="caption"
             tone="muted"
-            style={folderInk ? { marginTop: 6, color: folderInk, opacity: 0.85 } : { marginTop: 6 }}
+            style={folderInk ? { marginTop: 6, color: folderInk } : { marginTop: 6 }}
           >
             {Math.round(spentPercent)}% of income spent
           </Text>

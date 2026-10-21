@@ -278,7 +278,7 @@ export default function HomeScreen() {
       {ready ? (
         <View style={{ gap: spacing.lg }}>
           <Card>
-            <Text variant="label" tone="faint">
+            <Text variant="label" tone="muted">
               Remaining
             </Text>
             <Text

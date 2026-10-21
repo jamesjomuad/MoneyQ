@@ -241,7 +241,7 @@ function DatabaseErrorView({ message, onRetry }) {
         local storage is available.
       </Text>
       {message ? (
-        <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
+        <Text variant="caption" tone="muted" style={{ marginTop: spacing.sm }}>
           {message}
         </Text>
       ) : null}

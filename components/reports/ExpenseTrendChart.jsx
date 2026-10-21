@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
@@ -23,6 +23,21 @@ export function ExpenseTrendChart({ view, buckets = [], currency }) {
   // The screen remounts this chart (via key) whenever the view or period
   // changes, so the tapped-bar selection resets with fresh data.
   const [selectedId, setSelectedId] = useState(null);
+  const [rowWidth, setRowWidth] = useState(0);
+
+  // Monthly mode is 28-31 columns ≈ 11px wide each — far under the 44dp tap
+  // minimum. Instead of per-bar Pressables the whole row becomes one
+  // scrubbing responder: a tap or drag picks the nearest column, so every
+  // bar is reachable without pixel-perfect aim. Columns stay individually
+  // accessible for screen-reader exploration.
+  function pickBucketId(x) {
+    if (!rowWidth || buckets.length === 0) return null;
+    const index = Math.min(
+      buckets.length - 1,
+      Math.max(0, Math.floor((x / rowWidth) * buckets.length)),
+    );
+    return buckets[index]?.id ?? null;
+  }
 
   const max = buckets.reduce((peak, bucket) => Math.max(peak, bucket.amount), 0);
   if (buckets.length === 0 || max === 0) return null;
@@ -36,18 +51,29 @@ export function ExpenseTrendChart({ view, buckets = [], currency }) {
 
   return (
     <View>
-      <View style={[styles.row, { height: BAR_AREA + 22 }]}>
+      <View
+        onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={(event) => {
+          const id = pickBucketId(event.nativeEvent.locationX);
+          if (id) setSelectedId((current) => (current === id ? null : id));
+        }}
+        onResponderMove={(event) => {
+          const id = pickBucketId(event.nativeEvent.locationX);
+          if (id) setSelectedId(id);
+        }}
+        style={[styles.row, { height: BAR_AREA + 22 }]}
+      >
         {buckets.map((bucket, index) => {
           const isToday = bucket.id === today;
           const isSelected = bucket.id === selectedId;
           const showLabel =
             index % labelEvery === 0 || isToday || index === lastBucket;
           return (
-            <Pressable
+            <View
               key={bucket.id}
-              accessibilityRole="button"
+              accessible
               accessibilityLabel={`${bucket.periodLabel}, ${formatCurrency(bucket.amount, { currency })} spent`}
-              onPress={() => setSelectedId(isSelected ? null : bucket.id)}
               style={[
                 styles.column,
                 isSelected && { backgroundColor: colors.surfaceMuted },
@@ -64,7 +90,11 @@ export function ExpenseTrendChart({ view, buckets = [], currency }) {
                 ]}
               />
               {showLabel ? (
-                <Text variant={isToday ? 'label' : 'caption'} tone={isToday ? 'primary' : 'faint'} style={styles.label}>
+                <Text
+                  variant={isToday ? 'label' : 'caption'}
+                  tone={isToday ? 'primary' : 'muted'}
+                  style={styles.label}
+                >
                   {bucket.shortLabel}
                 </Text>
               ) : (
@@ -72,7 +102,7 @@ export function ExpenseTrendChart({ view, buckets = [], currency }) {
                   {'\u00A0'}
                 </Text>
               )}
-            </Pressable>
+            </View>
           );
         })}
       </View>
@@ -81,12 +111,12 @@ export function ExpenseTrendChart({ view, buckets = [], currency }) {
 
       <View style={[styles.detail, { minHeight: 18 }]}>
         {selected ? (
-          <Text variant="caption" tone="default">
+          <Text variant="caption" tone="default" accessibilityLiveRegion="polite">
             {selected.periodLabel} · {formatCurrency(selected.amount, { currency })}
           </Text>
         ) : (
-          <Text variant="caption" tone="faint">
-            Tap a bar for details
+          <Text variant="caption" tone="muted">
+            Tap or swipe across the bars for details
           </Text>
         )}
       </View>
@@ -122,7 +152,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   label: {
-    fontSize: 10,
+    fontSize: 11,
   },
   row: {
     alignItems: 'stretch',

@@ -195,7 +195,7 @@ export default function CalendarScreen() {
             <Text variant="label" tone="muted">
               Purchases
             </Text>
-            <Text variant="caption" tone="faint">
+            <Text variant="caption" tone="muted">
               breakdown items · not counted again
             </Text>
           </View>
@@ -255,7 +255,7 @@ export default function CalendarScreen() {
             <Text variant="label" tone="muted">
               Payments due
             </Text>
-            <Text variant="caption" tone="faint">
+            <Text variant="caption" tone="muted">
               all-day · parent schedule
             </Text>
           </View>

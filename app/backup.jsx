@@ -71,7 +71,7 @@ export default function BackupScreen() {
       <SectionHeader title="Export" />
       <Card>
         <Text variant="body">Backup file</Text>
-        <Text variant="caption" tone="faint" style={{ marginTop: 2 }}>
+        <Text variant="caption" tone="muted" style={{ marginTop: 2 }}>
           All budgets, budget folders, transactions, breakdown items, tags, reminders and settings as one
           JSON file. Nothing leaves your device unless you save or share it yourself.
         </Text>
@@ -113,7 +113,7 @@ export default function BackupScreen() {
         >
           <View style={styles.flex}>
             <Text variant="body">Import from a file</Text>
-            <Text variant="caption" tone="faint">
+            <Text variant="caption" tone="muted">
               Choose a Budgetarian backup to preview before anything changes
             </Text>
           </View>
@@ -228,7 +228,7 @@ export default function BackupScreen() {
                     ]}
                   >
                     <Text variant="body">{description.title}</Text>
-                    <Text variant="caption" tone="faint" style={{ marginTop: 2 }}>
+                    <Text variant="caption" tone="muted" style={{ marginTop: 2 }}>
                       {description.detail}
                     </Text>
                     <SegmentedControl

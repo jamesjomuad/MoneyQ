@@ -277,7 +277,7 @@ export function RecognizedTextSection({
                     <View style={styles.fieldText}>
                       <Text variant="label">{field.label}</Text>
                       {current ? (
-                        <Text variant="caption" tone="faint" numberOfLines={1}>
+                        <Text variant="caption" tone="muted" numberOfLines={1}>
                           Replaces “{current}”
                         </Text>
                       ) : null}

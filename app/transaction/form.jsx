@@ -1621,10 +1621,10 @@ export default function TransactionFormScreen() {
             />
             <Text
               variant="caption"
-              tone="faint"
+              tone="muted"
               style={{
                 marginTop: spacing.xs,
-                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
+                ...(summaryInk ? { color: summaryInk } : null),
               }}
             >
               Calculated from items · {items.length} item{items.length === 1 ? '' : 's'} ·{' '}
@@ -1655,10 +1655,10 @@ export default function TransactionFormScreen() {
             ) : null}
             <Text
               variant="caption"
-              tone="faint"
+              tone="muted"
               style={{
                 marginTop: spacing.xs,
-                ...(summaryInk ? { color: summaryInk, opacity: 0.85 } : null),
+                ...(summaryInk ? { color: summaryInk } : null),
               }}
             >
               {formatCurrency(toMinor(amount, currency), { currency })}
@@ -1713,8 +1713,8 @@ export default function TransactionFormScreen() {
           {budget?.start_date ? (
             <Text
               variant="caption"
-              tone="faint"
-              style={summaryInk ? { color: summaryInk, opacity: 0.85 } : undefined}
+              tone="muted"
+              style={summaryInk ? { color: summaryInk } : undefined}
             >
               {formatDateRange(budget.start_date, budget.end_date)}
             </Text>

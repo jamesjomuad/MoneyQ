@@ -154,7 +154,7 @@ export const TransactionRow = memo(function TransactionRow({
               {subtitle && subtitle !== title ? (
                 <Text
                   variant="caption"
-                  tone="faint"
+                  tone="muted"
                   numberOfLines={1}
                   style={{ marginTop: 1 }}
                 >
@@ -172,7 +172,7 @@ export const TransactionRow = memo(function TransactionRow({
             {metaText ? (
               <Text
                 variant="caption"
-                tone={payment === "unpaid" ? "warning" : payment ? "muted" : "faint"}
+                tone={payment === "unpaid" ? "warning" : "muted"}
                 numberOfLines={1}
                 style={{ fontVariant: ["tabular-nums"], marginTop: 1 }}
               >
@@ -223,7 +223,7 @@ export const TransactionRow = memo(function TransactionRow({
             { marginLeft: spacing.sm, opacity: pressed ? 0.6 : 1 },
           ]}
         >
-          <Icon name="trash" size={16} color={colors.textFaint} />
+          <Icon name="trash" size={16} color={colors.textMuted} />
         </Pressable>
       ) : null}
     </View>

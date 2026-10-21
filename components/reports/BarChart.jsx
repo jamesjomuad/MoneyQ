@@ -25,7 +25,7 @@ export function BarChart({ groups = [], currency }) {
   if (groups.length === 0 || max === 0) {
     return (
       <View style={[styles.empty, { paddingVertical: spacing.xl }]}>
-        <Text variant="body" tone="faint">
+        <Text variant="body" tone="muted">
           No income or expenses in this period.
         </Text>
       </View>
@@ -61,12 +61,19 @@ export function BarChart({ groups = [], currency }) {
               );
             })
           : groups.map((group, index) => (
-              <View key={`${group.label}-${index}`} style={styles.groupColumn}>
+              <View
+                key={`${group.label}-${index}`}
+                accessible
+                // The visible chart is decorative; exploration must speak the
+                // actual money values, not just bar proportions.
+                accessibilityLabel={`${group.label}: Income ${formatCurrency(group.income, { currency, hideDecimals: true })}, Expenses ${formatCurrency(group.expense, { currency, hideDecimals: true })}`}
+                style={styles.groupColumn}
+              >
                 <View style={styles.barRow}>
                   <Bar series="income" value={group.income} max={max} colors={colors} thin />
                   <Bar series="expense" value={group.expense} max={max} colors={colors} thin />
                 </View>
-                <Text variant="caption" tone="faint" style={styles.groupLabel}>
+                <Text variant="caption" tone="muted" style={styles.groupLabel}>
                   {group.label}
                 </Text>
               </View>
@@ -85,9 +92,11 @@ export function BarChart({ groups = [], currency }) {
 
 function Bar({ series, value, max, colors, thin = false, width, style }) {
   const height = value > 0 ? Math.max((value / max) * MAX_BAR, 4) : ZERO_STUB;
+  // Decorative fill: the surrounding column carries the accessible label
+  // ("March: Income ₱40,000, Expenses ₱12,300"), so the bar itself stays
+  // silent and no percent-of-tallest figure is ever announced.
   return (
     <View
-      accessibilityLabel={`${series === 'income' ? 'Income' : 'Expenses'}: ${Math.round((value / max) * 100)} percent of the tallest bar`}
       style={[
         styles.bar,
         {
@@ -136,7 +145,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   groupLabel: {
-    fontSize: 10,
+    fontSize: 11,
   },
   singleColumn: {
     alignItems: 'center',

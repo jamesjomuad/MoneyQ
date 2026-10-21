@@ -55,6 +55,9 @@ export function TagForm({ initial, submitting = false, onSave, onCancel }) {
               accessibilityState={{ selected: active }}
               accessibilityLabel={`Emoji ${choice}`}
               onPress={() => setEmoji(choice)}
+              // 38px cells sit under the 44dp minimum; hitSlop closes the gap
+              // without inflating the visual grid.
+              hitSlop={4}
               style={({ pressed }) => [
                 styles.emoji,
                 {
@@ -84,6 +87,8 @@ export function TagForm({ initial, submitting = false, onSave, onCancel }) {
               accessibilityState={{ selected: active }}
               accessibilityLabel={`Colour ${swatch}`}
               onPress={() => setColor(swatch)}
+              // 28px swatches need a generous slop to reach a 44dp target.
+              hitSlop={9}
               style={({ pressed }) => [
                 styles.swatch,
                 {
@@ -121,8 +126,9 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     height: 38,
     justifyContent: 'center',
-    marginRight: 6,
-    marginBottom: 6,
+    // 8dp clears the minimum separation between adjacent tap targets.
+    marginRight: 8,
+    marginBottom: 8,
     width: 38,
   },
   swatchRow: {
