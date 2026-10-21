@@ -285,7 +285,7 @@ export function SubTransactionSheet({
               accessibilityRole="button"
               accessibilityLabel="Add note"
               onPress={() => setNotesVisible(true)}
-              hitSlop={6}
+              hitSlop={9}
               style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, marginBottom: spacing.sm }]}
             >
               <Text variant="label" tone="primary">

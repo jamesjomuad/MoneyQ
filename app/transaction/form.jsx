@@ -1415,7 +1415,7 @@ export default function TransactionFormScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Clear payment due date"
                 onPress={() => setDueDate('')}
-                hitSlop={6}
+                hitSlop={9}
                 style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
               >
                 <Text variant="label" tone="primary">
@@ -1479,13 +1479,12 @@ export default function TransactionFormScreen() {
                   const broken =
                     !attachment.uri || failedAttachmentIds.has(attachment.id);
                   return (
-                    <Pressable
+                    // Row and remove button are siblings, not nested
+                    // pressables — nesting renders a button inside a button
+                    // on web and overlaps the hit boxes on native.
+                    <View
                       key={attachment.id}
-                      accessibilityRole="button"
-                      accessibilityLabel="View attachment"
-                      disabled={broken}
-                      onPress={() => setViewerUri(attachment.uri)}
-                      style={({ pressed }) => [
+                      style={[
                         styles.attachmentRow,
                         index > 0 && {
                           marginTop: spacing.sm,
@@ -1493,9 +1492,18 @@ export default function TransactionFormScreen() {
                           borderTopWidth: StyleSheet.hairlineWidth,
                           paddingTop: spacing.sm,
                         },
-                        !broken && { opacity: pressed ? 0.6 : 1 },
                       ]}
                     >
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="View attachment"
+                        disabled={broken}
+                        onPress={() => setViewerUri(attachment.uri)}
+                        style={({ pressed }) => [
+                          styles.attachmentOpen,
+                          !broken && { opacity: pressed ? 0.6 : 1 },
+                        ]}
+                      >
                       <View style={styles.attachmentThumb}>
                         {broken ? (
                           <View style={styles.attachmentMissing}>
@@ -1522,19 +1530,33 @@ export default function TransactionFormScreen() {
                           </Text>
                         ) : null}
                       </View>
+                      </Pressable>
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel="Remove attachment"
-                        hitSlop={8}
-                        onPress={() => void detachAttachment(attachment.id)}
+                        hitSlop={10}
+                        onPress={() =>
+                          Alert.alert(
+                            'Remove this receipt?',
+                            'The attached image is deleted from this transaction.',
+                            [
+                              { text: 'Keep', style: 'cancel' },
+                              {
+                                text: 'Remove',
+                                style: 'destructive',
+                                onPress: () => void detachAttachment(attachment.id),
+                              },
+                            ],
+                          )
+                        }
                         style={({ pressed }) => [
                           styles.attachmentRemove,
                           { opacity: pressed ? 0.55 : 1 },
                         ]}
                       >
-                        <Icon name="trash" size={16} color={colors.textFaint} />
+                        <Icon name="trash" size={16} color={colors.textMuted} />
                       </Pressable>
-                    </Pressable>
+                    </View>
                   );
                 })
               ) : (
@@ -1804,6 +1826,7 @@ function ReceiptViewer({ failed, onClose, uri }) {
     <Modal animationType="fade" onRequestClose={onClose} accessibilityViewIsModal visible>
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel="Close receipt preview"
         onPress={onClose}
         style={[styles.viewerBackdrop, { backgroundColor: colors.background }]}
       >
@@ -1812,6 +1835,7 @@ function ReceiptViewer({ failed, onClose, uri }) {
             accessibilityRole="button"
             accessibilityLabel="Close receipt preview"
             onPress={onClose}
+            hitSlop={10}
             style={[styles.viewerClose, { backgroundColor: colors.surfaceElevated }]}
           >
             <Icon name="close" size={20} color={colors.text} />
@@ -1889,6 +1913,7 @@ const styles = StyleSheet.create({
   },
   receiptActions: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 12 },
   attachmentRow: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingVertical: 2 },
+  attachmentOpen: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 10, minWidth: 0 },
   attachmentThumb: { width: 48, height: 48, borderRadius: 8, overflow: 'hidden' },
   attachmentImage: { width: '100%', height: '100%' },
   attachmentMissing: {

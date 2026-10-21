@@ -108,7 +108,10 @@ function MonthCalendarView({
                 accessibilityLabel={label}
                 accessibilityState={{ selected }}
                 onPress={() => onSelectDate(isoDate)}
-                style={styles.cell}
+                style={({ pressed }) => [
+                  styles.cell,
+                  pressed && { backgroundColor: colors.primarySoft },
+                ]}
               >
                 <View
                   style={[
@@ -144,6 +147,35 @@ function MonthCalendarView({
           })}
         </View>
       ))}
+
+      {/* The activity/reminder dots differ only by color — name them. */}
+      <View
+        style={{
+          alignItems: 'center',
+          flexDirection: 'row',
+          gap: spacing.xs,
+          marginTop: spacing.xs,
+        }}
+      >
+        <View
+          style={{ backgroundColor: colors.primary, borderRadius: 3, height: 6, width: 6 }}
+        />
+        <Text variant="caption" tone="muted">
+          transactions
+        </Text>
+        <View
+          style={{
+            backgroundColor: colors.warning,
+            borderRadius: 3,
+            height: 6,
+            marginLeft: spacing.sm,
+            width: 6,
+          }}
+        />
+        <Text variant="caption" tone="muted">
+          reminders
+        </Text>
+      </View>
 
       <View style={{ height: spacing.xs }} />
     </View>

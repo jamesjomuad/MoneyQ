@@ -96,6 +96,11 @@ export default function ReminderFormScreen() {
   // whose date and time were not touched is allowed (mirrors the repository
   // rule), so editing only the notes never traps the user on a past instant.
   const savedScheduleRef = useRef(null);
+  // Latched by the user-facing change handlers only (never hydration), so an
+  // unsaved reminder can be confirmed away on back gesture, hardware back or
+  // Cancel instead of vanishing silently — this modal has no native close.
+  const dirtyRef = useRef(false);
+  const savedRef = useRef(false);
   // Latches the moment the user picks a day themselves, so the parent-budget
   // default below can never overwrite a deliberate choice.
   const dateTouchedRef = useRef(false);
@@ -190,13 +195,55 @@ export default function ReminderFormScreen() {
   }, [status, date, time]);
 
   const leave = useCallback(() => {
+    savedRef.current = true;
     resetLinkSearch();
     if (navigation.canGoBack()) router.back();
     else router.replace('/calendar');
   }, [navigation, resetLinkSearch]);
 
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (savedRef.current || !dirtyRef.current) return;
+      event.preventDefault();
+      Alert.alert('Discard changes?', 'This reminder has not been saved yet.', [
+        { text: 'Keep editing', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            savedRef.current = true;
+            navigation.dispatch(event.data.action);
+          },
+        },
+      ]);
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  function requestLeave() {
+    if (!dirtyRef.current || savedRef.current) {
+      leave();
+      return;
+    }
+    Alert.alert('Discard changes?', 'This reminder has not been saved yet.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: leave },
+    ]);
+  }
+
+  function handleChangeTime(next) {
+    dirtyRef.current = true;
+    setTime(next);
+  }
+
+  function handleChangeNotes(next) {
+    dirtyRef.current = true;
+    setNotes(next);
+  }
+
   function handlePickDate(day) {
     dateTouchedRef.current = true;
+    dirtyRef.current = true;
     setDate(day);
   }
 
@@ -268,6 +315,7 @@ export default function ReminderFormScreen() {
   }
 
   function pickTransaction(transaction) {
+    dirtyRef.current = true;
     setTransactionId(transaction.id);
     setLinkedTransaction(transaction);
     setSearch('');
@@ -275,6 +323,7 @@ export default function ReminderFormScreen() {
   }
 
   function unlinkTransaction() {
+    dirtyRef.current = true;
     setTransactionId(null);
     setLinkedTransaction(null);
   }
@@ -325,12 +374,12 @@ export default function ReminderFormScreen() {
           label="Reminder Time"
           title="Reminder Time"
           value={time}
-          onChange={setTime}
+          onChange={handleChangeTime}
         />
         <TextField
           label="Notes"
           value={notes}
-          onChangeText={setNotes}
+          onChangeText={handleChangeNotes}
           placeholder="What do you need to remember?"
           multiline
           numberOfLines={3}
@@ -446,6 +495,14 @@ export default function ReminderFormScreen() {
         ) : null}
 
         {editing ? <Button label="Delete reminder" icon="trash" variant="danger" onPress={handleDelete} /> : null}
+
+        {/* The modal has no native close control; this is the explicit exit. */}
+        <Button
+          label="Cancel"
+          variant="secondary"
+          onPress={requestLeave}
+          style={editing ? { marginTop: spacing.md } : undefined}
+        />
       </View>
 
       {permission?.supported === false || permission?.granted === false ? (

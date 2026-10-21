@@ -31,14 +31,23 @@ export function FolderColorField({ value = null, onChange }) {
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Folder color: ${value ?? 'theme default'}`}
+        // Speak the brand name, not the raw hex ("#FF0000" is useless read
+        // aloud); unknown hexes are simply "custom color".
+        accessibilityLabel={`Folder color: ${
+          value
+            ? (brandPalette.find((brand) => brand.hex === value)?.name ?? 'custom color')
+            : 'theme default'
+        }`}
         onPress={() => setOpen(true)}
+        hitSlop={10}
         style={({ pressed }) => [
           styles.field,
           {
             backgroundColor: colors.surfaceMuted,
             borderColor: colors.border,
             borderRadius: 50,
+            minHeight: 44,
+            justifyContent: 'center',
             opacity: pressed ? 0.7 : 1,
           },
         ]}
@@ -215,10 +224,15 @@ function FolderColorSheet({ value, onChange, onClose }) {
             <Pressable
               accessibilityRole="button"
               onPress={() => setPending(null)}
-              hitSlop={6}
+              hitSlop={10}
               style={({ pressed }) => [
                 styles.resetRow,
-                { opacity: pressed ? 0.7 : 1, paddingHorizontal: spacing.lg },
+                {
+                  minHeight: 44,
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.7 : 1,
+                  paddingHorizontal: spacing.lg,
+                },
               ]}
             >
               <Text variant="label" tone="primary">

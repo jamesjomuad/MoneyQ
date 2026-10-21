@@ -199,6 +199,7 @@ function ArchivedBudgetRow({ budget, currency, isLast, busy, onRestore, onDelete
         accessibilityRole="button"
         accessibilityLabel={`Restore ${budget.name}`}
         disabled={busy}
+        hitSlop={8}
         onPress={() => onRestore(budget)}
         style={({ pressed }) => [
           styles.restoreButton,

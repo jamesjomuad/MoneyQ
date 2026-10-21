@@ -188,7 +188,11 @@ export default function ReportsScreen() {
               accessibilityLabel="Edit date range"
               onPress={() => setRangeOpen(true)}
               hitSlop={8}
-              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+              style={({ pressed }) => ({
+                minHeight: 44,
+                justifyContent: 'center',
+                opacity: pressed ? 0.6 : 1,
+              })}
             >
               <Text variant="label" tone="primary">
                 EDIT RANGE

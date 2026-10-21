@@ -645,7 +645,7 @@ export default function BudgetsScreen() {
                         >
                           <Pressable
                             accessibilityRole="button"
-                            accessibilityLabel={`Open folder ${group.name}`}
+                            accessibilityLabel={`Open budget ${group.name}`}
                             onPress={() =>
                               router.push({
                                 pathname: "/budget/[id]",

@@ -54,7 +54,15 @@ export function SelectionWrapper({
     selectableIds.length > 0 ? (
       <Pressable
         accessibilityRole="checkbox"
-        accessibilityLabel={parentState === true ? deselectLabel : selectLabel}
+        // RN has no "mixed" checked state yet: speak the indeterminate case
+        // through the label so "some selected" is not visual-only.
+        accessibilityLabel={
+          parentState === null
+            ? `${selectLabel}, some selected`
+            : parentState === true
+              ? deselectLabel
+              : selectLabel
+        }
         accessibilityState={{ checked: parentState === true }}
         onPress={toggleParent}
         hitSlop={8}

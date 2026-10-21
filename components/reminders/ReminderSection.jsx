@@ -169,10 +169,17 @@ function ReminderRow({ reminder, index, onPress, onRemove }) {
           accessibilityRole="button"
           accessibilityLabel="Remove reminder"
           onPress={onRemove}
-          hitSlop={8}
-          style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1, paddingLeft: spacing.sm })}
+          hitSlop={12}
+          style={({ pressed }) => ({
+            opacity: pressed ? 0.55 : 1,
+            paddingLeft: spacing.sm,
+            minWidth: 44,
+            minHeight: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
+          })}
         >
-          <Icon name="trash" size={16} color={colors.textFaint} />
+          <Icon name="trash" size={16} color={colors.textMuted} />
         </Pressable>
       ) : null}
     </Pressable>

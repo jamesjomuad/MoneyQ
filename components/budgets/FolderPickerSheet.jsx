@@ -112,8 +112,11 @@ function FolderOptionRow({ label, caption, folder = null, onPress, onClose, acce
         accessibilityLabel ?? (folder ? `Move to ${label}` : 'Move out of any folder')
       }
       onPress={() => {
-        onPress?.();
         onClose?.();
+        // The pick opens a confirmation Alert; firing it in the same tick as
+        // the sheet dismiss races the Modal teardown on Android and the Alert
+        // can be swallowed. Let the sheet close first.
+        setTimeout(() => onPress?.(), 0);
       }}
       style={({ pressed }) => [
         styles.option,

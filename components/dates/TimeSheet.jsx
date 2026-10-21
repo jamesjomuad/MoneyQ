@@ -7,7 +7,7 @@ import { Icon } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { useTheme } from '../ui/ThemeProvider';
 
-const ITEM_HEIGHT = 40;
+const ITEM_HEIGHT = 44;
 
 const HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
 const MINUTES = Array.from({ length: 60 }, (_, index) => index);

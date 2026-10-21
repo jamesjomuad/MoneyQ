@@ -132,7 +132,10 @@ export const BudgetCard = memo(function BudgetCard({ budget, onPress, onTogglePi
           accessibilityState={{ selected: pinned }}
           onPress={handleTogglePin}
           hitSlop={14}
-          style={pinned ? null : styles.pinDimmed}
+          style={({ pressed }) => [
+            !pinned && styles.pinDimmed,
+            pressed && { opacity: 0.45 },
+          ]}
         >
           <Icon name={pinned ? 'pinFilled' : 'pin'} size={16} color={chip.onSurface} />
         </Pressable>
@@ -172,6 +175,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   pinDimmed: {
-    opacity: 0.45,
+    // Keep the unpinned glyph above the 3:1 non-text contrast floor.
+    opacity: 0.6,
   },
 });

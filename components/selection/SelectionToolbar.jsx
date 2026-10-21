@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '../ui/Button';
 import { Text } from '../ui/Text';
@@ -15,6 +16,7 @@ import { useTheme } from '../ui/ThemeProvider';
  */
 export function SelectionToolbar({ count, onCancel, actions = [], cancelLabel = 'Cancel' }) {
   const { colors, radius, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
     <View
       style={[
@@ -23,7 +25,8 @@ export function SelectionToolbar({ count, onCancel, actions = [], cancelLabel = 
           backgroundColor: colors.surfaceElevated,
           borderColor: colors.border,
           gap: spacing.sm,
-          paddingBottom: Math.max(spacing.md, 4),
+          // Sit above the system navigation bar, not under it.
+          paddingBottom: Math.max(insets.bottom, spacing.md, 4),
           paddingHorizontal: spacing.lg,
           paddingTop: spacing.md,
         },

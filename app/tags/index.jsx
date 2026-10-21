@@ -112,7 +112,7 @@ export default function TagsScreen() {
               <Pressable
                 accessibilityRole="button"
                 onPress={openCreate}
-                hitSlop={8}
+                hitSlop={10}
               >
                 <Text variant="label" tone="primary">
                   Add tag
@@ -135,7 +135,7 @@ export default function TagsScreen() {
             <Pressable
               accessibilityRole="button"
               onPress={openCreate}
-              hitSlop={8}
+              hitSlop={10}
             >
               <Text variant="heading" tone="primary">
                 Add your first tag
@@ -175,9 +175,9 @@ export default function TagsScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Edit ${tag.name}`}
                   onPress={() => openEdit(tag)}
-                  hitSlop={8}
+                  hitSlop={10}
                   style={({ pressed }) => [
-                    { padding: 4, opacity: pressed ? 0.6 : 1 },
+                    { padding: 6, opacity: pressed ? 0.6 : 1 },
                   ]}
                 >
                   <Icon name="pencil" size={17} color={colors.textMuted} />
@@ -186,9 +186,9 @@ export default function TagsScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Delete ${tag.name}`}
                   onPress={() => confirmDelete(tag)}
-                  hitSlop={8}
+                  hitSlop={10}
                   style={({ pressed }) => [
-                    { padding: 4, opacity: pressed ? 0.6 : 1 },
+                    { padding: 6, opacity: pressed ? 0.6 : 1 },
                   ]}
                 >
                   <Icon name="trash" size={17} color={colors.expense} />
@@ -232,6 +232,6 @@ const styles = StyleSheet.create({
   rowActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 8,
   },
 });

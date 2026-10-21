@@ -219,7 +219,8 @@ function TagsDrawer({
                 accessibilityRole="button"
                 accessibilityLabel={`Clear tag filter for ${activeTag.name}`}
                 onPress={() => onSetActiveTag(null)}
-                hitSlop={8}
+                hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
               >
                 <Text variant="label" tone="primary">
                   Clear filter
@@ -504,6 +505,7 @@ export default function BudgetDetailScreen() {
                 ])
               }
               hitSlop={10}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
             >
               <Icon name="more" size={20} color={colors.text} />
             </Pressable>
@@ -600,6 +602,7 @@ export default function BudgetDetailScreen() {
             accessibilityRole="button"
             accessibilityLabel={budgetFolder ? `Move out of folder ${budgetFolder.name}` : 'Add this budget to a folder'}
             onPress={() => setFolderPickerOpen(true)}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
             style={({ pressed }) => [
               styles.folderRow,
               {

@@ -82,6 +82,8 @@ export default function SettingsScreen() {
 
       <SectionHeader title="Appearance" />
       <Card padded={false}>
+        {/* Group the radios so screen readers announce the shared context. */}
+        <View accessibilityRole="radiogroup" accessibilityLabel="Appearance">
         {APPEARANCE_OPTIONS.map((option, index) => {
           const isSelected = option.key === theme;
 
@@ -118,12 +120,14 @@ export default function SettingsScreen() {
             </Pressable>
           );
         })}
+        </View>
       </Card>
 
       <View style={{ height: spacing.xl }} />
 
       <SectionHeader title="Currency" />
       <Card padded={false}>
+        <View accessibilityRole="radiogroup" accessibilityLabel="Currency">
         {Object.values(CURRENCIES).map((option, index) => {
           const isSelected = option.code === currency;
 
@@ -160,6 +164,7 @@ export default function SettingsScreen() {
             </Pressable>
           );
         })}
+        </View>
       </Card>
 
       <View style={{ height: spacing.xl }} />
@@ -236,7 +241,7 @@ export default function SettingsScreen() {
               onPress={openDeviceSettings}
               style={({ pressed }) => [
                 styles.settingsLink,
-                { opacity: pressed ? 0.7 : 1 },
+                { minHeight: 44, justifyContent: 'center', opacity: pressed ? 0.7 : 1 },
               ]}
             >
               <View style={styles.settingsLinkRow}>
