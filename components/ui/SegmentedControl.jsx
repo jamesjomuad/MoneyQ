@@ -25,7 +25,8 @@ export function SegmentedControl({ options, value, onChange, style, dense = fals
   const [trackBox, setTrackBox] = useState(null);
   const activeIndex = options.findIndex((option) => option.value === value);
   const pad = spacing.xs;
-  const segWidth = trackBox ? (trackBox.width - pad * 2) / options.length : 0;
+  const segWidth =
+    trackBox && options.length ? (trackBox.width - pad * 2) / options.length : 0;
   const travelX = useSharedValue(0);
   const snappedRef = useRef(false);
 

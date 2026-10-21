@@ -17,7 +17,6 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { Button } from "../components/ui/Button";
-import { Screen } from "../components/ui/Screen";
 import { Text } from "../components/ui/Text";
 import { ThemeProvider, useTheme } from "../components/ui/ThemeProvider";
 import { ToastView } from "../components/ui/ToastView";
@@ -231,10 +230,21 @@ function LoadingView() {
 }
 
 function DatabaseErrorView({ message, onRetry }) {
-  const { spacing } = useTheme();
+  const { colors, spacing } = useTheme();
 
+  // This gate renders outside the navigator (as a sibling of <Stack>), so it
+  // must not use Screen — Screen reads the navigation state to decide its
+  // bottom inset, and there is none here. A static retry view suffices.
   return (
-    <Screen contentContainerStyle={styles.errorContent}>
+    <View
+      style={[
+        styles.centered,
+        {
+          backgroundColor: colors.background,
+          padding: spacing.xl,
+        },
+      ]}
+    >
       <Text variant="title">Could not open local storage</Text>
       <Text variant="body" tone="muted" style={{ marginTop: spacing.sm }}>
         Budgetarian keeps all of your data on this device, so it cannot start until
@@ -251,7 +261,7 @@ function DatabaseErrorView({ message, onRetry }) {
         onPress={onRetry}
         style={{ marginTop: spacing.lg }}
       />
-    </Screen>
+    </View>
   );
 }
 
@@ -259,10 +269,6 @@ const styles = StyleSheet.create({
   centered: {
     alignItems: "center",
     flex: 1,
-    justifyContent: "center",
-  },
-  errorContent: {
-    flexGrow: 1,
     justifyContent: "center",
   },
 });
