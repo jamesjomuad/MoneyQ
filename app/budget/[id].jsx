@@ -32,6 +32,7 @@ import { groupByDate } from '../../utils/calculations';
 import { formatCurrency } from '../../utils/currency';
 import { isHexColor, resolveFolderPalette } from '../../utils/colors';
 import { dayLabel, formatDateRange } from '../../utils/dates';
+import { effectivePaymentStatus } from '../../utils/paymentStatus';
 
 /** Parse a `#rgb`/`#rrggbb` theme color to [r, g, b]. */
 function hexToRgb(hex) {
@@ -322,6 +323,7 @@ export default function BudgetDetailScreen() {
   const load = useBudgetDetailStore((state) => state.load);
   const setActiveTag = useBudgetDetailStore((state) => state.setActiveTag);
   const removeTransaction = useBudgetDetailStore((state) => state.removeTransaction);
+  const updateTransaction = useBudgetDetailStore((state) => state.updateTransaction);
   const archiveMany = useBudgetsStore((state) => state.archiveMany);
   const moveToFolder = useBudgetsStore((state) => state.moveToFolder);
   const folders = useFoldersStore((state) => state.folders);
@@ -386,6 +388,55 @@ export default function BudgetDetailScreen() {
       );
     },
     [removeTransaction],
+  );
+
+  // Paid/Unpaid toggle: flips the expense's existing payment_status through the
+  // store's update flow (repository keeps every other field as stored, SQLite
+  // persists, and the store re-reads so the row and summary refresh together).
+  // Income and transfers have no payment status and never get the action.
+  const togglePaymentStatus = useCallback(
+    async (transaction, nextStatus) => {
+      try {
+        await updateTransaction({ id: transaction.id, paymentStatus: nextStatus });
+        showToast(nextStatus === 'paid' ? 'Marked as paid' : 'Marked as unpaid', 'success');
+      } catch (updateError) {
+        showToast(updateError?.message ?? 'Could not update the payment status.', 'error');
+      }
+    },
+    [updateTransaction],
+  );
+
+  // Swipe actions per row: existing actions, then Delete, then the Paid/Unpaid
+  // toggle. The label names the action that will happen, not the current state.
+  const buildTransactionActions = useCallback(
+    (transaction) => {
+      const actions = [
+        {
+          key: 'delete',
+          label: 'Delete',
+          icon: 'trash',
+          tone: 'destructive',
+          onPress: () => confirmDeleteTransaction(transaction),
+        },
+      ];
+      const payment = effectivePaymentStatus(transaction);
+      if (payment) {
+        const nextStatus = payment === 'paid' ? 'unpaid' : 'paid';
+        actions.push({
+          key: 'payment-status',
+          label: nextStatus === 'paid' ? 'Paid' : 'Unpaid',
+          icon: nextStatus === 'paid' ? 'paid' : 'clock',
+          tone: nextStatus === 'paid' ? 'success' : 'warning',
+          accessibilityLabel:
+            nextStatus === 'paid'
+              ? `Mark ${transaction.description || 'this transaction'} as paid`
+              : `Mark ${transaction.description || 'this transaction'} as unpaid`,
+          onPress: () => togglePaymentStatus(transaction, nextStatus),
+        });
+      }
+      return actions;
+    },
+    [confirmDeleteTransaction, togglePaymentStatus],
   );
 
   // The route ID is the identity of this screen. Until the store has data for
@@ -779,20 +830,12 @@ export default function BudgetDetailScreen() {
                   <Text variant="label" tone="muted" style={{ marginBottom: spacing.sm, marginTop: spacing.sm }}>
                     {dayLabel(group.date)}
                   </Text>
-                  <Card padded={false}>
+                  <Card padded={false} style={styles.rowsCard}>
                     {group.items.map((transaction, index) => (
                       <SwipeActionRow
                         key={transaction.id}
                         rowId={`budget-txn-${transaction.id}`}
-                        actions={[
-                          {
-                            key: 'delete',
-                            label: 'Delete',
-                            icon: 'trash',
-                            tone: 'destructive',
-                            onPress: () => confirmDeleteTransaction(transaction),
-                          },
-                        ]}
+                        actions={buildTransactionActions(transaction)}
                       >
                         <TransactionRow
                           transaction={transaction}
@@ -855,6 +898,9 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   centered: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: 24 },
+  // Transaction list card: clips its rows so each row's opaque swipe surface
+  // follows the card's rounded corners instead of squaring them off.
+  rowsCard: { overflow: 'hidden' },
   // The tags drawer sits behind the Remaining card in the pinned band: the
   // card's zIndex 2 wins, so the drawer reads as sliding out from under it.
   tagsDrawer: { zIndex: 1 },

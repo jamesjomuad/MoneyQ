@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 
@@ -13,7 +13,10 @@ import { useTheme } from './ThemeProvider';
  * follow platform conventions out of the box.
  *
  * It knows nothing about the data it wraps: the screen passes an `actions` array
- * ({ key, label, icon, onPress, tone }) and the row handles gesture + state only.
+ * ({ key, label, icon, onPress, tone, accessibilityLabel }) and the row handles
+ * gesture + state only.
+ * `tone` is semantic ('destructive' | 'warning' | 'success' | undefined) and is
+ * resolved to theme tokens here, never by callers.
  *
  * Coordination rules (managed here, not by callers):
  * - Only one row is open at a time — opening a row closes the previous one.
@@ -49,6 +52,23 @@ export function closeAllSwipeActions() {
   }
 }
 
+/**
+ * Semantic action tones mapped onto theme tokens. Unknown tones fall back to
+ * the neutral surface pill, so the component stays data-agnostic: screens pick
+ * a tone per action, the colors always come from the current theme.
+ */
+function useActionTones(colors) {
+  return useMemo(
+    () => ({
+      destructive: { background: colors.expenseSoft, ink: colors.expense },
+      warning: { background: colors.warningSoft, ink: colors.warning },
+      success: { background: colors.primarySoft, ink: colors.income },
+      default: { background: colors.surfaceMuted, ink: colors.text },
+    }),
+    [colors],
+  );
+}
+
 export function SwipeActionRow({
   rowId,
   actions = [],
@@ -60,7 +80,15 @@ export function SwipeActionRow({
   contentStyle,
 }) {
   const { colors, spacing } = useTheme();
+  const tones = useActionTones(colors);
   const autoId = useId();
+  // The content slides over the action panel (Swipeable renders actions
+  // BEHIND it), so its surface must be opaque or the buttons bleed through the
+  // row text mid-drag and while closing. Callers can override via contentStyle.
+  const surfaceStyle = useMemo(
+    () => [{ backgroundColor: colors.surface }, contentStyle],
+    [colors.surface, contentStyle],
+  );
   const id = rowId ?? autoId;
   const swipeRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -107,41 +135,37 @@ export function SwipeActionRow({
   const renderRightActions = useCallback(
     () => (
       <View style={[styles.actions, { backgroundColor: colors.surface }]}>
-        {actions.map((action) => (
-          <Pressable
-            key={action.key}
-            accessibilityRole="button"
-            accessibilityLabel={action.label}
-            style={({ pressed }) => [
-              styles.action,
-              {
-                paddingHorizontal: spacing.md,
-                backgroundColor: action.tone === 'destructive' ? colors.expenseSoft : colors.surfaceMuted,
-                opacity: pressed ? 0.75 : 1,
-              },
-            ]}
-            onPress={() => pressAction(action)}
-          >
-            <Icon
-              name={action.icon}
-              size={20}
-              color={action.tone === 'destructive' ? colors.expense : colors.text}
-            />
-            <Text
-              variant="caption"
-              numberOfLines={1}
-              style={{
-                marginTop: 2,
-                color: action.tone === 'destructive' ? colors.expense : colors.text,
-              }}
+        {actions.map((action) => {
+          const tone = tones[action.tone] ?? tones.default;
+          return (
+            <Pressable
+              key={action.key}
+              accessibilityRole="button"
+              accessibilityLabel={action.accessibilityLabel ?? action.label}
+              style={({ pressed }) => [
+                styles.action,
+                {
+                  paddingHorizontal: spacing.md,
+                  backgroundColor: tone.background,
+                  // Inset shadow on each button: the buttons read as pressed
+                  // pills inside the revealed strip (a shadow on the wrapper
+                  // would be hidden behind their solid backgrounds).
+                  boxShadow: `inset 0 2px 5px ${colors.shadow}`,
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+              onPress={() => pressAction(action)}
             >
-              {action.label}
-            </Text>
-          </Pressable>
-        ))}
+              <Icon name={action.icon} size={20} color={tone.ink} />
+              <Text variant="caption" numberOfLines={1} style={{ marginTop: 2, color: tone.ink }}>
+                {action.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     ),
-    [actions, colors.expense, colors.expenseSoft, colors.surface, colors.surfaceMuted, colors.text, pressAction, spacing],
+    [actions, colors.shadow, colors.surface, pressAction, spacing, tones],
   );
 
   return (
@@ -152,7 +176,7 @@ export function SwipeActionRow({
       onSwipeableOpen={handleOpen}
       onSwipeableWillClose={handleWillClose}
     >
-      <View style={[styles.surface, contentStyle]}>
+      <View style={[styles.surface, surfaceStyle]}>
         {children}
         {enabled && open ? (
           // Absorb taps while open so pressing the row closes it instead of navigating.
