@@ -2,6 +2,115 @@
 
 All notable changes to Budgetarian. Dates are local calendar days; newest first.
 
+## 2026-10-22
+
+### Added
+- Transaction rows in the Budget View answer to a swipe. Swiping a row left
+  reveals its trailing actions — the inline delete trash moved into the swipe
+  area (with its confirmation unchanged) and, right after it, a Paid/Unpaid
+  toggle for expenses. The button is named for the action it performs, not the
+  state you are in: a paid expense offers "Unpaid". Tapping writes through the
+  same store path as the transaction form, toasts the result, and updates the
+  row's payment badge without ever navigating into the editor. Swiping right or
+  tapping anywhere closes the row, and only one row can be open at a time.
+  Actions are compact theme-toned pills with an inset shadow, and the row's own
+  surface is now opaque so its text never bleeds into the buttons mid-swipe.
+- The transaction form's tag chips are ordered by recent use: the tag you
+  applied most recently sits first, less-used tags follow, and never-used tags
+  come last in name order. Recency is derived from existing transactions
+  (archived budgets excluded), so there is no new storage state to keep in
+  sync — the order simply refreshes each time the form loads.
+
+## 2026-10-21
+
+### Added
+- Every text input carries a clear button that appears while it holds text.
+- A recognized receipt chip can now be added to a description that already has
+  text instead of only replacing it: the offer is Add / Replace / Keep. Amount
+  and date keep their replace-only semantics. And a transaction that fails
+  validation on save finally says so — the create form, which previously did
+  nothing at all on an invalid save, now shows the field messages in a toast.
+
+### Changed
+- The audit sweep landed across the app: contrast raised and faint text
+  replaced wherever it dropped below readability, touch targets lifted to at
+  least 44 px (tag rows, reminder trash, calendar cells, chart bars, segmented
+  controls, the reports range editor and more), form errors are announced to
+  screen readers through live-region error text, selection and search controls
+  got truthful accessibility labels ("Open budget", indeterminate "some
+  selected"), destructive exits gained confirmations (delete budget, remove
+  attachment, unsaved reminder edits), and the receipt-import screen handles a
+  broken incoming share with a proper error state instead of a dead spinner.
+- The budget screen's tag drawer is renamed Insights, and the segmented
+  control's active option now glides between segments as one pill instead of
+  repainting backgrounds. The toast gained a tone icon, speaks its tone, wraps
+  long messages, and clears the floating tab bar.
+
+### Fixed
+- The tab-band context crash is repaired: expo-router 57 vendors its own
+  react-navigation, so the old `BottomTabBarHeightContext` resolved to
+  undefined and every reader threw on mount. A project-owned store, published
+  by the tab bar with its measured height, replaces it. The database error
+  screen no longer calls a navigator hook outside a navigator, and the
+  gliding pill guards against empty option lists. SDK patch bumps restore a
+  clean expo-doctor run.
+
+## 2026-10-19
+
+### Added
+- Home is now an insights dashboard, and budget management moved to a new
+  Budgets tab. Folders, budgets, multi-select, search, drag-to-reorder and
+  pinning all live on Budgets exactly where you learned to find them; Home
+  itself leads with the picture of your money rather than the list that
+  holds it.
+- The create action became a centered floating button on the Budgets tab,
+  replacing the notched raised circle inside the bar.
+
+### Changed
+- The bottom tab bar went icon-only with larger glyphs, giving the capsule a
+  quieter, calmer row.
+
+### Fixed
+- Archived budgets are fully quiet: their transactions and reminders no longer
+  appear in the Calendar, and the launch-time reminder resync stops re-arming
+  notifications for budgets you archived.
+- Reminder scheduling got scoped storage reads instead of pulling every
+  transaction row into memory and filtering it in JavaScript.
+
+## 2026-10-18
+
+### Added
+- The Botanical Green palette now drives every appearance mode, so System and
+  Light wear the same brand the MoneyQ theme introduced.
+- Each tag chip in the budget screen's drawer is edged with the tag's
+  configured colour — derived tints and shades that stay legible on both
+  surfaces.
+
+### Changed
+- The bottom tab bar capsule lifts clear of the screen edge instead of
+  sitting flush against it.
+
+### Fixed
+- The receipt share-import screen dropped its unused Detected card.
+- OCR that misreads the peso sign as a plain letter `P` now still recognizes
+  the amount: the parser treats a leading OCr'd "P" as ₱ before deciding.
+
+## 2026-10-17
+
+### Added
+- Home's select-all checkbox docks into the Archive row's left edge — the
+  three-state master (none / some / all) now lives on the row it controls,
+  while the Archive pill keeps the right. Other lists keep the head-of-list
+  checkbox.
+
+### Fixed
+- Archive and delete exits no longer risk the Android `ScreenStackFragment`
+  crash: each same-tick dismiss-and-replace navigation pair collapsed into a
+  single `dismissTo` with identical history.
+- Deleting a budget from its detail view archives it — the same reversible
+  soft delete the multi-select toolbar uses — instead of hard-deleting, with
+  a confirmation that says so plainly.
+
 ## 2026-10-16
 
 ### Added
@@ -56,6 +165,10 @@ All notable changes to Budgetarian. Dates are local calendar days; newest first.
   the part that could not shrink, so a long amount took the whole 48%-wide
   card and clipped the tag's emoji and name away; the label now owns its own
   line, with the amount on the line beneath it.
+- Recognized receipt lines map to chips one for one again: inner whitespace is
+  no longer collapsed, a short line like a bare `2` is kept, and a line the
+  receipt prints twice appears twice. Chips now follow the receipt in reading
+  order.
 
 ## 2026-10-15
 
