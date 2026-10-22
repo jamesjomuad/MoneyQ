@@ -62,6 +62,13 @@
             "multipleShareMimeTypes": ["image/*"]
           }
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Budgetarian uses the camera to photograph receipts for your transactions.",
+          "microphonePermission": false
+        }
       ]
     ],
     "extra": {

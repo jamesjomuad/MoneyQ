@@ -2,6 +2,21 @@
 
 All notable changes to Budgetarian. Dates are local calendar days; newest first.
 
+## 2026-10-23
+
+### Added
+- The Attachments section can use the camera. Adding a receipt on a new
+  transaction now offers two sources side by side — Take Photo and Choose
+  from Gallery — and both stay in reach while a receipt is staged, so
+  re-attaching replaces it through the same preview, OCR and save
+  lifecycle. On a saved transaction the add button asks the same question
+  before opening anything. A photographed receipt is staged and copied
+  exactly like a picked one: nothing is saved with the transaction until
+  you save it, the image lands in app-managed receipt storage rather than
+  staying in the camera's temp file, cancelling the camera leaves the
+  current attachment untouched, and if camera access is denied you get
+  plain guidance (with a Settings shortcut) instead of a dead end.
+
 ## 2026-10-22
 
 ### Added

@@ -51,6 +51,8 @@ const ICONS = {
   eyeOff: { ios: 'eye.slash', android: 'visibility_off', web: 'visibility_off' },
   archive: { ios: 'archivebox', android: 'archive', web: 'archive' },
   warning: { ios: 'exclamationmark.triangle', android: 'warning', web: 'warning' },
+  camera: { ios: 'camera', android: 'photo_camera', web: 'photo_camera' },
+  gallery: { ios: 'photo.on.rectangle', android: 'collections', web: 'collections' },
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

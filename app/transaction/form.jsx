@@ -67,7 +67,7 @@ import {
 } from '../../utils/receiptOcr';
 import { RecognizedTextSection } from '../../components/receipts/RecognizedTextSection';
 import { deleteReceiptFile, persistReceipt } from '../../services/receiptFiles';
-import { pickImagesAsync } from '../../services/fileService';
+import { pickImagesAsync, takePhotoAsync } from '../../services/fileService';
 import { useAttachmentStore } from '../../stores/attachmentStore';
 
 const TYPE_OPTIONS = [
@@ -702,7 +702,74 @@ export default function TransactionFormScreen() {
       Alert.alert('Could not attach the image', 'The picked image could not be read. Please try again.');
       return;
     }
-    setReceiptUri(staged);
+    replaceStagedReceipt(staged);
+  };
+
+  // Camera flow shared by the staged receipt and saved attachments: the
+  // CAMERA permission is asked only when the user chose Take Photo, a
+  // cancel changes nothing, and a denied permission is guided through the
+  // same Open Settings door the blocked-reminder flow already uses.
+  // Resolves the captured temp URI, or null to leave everything as it was.
+  const capturePhoto = async () => {
+    let result;
+    try {
+      result = await takePhotoAsync();
+    } catch (error) {
+      Alert.alert('Could not open the camera', error?.message ?? 'Please try again.');
+      return null;
+    }
+    if (result.status === 'cancelled') return null;
+    if (result.status === 'denied') {
+      if (result.canAskAgain) {
+        Alert.alert(
+          'Camera permission needed',
+          'Budgetarian needs the camera to photograph a receipt. Allow it on the next prompt, or choose from the gallery instead.',
+        );
+      } else {
+        Alert.alert(
+          'Camera is off',
+          'Allow camera access for Budgetarian in Settings to photograph receipts.',
+          [
+            { text: 'Open Settings', onPress: openDeviceSettings },
+            { text: 'Not now', style: 'cancel' },
+          ],
+        );
+      }
+      return null;
+    }
+    return result.uri;
+  };
+
+  // Staging a new receipt over a staged one (first attach or a replace)
+  // first drops the copy it displaces — the same cleanup the Remove button
+  // performs, including the pending-import pointer — so a replaced image
+  // never lingers in the cache, and a failed decode never marks the fresh
+  // image. The OCR effect sees the new URI and rescans on its own.
+  const replaceStagedReceipt = (nextUri) => {
+    const previous = receiptUri;
+    if (previous && previous !== nextUri) {
+      const { pending, setPending } = useReceiptImportStore.getState();
+      if (pending?.id === importRef.current?.id && pending.imageUri === previous) {
+        setPending({ ...pending, imageUri: null });
+      }
+      removeStagedFile(previous);
+    }
+    setReceiptFailed(false);
+    setReceiptUri(nextUri);
+  };
+
+  // A photographed receipt joins the staged flow through the same staging
+  // step as a picked one: copy under <cache>/receipt-imports, then the
+  // existing preview, OCR, cleanup-on-exit, and persistReceipt-on-save.
+  const handleTakeReceiptPhoto = async () => {
+    const uri = await capturePhoto();
+    if (!uri) return;
+    const staged = await stageSharedImage(uri, null);
+    if (!staged) {
+      Alert.alert('Could not attach the photo', 'The captured image could not be read. Please try again.');
+      return;
+    }
+    replaceStagedReceipt(staged);
   };
 
   // Attachments are immediate writes outside the autosave: pick images,
@@ -736,6 +803,33 @@ export default function TransactionFormScreen() {
           : `${failed} of ${uris.length} picked images could not be saved.`,
       );
     }
+  };
+
+  // A photographed attachment joins the saved transaction the same way a
+  // picked one does: attachImage copies the camera temp file into
+  // permanent receipt storage immediately, outside the field autosave.
+  const handleTakePhotoAttachment = async () => {
+    const uri = await capturePhoto();
+    if (!uri) return;
+    setAddingAttachments(true);
+    try {
+      await attachImage(transactionId, uri);
+    } catch {
+      Alert.alert('Could not attach the photo', 'The captured image could not be saved. Please try again.');
+    } finally {
+      setAddingAttachments(false);
+    }
+  };
+
+  // One door for both sources: every add affordance in the Attachments
+  // section asks Take Photo or Choose from Gallery before anything leaves
+  // the app. Replacing keeps working through remove + add, same choices.
+  const openAttachmentSource = () => {
+    Alert.alert('Add receipt image', undefined, [
+      { text: 'Take Photo', onPress: () => void handleTakePhotoAttachment() },
+      { text: 'Choose from Gallery', onPress: () => void handleAddAttachments() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const markAttachmentFailed = (id) =>
@@ -1250,9 +1344,11 @@ export default function TransactionFormScreen() {
           }}
         >
         {/* One section manages images on a new transaction: the staged
-            receipt — shared in or picked from the gallery — lives here,
-            titled and organized exactly like the saved transaction's
-            Attachments section, so the image never appears in two places.
+            receipt — shared in, photographed, or picked from the gallery —
+            lives here, titled and organized exactly like the saved
+            transaction's Attachments section, so the image never appears in
+            two places. Both source buttons stay in reach while a receipt is
+            staged, so re-attaching replaces it through the same lifecycle.
             Whatever OCR reads from it collapses directly beneath the
             preview, for review only; nothing is applied or saved
             automatically. Once the row is saved this staged copy becomes
@@ -1269,14 +1365,23 @@ export default function TransactionFormScreen() {
                 onRemove={handleRemoveReceipt}
                 onView={() => setViewerUri(receiptUri)}
               />
-            ) : (
+            ) : null}
+            <View style={[styles.attachOptions, receiptUri && { marginTop: spacing.md }]}>
               <Button
-                label="Attach receipt image"
+                label="Take Photo"
                 variant="secondary"
-                icon="bills"
-                onPress={handleAttachReceiptImage}
+                icon="camera"
+                onPress={handleTakeReceiptPhoto}
+                style={{ flex: 1 }}
               />
-            )}
+              <Button
+                label="Choose from Gallery"
+                variant="secondary"
+                icon="gallery"
+                onPress={handleAttachReceiptImage}
+                style={{ flex: 1 }}
+              />
+            </View>
 
             {receiptUri && ocr.status !== 'idle' ? (
               <View style={{ marginTop: spacing.md }}>
@@ -1502,7 +1607,7 @@ export default function TransactionFormScreen() {
                     accessibilityLabel="Add receipt image"
                     hitSlop={8}
                     disabled={addingAttachments}
-                    onPress={handleAddAttachments}
+                    onPress={openAttachmentSource}
                     style={({ pressed }) => [
                       styles.headerAction,
                       { opacity: pressed || addingAttachments ? 0.55 : 1 },
@@ -1610,7 +1715,7 @@ export default function TransactionFormScreen() {
                       accessibilityRole="button"
                       accessibilityLabel="Add receipt image"
                       disabled={addingAttachments}
-                      onPress={handleAddAttachments}
+                      onPress={openAttachmentSource}
                       style={({ pressed }) => [
                         styles.addCircle,
                         { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
@@ -1956,6 +2061,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   receiptActions: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 12 },
+  attachOptions: { flexDirection: 'row', gap: 8 },
   attachmentRow: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingVertical: 2 },
   attachmentOpen: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 10, minWidth: 0 },
   attachmentThumb: { width: 48, height: 48, borderRadius: 8, overflow: 'hidden' },

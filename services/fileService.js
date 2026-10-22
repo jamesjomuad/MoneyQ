@@ -8,6 +8,7 @@
  */
 
 import { Directory, File, Paths } from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 
 export const fileService = { supported: true };
@@ -98,4 +99,27 @@ export async function pickImagesAsync() {
   });
   if (canceled || !result) return null;
   return result.map((file) => file.uri);
+}
+
+/**
+ * System camera for receipt attachments, via expo-image-picker (the only
+ * first-party way to launch the camera; the file picker above cannot).
+ * Requests the CAMERA permission on demand — never anything unrelated —
+ * and returns an outcome instead of throwing for the expected non-results:
+ * `{ status: 'denied', canAskAgain }` when the user will not grant it,
+ * `{ status: 'cancelled' }` when they backed out of the camera (leaving
+ * any current attachment untouched), and `{ status: 'ok', uri }` after a
+ * capture. The uri is a temp file the caller must copy into managed
+ * storage; launch failures throw so the caller can announce them.
+ */
+export async function takePhotoAsync() {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    return { status: 'denied', canAskAgain: permission.canAskAgain };
+  }
+  const result = await ImagePicker.launchCameraAsync();
+  if (result.canceled || !result.assets || result.assets.length === 0) {
+    return { status: 'cancelled' };
+  }
+  return { status: 'ok', uri: result.assets[0].uri };
 }

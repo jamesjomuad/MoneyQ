@@ -24,3 +24,7 @@ export async function pickBackup() {
 export async function pickImagesAsync() {
   throw new Error('Picking images is not available in the browser preview.');
 }
+
+export async function takePhotoAsync() {
+  throw new Error('Taking photos is not available in the browser preview.');
+}
