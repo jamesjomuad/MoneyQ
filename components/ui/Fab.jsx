@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from './Icon';
@@ -31,9 +31,7 @@ export function Fab({ onPress, icon = 'add', accessibilityLabel = 'Add', bottomO
         },
       ]}
     >
-      <View>
-        <Icon name={icon} size={26} color={colors.onPrimary} />
-      </View>
+      <Icon name={icon} size={26} color={colors.onPrimary} />
     </Pressable>
   );
 }
