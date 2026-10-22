@@ -1,6 +1,7 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -19,6 +20,7 @@ import { FAB_SIZE, Fab } from '../../components/ui/Fab';
 import { Icon } from '../../components/ui/Icon';
 import { Screen, SectionHeader } from '../../components/ui/Screen';
 import { Stat } from '../../components/ui/Stat';
+import { SwipeActionRow, closeAllSwipeActions } from '../../components/ui/SwipeActionRow';
 import { Text } from '../../components/ui/Text';
 import { useTheme } from '../../components/ui/ThemeProvider';
 import { useBudgetDetailStore } from '../../stores/budgetDetailStore';
@@ -485,7 +487,10 @@ export default function BudgetDetailScreen() {
   }
 
   return (
-    <View style={styles.fill}>
+    // The route lives in the root stack (outside the tabs' gesture root), so
+    // Android needs its own GestureHandlerRootView above any SwipeActionRow —
+    // same per-screen pattern as app/folder/[id].jsx.
+    <GestureHandlerRootView style={styles.fill}>
       <Stack.Screen
         options={{
           title: budget.name,
@@ -766,28 +771,44 @@ export default function BudgetDetailScreen() {
               <Button label="Add transaction" icon="add" onPress={() => router.push({ pathname: '/transaction/form', params: { budgetId: budget.id } })} />
             </EmptyState>
           ) : (
-            groups.map((group) => (
-              <View key={group.date}>
-                <Text variant="label" tone="muted" style={{ marginBottom: spacing.sm, marginTop: spacing.sm }}>
-                  {dayLabel(group.date)}
-                </Text>
-                <Card padded={false}>
-                  {group.items.map((transaction, index) => (
-                    <TransactionRow
-                      key={transaction.id}
-                      transaction={transaction}
-                      tag={tagById.get(transaction.tag_id) ?? null}
-                      currency={currency}
-                      sharePercent={transaction.sharePercent}
-                      isFirst={index === 0}
-                      isLast={index === group.items.length - 1}
-                      onEdit={handleEditTransaction}
-                      onDelete={confirmDeleteTransaction}
-                    />
-                  ))}
-                </Card>
-              </View>
-            ))
+            // Any touch inside the list region dismisses a stray open swipe row
+            // (taps on the row itself are handled by its own close overlay).
+            <View onTouchStart={closeAllSwipeActions}>
+              {groups.map((group) => (
+                <View key={group.date}>
+                  <Text variant="label" tone="muted" style={{ marginBottom: spacing.sm, marginTop: spacing.sm }}>
+                    {dayLabel(group.date)}
+                  </Text>
+                  <Card padded={false}>
+                    {group.items.map((transaction, index) => (
+                      <SwipeActionRow
+                        key={transaction.id}
+                        rowId={`budget-txn-${transaction.id}`}
+                        actions={[
+                          {
+                            key: 'delete',
+                            label: 'Delete',
+                            icon: 'trash',
+                            tone: 'destructive',
+                            onPress: () => confirmDeleteTransaction(transaction),
+                          },
+                        ]}
+                      >
+                        <TransactionRow
+                          transaction={transaction}
+                          tag={tagById.get(transaction.tag_id) ?? null}
+                          currency={currency}
+                          sharePercent={transaction.sharePercent}
+                          isFirst={index === 0}
+                          isLast={index === group.items.length - 1}
+                          onEdit={handleEditTransaction}
+                        />
+                      </SwipeActionRow>
+                    ))}
+                  </Card>
+                </View>
+              ))}
+            </View>
           ))}
       </Screen>
 
@@ -816,7 +837,7 @@ export default function BudgetDetailScreen() {
           onClose={() => setFolderPickerOpen(false)}
         />
       ) : null}
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
