@@ -93,6 +93,22 @@ const OCR_IDLE = {
   assignments: { description: null, amount: null, date: null },
 };
 
+/**
+ * Tag chips ordered by most recent actual use, newest first; tags never used
+ * on a transaction fall to the end. A missing usage entry stands in as the
+ * empty string, so equal timestamps (and all unused tags) compare equal and
+ * the stable sort simply keeps the repository's existing name order. This is
+ * display-only: the tag library itself is untouched.
+ */
+function tagsByRecentUse(tags, lastUsedByTag) {
+  return [...tags].sort((a, b) => {
+    const aUsed = lastUsedByTag[a.id] ?? '';
+    const bUsed = lastUsedByTag[b.id] ?? '';
+    if (aUsed === bUsed) return 0;
+    return aUsed < bUsed ? 1 : -1;
+  });
+}
+
 /** Today minus `offset` days, as a local 'YYYY-MM-DD' value. */
 function offsetIso(offset) {
   const target = new Date();
@@ -383,6 +399,7 @@ export default function TransactionFormScreen() {
   const { colors, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
   const tags = useTagsStore((state) => state.tags);
+  const lastUsedByTag = useTagsStore((state) => state.lastUsedByTag);
   const loadTags = useTagsStore((state) => state.load);
   const addTransaction = useBudgetDetailStore((state) => state.addTransaction);
   const updateTransaction = useBudgetDetailStore((state) => state.updateTransaction);
@@ -918,6 +935,14 @@ export default function TransactionFormScreen() {
     refreshTagFades();
   }
 
+  // Recently-used tag chips first (see tagsByRecentUse). Derived once per
+  // data change, never per render; the store's mount-time load refreshes the
+  // usage map, so saves elsewhere can never leave this order stale.
+  const sortedTags = useMemo(
+    () => tagsByRecentUse(tags, lastUsedByTag),
+    [tags, lastUsedByTag],
+  );
+
   const stillLoading = Boolean(transactionId) && (isLoadingBudget || storeBudgetId !== budgetId);
 
   const outsidePeriod = periodStatus(date, budget, editing?.transaction_date);
@@ -1356,7 +1381,7 @@ export default function TransactionFormScreen() {
                 onLayout={handleTagLayout}
                 contentContainerStyle={styles.tagRow}
               >
-                {tags.map((tag) => (
+                {sortedTags.map((tag) => (
                   <Chip
                     key={tag.id}
                     label={tag.name}

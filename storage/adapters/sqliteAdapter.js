@@ -289,6 +289,22 @@ export function createSqliteAdapter(getDb) {
       return row?.total ?? 0;
     },
 
+    /**
+     * Most recent transaction date per tag, across every active budget —
+     * the Transaction form orders its tag chips by this. Same
+     * `deleted_at IS NULL` join as the other cross-budget reads, so archived
+     * budgets never influence the picker. Rows are `{ tag_id, last_used }`.
+     */
+    async listTagLastUsage() {
+      return query(
+        `SELECT t.tag_id AS tag_id, MAX(t.transaction_date) AS last_used
+           FROM transactions t
+           JOIN budgets b ON b.id = t.budget_id AND b.deleted_at IS NULL
+          WHERE t.tag_id IS NOT NULL
+          GROUP BY t.tag_id`,
+      );
+    },
+
     // --- transactions --------------------------------------------------
 
     async listTransactionsByBudget(budgetId) {

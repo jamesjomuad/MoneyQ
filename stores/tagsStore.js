@@ -4,19 +4,25 @@ import {
   countTransactionsUsingTag,
   createTag,
   deleteTag,
+  getTagLastUsageMap,
   getTags,
   updateTag,
 } from '../storage/repositories/tagRepository';
 
 export const useTagsStore = create((set, get) => ({
   tags: [],
+  /** tag id → most recent transaction date using that tag. */
+  lastUsedByTag: {},
   isLoading: true,
   error: null,
 
   load: async () => {
     set({ isLoading: true, error: null });
     try {
-      set({ tags: await getTags(), isLoading: false });
+      // One grouped read alongside the library: screens derive any
+      // usage-based ordering from this map without requerying per render.
+      const [tags, lastUsedByTag] = await Promise.all([getTags(), getTagLastUsageMap()]);
+      set({ tags, lastUsedByTag, isLoading: false });
     } catch (error) {
       set({ error, isLoading: false });
     }

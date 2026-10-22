@@ -19,6 +19,21 @@ export async function countTransactionsUsingTag(tagId) {
   return storage.countTransactionsUsingTag(tagId);
 }
 
+/**
+ * Maps tag id → the most recent date (YYYY-MM-DD) that tag was used on a
+ * transaction, derived from existing transaction rows across active budgets.
+ * Tags with no usage (or only usage on undated rows) are absent from the map.
+ */
+export async function getTagLastUsageMap() {
+  const rows = await storage.listTagLastUsage();
+  const usage = {};
+  for (const row of rows) {
+    if (!row || !row.tag_id || !row.last_used) continue;
+    usage[row.tag_id] = row.last_used;
+  }
+  return usage;
+}
+
 export async function createTag({ name, emoji, color } = {}) {
   const id = createId('tag');
   const timestamp = nowIso();

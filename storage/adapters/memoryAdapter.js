@@ -350,6 +350,24 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
       return store.transactions.filter((transaction) => transaction.tag_id === tagId).length;
     },
 
+    /**
+     * Mirrors the SQLite `listTagLastUsage` grouping: newest transaction_date
+     * per tag, skipping tags on archived budgets and rows with no usable
+     * date. Same `{ tag_id, last_used }` row shape.
+     */
+    async listTagLastUsage() {
+      const archived = archivedBudgetIds();
+      const latest = new Map();
+      for (const transaction of store.transactions) {
+        if (!transaction.tag_id || archived.has(transaction.budget_id)) continue;
+        const date = transaction.transaction_date;
+        if (!date) continue;
+        const previous = latest.get(transaction.tag_id);
+        if (previous === undefined || date > previous) latest.set(transaction.tag_id, date);
+      }
+      return [...latest].map(([tag_id, last_used]) => ({ tag_id, last_used }));
+    },
+
     // --- transactions --------------------------------------------------
 
     async listTransactionsByBudget(budgetId) {
