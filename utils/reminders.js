@@ -152,6 +152,27 @@ export function formatReminderWhen(date, time, { short = false } = {}) {
 export const FALLBACK_REMINDER_BODY = 'You have a scheduled reminder.';
 
 /**
+ * How far ahead a notification's "Remind Later" button pushes its reminder.
+ * The spec fixes ten minutes as the default for the direct action; picking a
+ * different duration stays an inside-the-app choice via the reminder editor.
+ */
+export const REMINDER_SNOOZE_MINUTES = 10;
+
+/**
+ * The local date + time pair a snooze lands on: `minutes` from the reference
+ * instant, read through local getters so midnight rollover moves the day
+ * forward exactly once and nothing crosses a timezone boundary.
+ */
+export function snoozeScheduleFrom({ minutes = REMINDER_SNOOZE_MINUTES, reference = new Date() } = {}) {
+  const when = new Date(reference.getTime() + minutes * 60_000);
+  const pad = (value) => String(value).padStart(2, '0');
+  return {
+    date: toIsoDate(when),
+    time: `${pad(when.getHours())}:${pad(when.getMinutes())}`,
+  };
+}
+
+/**
  * Cap for the notification body: a reminder note is a short line of memory
  * aid, not an essay. Anything longer is cut here so the OS never has to
  * render (or silently mangle) a wall of text.

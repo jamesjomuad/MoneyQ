@@ -5,6 +5,19 @@ All notable changes to Budgetarian. Dates are local calendar days; newest first.
 ## 2026-10-22
 
 ### Added
+- Reminder notifications answer back without opening the app. Every scheduled
+  reminder now carries two notification actions — "Complete" and
+  "Remind Later". Complete marks that one reminder done: its armed or showing
+  notification is dismissed, the row is stored as completed (never re-scheduled
+  by the launch resync), and the linked payment keeps its own Paid state
+  untouched. Remind Later is a ten-minute snooze from the moment you press:
+  the same row moves forward in time — note, transaction link and status all
+  ride through — the old trigger is cancelled so it can never fire, and one
+  fresh notification is armed in its place. Pressing either button twice, or
+  on a stale notification, is safe: duplicates are ignored and the schedule
+  queue means an action can never race the launch resync into arming the same
+  reminder twice. Choosing a duration stays inside the app (edit the reminder);
+  the button itself always takes the quick ten minutes.
 - Transaction rows in the Budget View answer to a swipe. Swiping a row left
   reveals its trailing actions — the inline delete trash moved into the swipe
   area (with its confirmation unchanged) and, right after it, a Paid/Unpaid

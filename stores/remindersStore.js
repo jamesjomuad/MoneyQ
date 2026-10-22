@@ -10,6 +10,7 @@ import {
   editReminder,
   removeReminder,
   resyncReminders,
+  snoozeReminder,
 } from '../services/reminderService';
 import {
   getReminder,
@@ -200,6 +201,13 @@ export const useRemindersStore = create((set, get) => {
 
     completeReminder: async (id) => {
       const outcome = await completeReminder(id);
+      await refreshOpenLists();
+      return outcome;
+    },
+
+    /** Pushes one reminder's schedule forward — the notification's "Remind Later". */
+    snoozeReminder: async (id, options) => {
+      const outcome = await snoozeReminder(id, options);
       await refreshOpenLists();
       return outcome;
     },

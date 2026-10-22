@@ -25,8 +25,34 @@ import {
   saveReminderNotification,
   updateReminder as updateReminderRow,
 } from '../storage/repositories/reminderRepository';
-import { buildReminderNotification, isRemindAtPast } from '../utils/reminders';
+import {
+  buildReminderNotification,
+  isRemindAtPast,
+  snoozeScheduleFrom,
+} from '../utils/reminders';
 import * as notifications from './notificationService';
+
+/**
+ * Everything that touches the schedule runs through one serial queue. A
+ * notification action (Complete / Remind Later) can land at the same moment
+ * the launch-time resync reads the rows — on a cold start they genuinely
+ * overlap. Serialization means the resync always sees the action's outcome
+ * instead of racing it, so a snoozed reminder can never end up with two
+ * armed notifications.
+ */
+let scheduleQueue = Promise.resolve();
+
+function runExclusive(task) {
+  const result = scheduleQueue.then(
+    () => task(),
+    () => task()
+  );
+  scheduleQueue = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
+}
 
 /**
  * Notification payload for one reminder row, rebuilt from stored data only:
@@ -193,15 +219,58 @@ export async function editReminder(id, { date, time, notes, transactionId, reque
 
 /**
  * Completes a reminder: cancels any pending notification and marks the row.
- * Never touches the linked transaction — a reminder's lifecycle is its own.
+ * Never touches the linked transaction — a reminder's lifecycle is its own,
+ * so completing here is NOT the same thing as marking a payment Paid.
+ * Idempotent: a repeated "Complete" action on an already-completed reminder
+ * changes nothing, which is what makes duplicate responses safe.
  */
 export async function completeReminder(id) {
   const existing = await getReminder(id);
   if (!existing) throw new Error('That reminder no longer exists.');
+  if (existing.status === 'completed') return { status: 'completed', reminder: existing };
   await cancelOwnedNotification(existing);
   await saveReminderNotification(existing, null);
   const row = await completeReminderRow(id);
   return { status: 'completed', reminder: row };
+}
+
+/**
+ * Snoozes one reminder without opening the app: the notification's "Remind
+ * Later" button pushes that same row ten minutes ahead. No new row and no
+ * new column — remind_date / remind_time / remind_at *are* the schedule —
+ * and the note, link, enabled flag and status all ride through untouched.
+ * The old notification is cancelled first, then the row moves, then a fresh
+ * single notification is armed from the actual moment of the action.
+ */
+export async function snoozeReminder(id, { minutes } = {}) {
+  return runExclusive(() => snoozeExclusive(id, minutes));
+}
+
+async function snoozeExclusive(id, minutes) {
+  const existing = await getReminder(id);
+  if (!existing) throw new Error('That reminder no longer exists.');
+  if (existing.status === 'completed' || existing.enabled !== 1) {
+    // Nothing to re-arm: leave completed and disabled rows exactly as they are.
+    return { status: 'skipped', reminder: existing };
+  }
+
+  await cancelOwnedNotification(existing);
+
+  const { date, time } = snoozeScheduleFrom({ minutes });
+  const row = await updateReminderRow(id, { date, time });
+
+  if (!notifications.isSupported) return { status: 'unsupported', reminder: row };
+
+  // The action only exists on a notification the OS already delivered, so
+  // permission is settled: read it, and never prompt from a notification tap.
+  const { permission, ok } = await resolvePermission(false);
+  if (!ok) {
+    await saveReminderNotification(row, null);
+    return { status: 'blocked', permission, reminder: row };
+  }
+
+  const outcome = await scheduleNow(row);
+  return { ...outcome, permission, reminder: row };
 }
 
 /** Cancels any notification the reminder owns, then removes the row. */
@@ -231,6 +300,10 @@ export async function cancelScheduledRemindersForBudget(budgetId) {
  * was cleared, or the app was reinstalled.
  */
 export async function resyncReminders() {
+  return runExclusive(resyncExclusive);
+}
+
+async function resyncExclusive() {
   if (!notifications.isSupported) return { scheduled: 0, cancelled: 0 };
 
   // Archived rows included: what is armed is decided by the reminder's own

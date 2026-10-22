@@ -24,6 +24,15 @@ const EXPO_GO_ANDROID = Platform.OS === 'android' && Constants.appOwnership === 
 export const isSupported = !EXPO_GO_ANDROID;
 export const REMINDER_CHANNEL_ID = 'reminders';
 
+/**
+ * One notification category carries the two reminder actions. Android renders
+ * the buttons from this stored category at display time and iOS mirrors it as
+ * a UNNotificationCategory, so scheduling only has to name the identifier.
+ */
+export const REMINDER_CATEGORY_ID = 'reminders';
+export const REMINDER_ACTION_COMPLETE = 'budgetarian.reminder.complete';
+export const REMINDER_ACTION_SNOOZE = 'budgetarian.reminder.snooze';
+
 const EXPONENT_GO_PUSH = 'was removed from Expo Go';
 
 function isExpoGoPushError(error) {
@@ -82,6 +91,27 @@ async function ensureChannel(Notifications) {
   }
 }
 
+let categoryReady = false;
+
+/**
+ * Registers the Complete / Remind Later action buttons once per process.
+ * The OS persists the category, so notifications scheduled now still show
+ * their actions after a restart even if this run never reached the call.
+ * Best-effort: without it the reminder simply arrives as a plain notification.
+ */
+async function ensureCategory(Notifications) {
+  if (!Notifications || categoryReady) return;
+  try {
+    await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY_ID, [
+      { identifier: REMINDER_ACTION_COMPLETE, buttonTitle: 'Complete' },
+      { identifier: REMINDER_ACTION_SNOOZE, buttonTitle: 'Remind Later' },
+    ]);
+    categoryReady = true;
+  } catch {
+    // Actions are an enhancement; delivery never depends on them.
+  }
+}
+
 /** Read-only: safe to call whenever the UI wants to display current status. */
 export async function getPermissionStatusAsync() {
   if (!isSupported) return UNSUPPORTED_STATUS;
@@ -126,13 +156,15 @@ export async function requestPermissionAsync() {
 /**
  * Schedules one notification at an exact local instant and returns the OS
  * identifier that can cancel it later. `data` rides along untouched so a tap
- * can find the transaction it came from.
+ * can find the transaction it came from, and the reminder category rides with
+ * it so every scheduled reminder shows its Complete / Remind Later actions.
  */
 export async function scheduleAsync({ title, body, data = {}, remindAt }) {
   if (!isSupported) return null;
   const Notifications = await getNotificationsModule();
   if (!Notifications) return null;
   await ensureChannel(Notifications);
+  await ensureCategory(Notifications);
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
@@ -140,6 +172,7 @@ export async function scheduleAsync({ title, body, data = {}, remindAt }) {
         body,
         data: { ...data, source: 'moneyq' },
         sound: true,
+        categoryIdentifier: REMINDER_CATEGORY_ID,
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -153,7 +186,12 @@ export async function scheduleAsync({ title, body, data = {}, remindAt }) {
   }
 }
 
-/** Never throws: cancelling something already gone is a success. */
+/**
+ * Never throws: cancelling something already gone is a success. An action can
+ * arrive while the notification is still on screen, and the OS keeps the same
+ * request identifier through delivery, so this also dismisses the displayed
+ * copy — a completed reminder must not keep sitting in the tray.
+ */
 export async function cancelAsync(notificationId) {
   if (!notificationId) return;
   if (!isSupported) return;
@@ -163,6 +201,11 @@ export async function cancelAsync(notificationId) {
     await Notifications.cancelScheduledNotificationAsync(notificationId);
   } catch {
     // Already delivered, already cancelled, or a wiped install.
+  }
+  try {
+    await Notifications.cancelDisplayedNotificationAsync(notificationId);
+  } catch {
+    // Not on screen: nothing to dismiss.
   }
 }
 

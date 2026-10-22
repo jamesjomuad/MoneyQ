@@ -13,6 +13,12 @@ export const isSupported = false;
 
 export const REMINDER_CHANNEL_ID = 'reminders';
 
+// Same identifiers as the native module; the tap handler branches on them,
+// and on web no response ever arrives so they only need to exist.
+export const REMINDER_CATEGORY_ID = 'reminders';
+export const REMINDER_ACTION_COMPLETE = 'budgetarian.reminder.complete';
+export const REMINDER_ACTION_SNOOZE = 'budgetarian.reminder.snooze';
+
 export async function getPermissionStatusAsync() {
   return { supported: false, granted: false, canAskAgain: false, status: 'unavailable' };
 }
