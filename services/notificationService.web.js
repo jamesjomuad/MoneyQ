@@ -35,6 +35,10 @@ export async function cancelAsync() {
   // Nothing was ever scheduled in a browser.
 }
 
+export async function initReminderDelivery() {
+  // No native prerequisites to warm up when there is nothing to deliver.
+}
+
 export async function listScheduledAsync() {
   return [];
 }

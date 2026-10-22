@@ -225,6 +225,10 @@ export async function editReminder(id, { date, time, notes, transactionId, reque
  * changes nothing, which is what makes duplicate responses safe.
  */
 export async function completeReminder(id) {
+  return runExclusive(() => completeExclusive(id));
+}
+
+async function completeExclusive(id) {
   const existing = await getReminder(id);
   if (!existing) throw new Error('That reminder no longer exists.');
   if (existing.status === 'completed') return { status: 'completed', reminder: existing };
@@ -275,6 +279,10 @@ async function snoozeExclusive(id, minutes) {
 
 /** Cancels any notification the reminder owns, then removes the row. */
 export async function removeReminder(id) {
+  return runExclusive(() => removeExclusive(id));
+}
+
+async function removeExclusive(id) {
   const existing = await getReminder(id);
   if (!existing) return 0;
   await cancelOwnedNotification(existing);

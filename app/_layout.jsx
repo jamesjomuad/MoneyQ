@@ -21,6 +21,7 @@ import { Text } from "../components/ui/Text";
 import { ThemeProvider, useTheme } from "../components/ui/ThemeProvider";
 import { ToastView } from "../components/ui/ToastView";
 import { NotificationTapHandler } from "../components/notifications/NotificationTapHandler";
+import { initReminderDelivery } from "../services/notificationService";
 import { initStorage } from "../storage/adapters/adapter";
 import { useAppStore } from "../stores/appStore";
 import { useRemindersStore } from "../stores/remindersStore";
@@ -138,10 +139,14 @@ function NavigationShell() {
   };
 
   // This shell only mounts once storage is ready and the persisted preferences
-  // (currency, appearance) are loaded by the gate above. Reconcile the
-  // reminders against the rows once per launch — an edit, a payment or a
-  // delete does its own cancel/schedule.
+  // (currency, appearance) are loaded by the gate above. Warm the notification
+  // plumbing first — display handler, channel, and the reminder action
+  // category — so an alarm that fires later in this session never waits on a
+  // setup call, and the stored category is refreshed every launch. Then
+  // reconcile the reminders against the rows once per launch — an edit, a
+  // payment or a delete does its own cancel/schedule.
   useEffect(() => {
+    void initReminderDelivery();
     useRemindersStore.getState().resyncOnLaunch();
   }, []);
 

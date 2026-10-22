@@ -95,9 +95,14 @@ let categoryReady = false;
 
 /**
  * Registers the Complete / Remind Later action buttons once per process.
- * The OS persists the category, so notifications scheduled now still show
- * their actions after a restart even if this run never reached the call.
- * Best-effort: without it the reminder simply arrives as a plain notification.
+ * Android renders the buttons by reading the persisted category record at
+ * display time, so the registration must be in the OS before a trigger
+ * fires — and it must be refreshed after an app update, because the stored
+ * record can become unreadable when a new build changes class names
+ * (upstream #50799: action buttons silently vanish after an update until the
+ * app is opened again). That is why `initReminderDelivery` re-registers at
+ * every launch instead of waiting for a save. Best-effort: without it the
+ * reminder simply arrives as a plain notification.
  */
 async function ensureCategory(Notifications) {
   if (!Notifications || categoryReady) return;
@@ -109,6 +114,28 @@ async function ensureCategory(Notifications) {
     categoryReady = true;
   } catch {
     // Actions are an enhancement; delivery never depends on them.
+  }
+}
+
+/**
+ * Warms every native prerequisite once per launch, off the save path: the
+ * in-app display handler, the Android channel, and the reminder action
+ * category. Delivery itself never depends on this call succeeding — the
+ * trigger lives in the OS — but doing the category write at launch means an
+ * alarm can render its buttons even if this process never reaches a save.
+ */
+export async function initReminderDelivery() {
+  if (!isSupported) return;
+  try {
+    const Notifications = await getNotificationsModule();
+    if (!Notifications) return;
+    await Promise.all([
+      ensureHandler(Notifications),
+      ensureChannel(Notifications),
+      ensureCategory(Notifications),
+    ]);
+  } catch {
+    // Best-effort warm-up; a later save still goes through the same guards.
   }
 }
 
@@ -157,14 +184,16 @@ export async function requestPermissionAsync() {
  * Schedules one notification at an exact local instant and returns the OS
  * identifier that can cancel it later. `data` rides along untouched so a tap
  * can find the transaction it came from, and the reminder category rides with
- * it so every scheduled reminder shows its Complete / Remind Later actions.
+ * it so every scheduled reminder shows its Complete / Remind Later actions —
+ * the category itself is registered at launch (`initReminderDelivery`), never
+ * awaited here, so no save path waits on a setup call it does not need.
  */
 export async function scheduleAsync({ title, body, data = {}, remindAt }) {
   if (!isSupported) return null;
   const Notifications = await getNotificationsModule();
   if (!Notifications) return null;
   await ensureChannel(Notifications);
-  await ensureCategory(Notifications);
+  void ensureCategory(Notifications); // launch warm-up already did this; belt-and-suspenders
   try {
     return await Notifications.scheduleNotificationAsync({
       content: {
