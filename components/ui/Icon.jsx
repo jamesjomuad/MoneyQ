@@ -64,7 +64,13 @@ export function Icon({ name, size = 22, color, style }) {
       name={mapping}
       tintColor={color ?? colors.text}
       size={size}
-      style={[{ width: size, height: size }, style]}
+      // expo-symbols lays its glyph Text inside this box with the default
+      // stretch alignment, which anchors the run to the start of the box.
+      // When the device font size differs from 100% the glyph scales but the
+      // box does not, and every icon gains a one-sided gap — extra space on
+      // the right. Centering both axes keeps the glyph in the middle of its
+      // own box no matter the text-scale setting.
+      style={[{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }, style]}
     />
   );
 }
