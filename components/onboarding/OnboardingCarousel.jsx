@@ -99,13 +99,15 @@ export function OnboardingCarousel() {
         showsHorizontalScrollIndicator={false}
         scrollEnabled={width > 0}
         onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-        onMomentumScrollEnd={(event) =>
-          setIndex(
-            Math.round(
-              event.nativeEvent.contentOffset.x / event.nativeEvent.layoutWidth,
-            ),
-          )
-        }
+        onMomentumScrollEnd={(event) => {
+          // The measured page width from onLayout is the divisor: the scroll
+          // event's own nativeEvent has no reliable width field, and dividing
+          // by undefined used to park the index at NaN — no dot ever lit and
+          // the button never turned into “Get started”.
+          if (width > 0) {
+            setIndex(Math.round(event.nativeEvent.contentOffset.x / width));
+          }
+        }}
         style={styles.pages}
       >
         {SLIDES.map((slide, slideIndex) => (
@@ -156,9 +158,9 @@ export function OnboardingCarousel() {
             <View
               key={slide.title}
               style={{
-                width: 8,
                 height: 8,
                 borderRadius: radius.pill,
+                width: dotIndex === index ? 20 : 8,
                 backgroundColor:
                   dotIndex === index ? colors.primary : colors.border,
               }}
