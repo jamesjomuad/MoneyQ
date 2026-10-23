@@ -28,6 +28,7 @@ export const changelogSections = [
       {
         "title": "Changed",
         "items": [
+          "The Add Transaction page now mirrors the Edit Transaction page: the Attachments section moved below Reminders to the same last position, and it wears the same section chrome — header with a single add action, card body, \"No attachments yet\" empty state — instead of the bare buttons at the top of the form. Take Photo and Choose from Gallery still stage the receipt, and the recognized-text review still collapses beneath the preview.",
           "The select-all checkbox moved off the utility row and now sits inline with the Budgets section header: folders are not selectable, so the parent checkbox belongs to the budgets section itself. Pressing it never folds or unfolds the header.",
           "The reminder notification's \"Complete\" button now takes you where the reminder belongs: after the completion is saved, a reminder linked to a live Budget opens that Budget's detail screen, and anything else — standalone reminders, Budgets archived or deleted since the alarm was set — lands on the Calendar. Tapping the notification body itself keeps opening the transaction or reminder form exactly as before."
         ]

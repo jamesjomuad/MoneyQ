@@ -832,6 +832,18 @@ export default function TransactionFormScreen() {
     ]);
   };
 
+  // The staged-receipt twin of openAttachmentSource: same sheet, same two
+  // doors, but the picked or photographed image stages onto the new
+  // transaction instead of attaching to a saved one. Choosing a second
+  // image replaces the staged one through the same cleanup lifecycle.
+  const openStagedReceiptSource = () => {
+    Alert.alert('Add receipt image', undefined, [
+      { text: 'Take Photo', onPress: () => void handleTakeReceiptPhoto() },
+      { text: 'Choose from Gallery', onPress: () => void handleAttachReceiptImage() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   const markAttachmentFailed = (id) =>
     setFailedAttachmentIds((previous) => new Set(previous).add(id));
 
@@ -1343,64 +1355,6 @@ export default function TransactionFormScreen() {
             paddingBottom: (transactionId ? 48 : barHeight) + keyboardHeight,
           }}
         >
-        {/* One section manages images on a new transaction: the staged
-            receipt — shared in, photographed, or picked from the gallery —
-            lives here, titled and organized exactly like the saved
-            transaction's Attachments section, so the image never appears in
-            two places. Both source buttons stay in reach while a receipt is
-            staged, so re-attaching replaces it through the same lifecycle.
-            Whatever OCR reads from it collapses directly beneath the
-            preview, for review only; nothing is applied or saved
-            automatically. Once the row is saved this staged copy becomes
-            a persistent attachment of the same name. */}
-        {!transactionId && (receiptUri || receiptShareService.supported) ? (
-          <>
-            <SectionHeader title="Attachments" />
-
-            {receiptUri ? (
-              <ReceiptPreview
-                failed={receiptFailed}
-                uri={receiptUri}
-                onFail={() => setReceiptFailed(true)}
-                onRemove={handleRemoveReceipt}
-                onView={() => setViewerUri(receiptUri)}
-              />
-            ) : null}
-            <View style={[styles.attachOptions, receiptUri && { marginTop: spacing.md }]}>
-              <Button
-                label="Take Photo"
-                variant="secondary"
-                icon="camera"
-                onPress={handleTakeReceiptPhoto}
-                style={{ flex: 1 }}
-              />
-              <Button
-                label="Choose from Gallery"
-                variant="secondary"
-                icon="gallery"
-                onPress={handleAttachReceiptImage}
-                style={{ flex: 1 }}
-              />
-            </View>
-
-            {receiptUri && ocr.status !== 'idle' ? (
-              <View style={{ marginTop: spacing.md }}>
-                <RecognizedTextSection
-                  assignments={ocr.assignments}
-                  chips={ocr.chips}
-                  error={ocr.error}
-                  status={ocr.status}
-                  values={{ description, amount, date: formatShortDate(date) }}
-                  onAssign={handleOcrAssign}
-                  onScanAgain={handleScanAgain}
-                />
-              </View>
-            ) : null}
-
-            <View style={{ height: spacing.lg }} />
-          </>
-        ) : null}
-
         <SectionHeader title="Description" />
         <TextField
           value={description}
@@ -1587,6 +1541,95 @@ export default function TransactionFormScreen() {
             onOpenSettings={openDeviceSettings}
           />
         )}
+
+        {/* Attachments (create mode) — the staged receipt: shared in,
+            photographed, or picked from the gallery. Same position and the
+            same section chrome as the saved transaction's Attachments —
+            header with one add action, Card body, empty state until the
+            first image lands — so Add and Edit read as one screen. The
+            header action and the empty-state circle both open the same
+            Take Photo / Choose from Gallery sheet; choosing again replaces
+            the staged image through the same cleanup lifecycle. Whatever
+            OCR reads collapses directly beneath the preview, for review
+            only; nothing is applied or saved automatically. Once the row
+            is saved this staged copy becomes a persistent attachment of
+            the same name. */}
+        {!transactionId && (receiptUri || receiptShareService.supported) ? (
+          <>
+            <View style={{ height: spacing.lg }} />
+            <SectionHeader
+              title="Attachments"
+              action={
+                Platform.OS !== 'web' ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Add receipt image"
+                    hitSlop={8}
+                    onPress={openStagedReceiptSource}
+                    style={({ pressed }) => [
+                      styles.headerAction,
+                      { opacity: pressed ? 0.55 : 1 },
+                    ]}
+                  >
+                    <Icon name="add" size={20} color={colors.primary} />
+                  </Pressable>
+                ) : null
+              }
+            />
+            {receiptUri ? (
+              <>
+                <ReceiptPreview
+                  failed={receiptFailed}
+                  uri={receiptUri}
+                  onFail={() => setReceiptFailed(true)}
+                  onRemove={handleRemoveReceipt}
+                  onView={() => setViewerUri(receiptUri)}
+                />
+
+                {ocr.status !== 'idle' ? (
+                  <View style={{ marginTop: spacing.md }}>
+                    <RecognizedTextSection
+                      assignments={ocr.assignments}
+                      chips={ocr.chips}
+                      error={ocr.error}
+                      status={ocr.status}
+                      values={{ description, amount, date: formatShortDate(date) }}
+                      onAssign={handleOcrAssign}
+                      onScanAgain={handleScanAgain}
+                    />
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              // ReceiptPreview already frames its own card, so only the
+              // empty state needs the section card the Edit page uses.
+              <Card>
+                <EmptyState icon="bills" title="No attachments yet">
+                  <View style={styles.emptyAction}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Add receipt image"
+                      onPress={openStagedReceiptSource}
+                      style={({ pressed }) => [
+                        styles.addCircle,
+                        { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
+                      ]}
+                    >
+                      <Icon name="add" size={26} color={colors.onPrimary} />
+                    </Pressable>
+                    <Text
+                      variant="label"
+                      tone="primary"
+                      style={{ marginTop: spacing.sm, textAlign: 'center' }}
+                    >
+                      Add a receipt image
+                    </Text>
+                  </View>
+                </EmptyState>
+              </Card>
+            )}
+          </>
+        ) : null}
 
         {/* Attachments — every image attached to this saved transaction,
             read from permanent document storage (never the share-import
@@ -2061,7 +2104,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   receiptActions: { flexDirection: 'row', gap: 8, justifyContent: 'center', marginTop: 12 },
-  attachOptions: { flexDirection: 'row', gap: 8 },
   attachmentRow: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingVertical: 2 },
   attachmentOpen: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 10, minWidth: 0 },
   attachmentThumb: { width: 48, height: 48, borderRadius: 8, overflow: 'hidden' },
