@@ -221,6 +221,13 @@ export default function BudgetsScreen() {
     [confirmBulkArchive],
   );
 
+  // The two list sections fold independently — the same in-memory pattern as
+  // the budget detail's transaction section: no persistence, both open by
+  // default, collapsing only stops rendering rows (selections live in the
+  // store below and survive either way).
+  const [foldersOpen, setFoldersOpen] = useState(true);
+  const [budgetsOpen, setBudgetsOpen] = useState(true);
+
   // Drag-and-drop reordering: `liftedKey` is the row currently held by a
   // long-press drag (null while idle). The list scroll locks while it is set
   // — the sanctioned Android pattern — and edge auto-scroll drives the list
@@ -380,59 +387,36 @@ export default function BudgetsScreen() {
     return { folderCounts: counts, ungrouped: ungroupedBudgets };
   }, [budgets]);
 
-  // One unified budget list: every folder, then the ungrouped budgets, each in
-  // its existing store order. This is presentation only — no re-sorting, no
-  // grouping headers, and grouped budgets still live only inside their folder.
-  const listItems = useMemo(() => {
-    const items = [];
-    for (const folder of folders) {
-      items.push({ kind: 'folder', key: `f_${folder.id}`, folder });
-    }
-    for (const budget of ungrouped) {
-      items.push({ kind: 'budget', key: `b_${budget.id}`, budget });
-    }
-    return items;
-  }, [folders, ungrouped]);
-
-  // Mixed-list guard for drag: the unified list is folders-then-budgets, and
-  // each kind persists positions only within its own scope. A dragged row
-  // may therefore only land inside its own block — folders stay above the
-  // divider, budgets below — so the candidate splice index gets clamped to
-  // the block boundaries before the drop commits.
-  const resolveMixedTarget = useCallback(
-    (item, fromIndex, candidateIndex, list) => {
-      const firstBudget = list.findIndex((x) => x.kind === 'budget');
-      if (firstBudget === -1) return candidateIndex; // folders only
-      if (item.kind === 'folder') {
-        return Math.min(candidateIndex, firstBudget - 1);
-      }
-      return Math.max(candidateIndex, firstBudget);
-    },
-    [],
+  // The main list is split into its two sections: folders, then the ungrouped
+  // budgets, each in its existing store order. Grouped budgets still live only
+  // inside their folder, so nothing appears twice.
+  const folderItems = useMemo(
+    () => folders.map((folder) => ({ kind: 'folder', key: `f_${folder.id}`, folder })),
+    [folders],
+  );
+  const budgetItems = useMemo(
+    () => ungrouped.map((budget) => ({ kind: 'budget', key: `b_${budget.id}`, budget })),
+    [ungrouped],
   );
 
-  // The drop target is an index in the mixed list; translate it into the
-  // row's index within its own kind in the FINAL ordering, which is exactly
-  // what the per-scope repositories (moveFolder / reorderBudget) expect.
-  const handleReorder = useCallback(
+  // Selection stays one provider over the whole page: the combined item list
+  // is what eligibility sees, so collapsing a section never changes the
+  // selectable universe and selected budgets keep their ids either way.
+  const listItems = useMemo(
+    () => [...folderItems, ...budgetItems],
+    [budgetItems, folderItems],
+  );
+
+  // Drag-and-drop is section-local now: a folder only drags among folders and
+  // an ungrouped budget only among budgets, so the drop index already IS the
+  // index within the row's own scope — no cross-block clamping needed, and
+  // each handler hands its per-scope repository exactly what it expects.
+  const handleFolderReorder = useCallback(
     async (item, targetIndex) => {
-      const from = listItems.findIndex((x) => x.key === item.key);
+      const from = folderItems.findIndex((x) => x.key === item.key);
       if (from === -1 || targetIndex === from) return;
-      const next = [...listItems];
-      const [moved] = next.splice(from, 1);
-      next.splice(targetIndex, 0, moved);
       try {
-        if (moved.kind === 'folder') {
-          const idx = next
-            .filter((x) => x.kind === 'folder')
-            .findIndex((x) => x.key === moved.key);
-          await moveFolder(moved.folder.id, idx);
-        } else {
-          const idx = next
-            .filter((x) => x.kind === 'budget')
-            .findIndex((x) => x.key === moved.key);
-          await reorderBudget(moved.budget.id, idx);
-        }
+        await moveFolder(item.folder.id, targetIndex);
       } catch (error) {
         showToast(
           error?.message ?? 'Could not reorder. Please try again.',
@@ -440,7 +424,23 @@ export default function BudgetsScreen() {
         );
       }
     },
-    [listItems, moveFolder, reorderBudget],
+    [folderItems, moveFolder],
+  );
+
+  const handleBudgetReorder = useCallback(
+    async (item, targetIndex) => {
+      const from = budgetItems.findIndex((x) => x.key === item.key);
+      if (from === -1 || targetIndex === from) return;
+      try {
+        await reorderBudget(item.budget.id, targetIndex);
+      } catch (error) {
+        showToast(
+          error?.message ?? 'Could not reorder. Please try again.',
+          'error',
+        );
+      }
+    },
+    [budgetItems, reorderBudget],
   );
 
   const handleEditTransaction = useCallback((entry) => {
@@ -468,6 +468,32 @@ export default function BudgetsScreen() {
         // so folder and budget rows stay pixel-identical in every context.
         // Search rows keep pinning but never enter bulk-move selection.
         const renderRow = (item, index, total, forSearch, lifted = false, reorder = null) => {
+          const entering = introEnter(2 + Math.min(index, 4));
+
+          if (item.kind === 'folder') {
+            return (
+              <Animated.View key={item.key} entering={entering}>
+                <FolderGroupCard
+                  folder={item.folder}
+                  budgetCount={folderCounts.get(item.folder.id) ?? 0}
+                  isLast={index === total - 1}
+                  reorder={forSearch ? null : reorder}
+                  onPress={
+                    lifted
+                      ? undefined
+                      : () =>
+                          router.push({
+                            pathname: "/folder/[id]",
+                            params: { id: item.folder.id },
+                          })
+                  }
+                />
+              </Animated.View>
+            );
+          }
+
+          // Budget rows only from here: touching `item.budget` before the kind
+          // check would crash on folder items.
           const budgetCard = (
             <BudgetCard
               budget={item.budget}
@@ -484,27 +510,8 @@ export default function BudgetsScreen() {
           );
 
           return (
-            <Animated.View
-              key={item.key}
-              entering={introEnter(2 + Math.min(index, 4))}
-            >
-              {item.kind === 'folder' ? (
-                <FolderGroupCard
-                  folder={item.folder}
-                  budgetCount={folderCounts.get(item.folder.id) ?? 0}
-                  isLast={index === total - 1}
-                  reorder={forSearch ? null : reorder}
-                  onPress={
-                    lifted
-                      ? undefined
-                      : () =>
-                          router.push({
-                            pathname: "/folder/[id]",
-                            params: { id: item.folder.id },
-                          })
-                  }
-                />
-              ) : forSearch ? (
+            <Animated.View key={item.key} entering={entering}>
+              {forSearch ? (
                 // Search hits stay plain: the swipe action belongs to the
                 // budget list itself, not to every rendering of a card.
                 budgetCard
@@ -784,23 +791,59 @@ export default function BudgetsScreen() {
                       swipe row (taps on the row itself are handled by its own
                       close overlay) — same pattern as the budget detail. */}
                   <View onTouchStart={closeAllSwipeActions}>
-                    <Card padded={false} style={{ marginBottom: spacing.sm }}>
-                      <DraggableRows
-                        items={listItems}
-                        disabled={sel.selectionMode}
-                        scroll={dragScroll}
-                        onLiftChange={setLiftedKey}
-                        resolveTarget={resolveMixedTarget}
-                        onReorder={handleReorder}
-                        renderItem={(item, index, total, lifted, reorder) =>
-                          renderRow(item, index, total, false, lifted, reorder)
-                        }
-                      />
-                    </Card>
+                    {folderItems.length > 0 ? (
+                      <>
+                        <SectionHeader
+                          title={`Folders · ${folderItems.length}`}
+                          fontSize={14}
+                          collapsed={!foldersOpen}
+                          onToggle={() => setFoldersOpen((open) => !open)}
+                        />
+                        {foldersOpen ? (
+                          <Card padded={false} style={{ marginBottom: spacing.sm }}>
+                            <DraggableRows
+                              items={folderItems}
+                              disabled={sel.selectionMode}
+                              scroll={dragScroll}
+                              onLiftChange={setLiftedKey}
+                              onReorder={handleFolderReorder}
+                              renderItem={(item, index, total, lifted, reorder) =>
+                                renderRow(item, index, total, false, lifted, reorder)
+                              }
+                            />
+                          </Card>
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    {/* The budgets section always shows: it is the page's
+                        subject, and a folded or empty "BUDGETS · 0" header
+                        still tells the user where they are. The create entry
+                        below it is the established empty-state affordance. */}
+                    <SectionHeader
+                      title={`Budgets · ${budgetItems.length}`}
+                      fontSize={14}
+                      collapsed={!budgetsOpen}
+                      onToggle={() => setBudgetsOpen((open) => !open)}
+                    />
+                    {budgetsOpen ? (
+                      <Card padded={false} style={{ marginBottom: spacing.sm }}>
+                        <DraggableRows
+                          items={budgetItems}
+                          disabled={sel.selectionMode}
+                          scroll={dragScroll}
+                          onLiftChange={setLiftedKey}
+                          onReorder={handleBudgetReorder}
+                          renderItem={(item, index, total, lifted, reorder) =>
+                            renderRow(item, index, total, false, lifted, reorder)
+                          }
+                        />
+                      </Card>
+                    ) : null}
                   </View>
 
                   {/* The Plus action: the same create entry the old Home offered,
-                      now sitting under the single unified list. */}
+                      now sitting under the sectioned lists. */}
                   {ungrouped.length === 0 ? (
                     <View style={styles.listActions}>
                       <Pressable

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The Budgets page now shows two independently collapsible sections —
+  Folders and Budgets — each with a foldable count header following the
+  budget detail's transaction-section pattern. Selection, bulk actions,
+  per-section drag-to-reorder, and swipe-to-delete carry over unchanged.
 - Swipe-to-delete on budget rows. Swiping a budget left in the Budgets list
   reveals a single Delete action, matching how transaction rows swipe. Delete
   keeps the established archive rule: the budget moves to Archive with its
