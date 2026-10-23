@@ -87,11 +87,6 @@ export default function SettingsScreen() {
 
   return (
     <Screen topInset>
-      {/* <ScreenTitle
-        title="Settings"
-        subtitle={isPreview ? 'Browser preview — sample data, not saved' : 'Preferences are stored on this device'}
-      /> */}
-
       <SectionHeader title="Appearance" />
       <Card padded={false}>
         {/* Group the radios so screen readers announce the shared context. */}
@@ -124,11 +119,13 @@ export default function SettingsScreen() {
                 </Text>
               </View>
 
-              {isSelected ? (
-                <Text variant="heading" tone="primary">
-                  ✓
-                </Text>
-              ) : null}
+              {/* Rendered even when unselected (transparent) so the row
+                  content never shifts — and a real glyph, not a text ✓. */}
+              <Icon
+                name="check"
+                size={18}
+                color={isSelected ? colors.primary : 'transparent'}
+              />
             </Pressable>
           );
         })}
@@ -162,7 +159,7 @@ export default function SettingsScreen() {
       <SectionHeader title="Currency" />
       <Card padded={false}>
         <View accessibilityRole="radiogroup" accessibilityLabel="Currency">
-        {Object.values(CURRENCIES).map((option, index) => {
+        {Object.values(CURRENCIES).map((option, index, options) => {
           const isSelected = option.code === currency;
 
           return (
@@ -176,7 +173,7 @@ export default function SettingsScreen() {
                 {
                   borderBottomColor: colors.border,
                   borderBottomWidth:
-                    index === Object.values(CURRENCIES).length - 1
+                    index === options.length - 1
                       ? 0
                       : StyleSheet.hairlineWidth,
                   opacity: pressed ? 0.7 : 1,
@@ -190,11 +187,13 @@ export default function SettingsScreen() {
                 </Text>
               </View>
 
-              {isSelected ? (
-                <Text variant="heading" tone="primary">
-                  ✓
-                </Text>
-              ) : null}
+              {/* Rendered even when unselected (transparent) so the row
+                  content never shifts — and a real glyph, not a text ✓. */}
+              <Icon
+                name="check"
+                size={18}
+                color={isSelected ? colors.primary : 'transparent'}
+              />
             </Pressable>
           );
         })}
@@ -320,7 +319,13 @@ export default function SettingsScreen() {
             onPress={() => router.push("/changelog")}
             style={({ pressed }) => [
               styles.settingsLink,
-              { marginTop: spacing.sm, opacity: pressed ? 0.7 : 1 },
+              {
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 44,
+                marginTop: spacing.sm,
+                opacity: pressed ? 0.7 : 1,
+              },
             ]}
           >
             <View style={[styles.settingsLinkRow, { alignItems: "flex-start" }]}>
@@ -330,7 +335,7 @@ export default function SettingsScreen() {
                   {documentedVersion}
                 </Text>
               </View>
-              <Icon name="chevronRight" size={16} color={colors.textFaint} style={{ marginTop: 2 }} />
+              <Icon name="chevronRight" size={16} color={colors.textFaint} />
             </View>
           </Pressable>
         ) : (
