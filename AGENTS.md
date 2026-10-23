@@ -116,6 +116,85 @@ storage/
 - **No new dependencies** without asking; prefer built-in Expo modules. `ios/` and `android/` are generated — never hand-edit them.
 - Peers that must **not** be removed from `package.json`: `expo-font`, `expo-linking`, `react-native-safe-area-context`, `react-native-reanimated`, `expo-constants`.
 
+## Changelog and Releases
+
+Budgetarian follows two standards:
+
+- **Keep a Changelog 1.1.0** — https://keepachangelog.com/en/1.1.0/
+- **Semantic Versioning (SemVer) 2.0.0** — https://semver.org/spec/v2.0.0.html
+
+The changelog is the root-level `CHANGELOG.md` with this structure:
+
+```markdown
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on Keep a Changelog,
+and this project adheres to Semantic Versioning.
+
+## [Unreleased]
+
+### Added
+- ...
+
+### Changed
+- ...
+
+### Deprecated
+- ...
+
+### Removed
+- ...
+
+### Fixed
+- ...
+
+### Security
+- ...
+
+## [1.0.0] - YYYY-MM-DD
+
+### Added
+- ...
+```
+
+**Changelog requirements**
+
+- Use only applicable categories; omit empty sections.
+- Keep entries concise, user-understandable, and grouped by change type.
+- Add new unreleased changes under `[Unreleased]`.
+- Never invent completed features, bug fixes, release dates, or historical entries.
+- Preserve existing release history when updating the changelog. The legacy date-headed sections (pre-standardization) stay untouched as history; do not backfill them into version sections.
+- Do not create a versioned release entry until a release is actually being prepared.
+- When preparing a release, move applicable unreleased entries into a versioned section and use the actual release date in `YYYY-MM-DD` format.
+
+### Versioning rules (SemVer)
+
+`MAJOR.MINOR.PATCH`:
+
+- **MAJOR:** incompatible changes to the app's documented behavior or data compatibility.
+- **MINOR:** new backward-compatible functionality.
+- **PATCH:** backward-compatible bug fixes.
+
+Additional rules:
+
+- Do not arbitrarily bump the app version for every code change.
+- Keep the user-facing Expo app version (`app.json` → `expo.version`) consistent with the project's release process.
+- Treat the `package.json` version, the Expo app version, and the Android build number (`versionCode`) as distinct metadata unless the repository explicitly standardizes them.
+- Never infer the installed app version from the newest changelog entry.
+- Do not label unreleased changes as published or shipped.
+
+### Agent workflow rules
+
+1. Inspect the existing `CHANGELOG.md` before implementing changes.
+2. After completing a requested change, update `[Unreleased]` when the change is meaningful to users or maintainers.
+3. Document relevant additions, behavior changes, removals, fixes, and security changes.
+4. Avoid logging trivial internal edits that have no meaningful project impact.
+5. Never claim a change is complete or tested unless the work and verification support that claim.
+6. Keep changelog edits scoped to the work performed; do not rewrite unrelated entries.
+7. Update `AGENTS.md` only when the project-wide rules themselves need to change, not for every feature.
+
 ## Task Scope and Agent Behavior
 
 ### Follow the user's requested scope
