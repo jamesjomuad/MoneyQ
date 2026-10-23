@@ -53,6 +53,9 @@ const ICONS = {
   warning: { ios: 'exclamationmark.triangle', android: 'warning', web: 'warning' },
   camera: { ios: 'camera', android: 'photo_camera', web: 'photo_camera' },
   gallery: { ios: 'photo.on.rectangle', android: 'collections', web: 'collections' },
+  help: { ios: 'questionmark.circle', android: 'help_outline', web: 'help_outline' },
+  mail: { ios: 'envelope', android: 'email', web: 'email' },
+  play: { ios: 'play.circle', android: 'play_circle', web: 'play_circle' },
 };
 
 export const ICON_NAMES = Object.keys(ICONS);

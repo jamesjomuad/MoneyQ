@@ -5,6 +5,22 @@ All notable changes to Budgetarian. Dates are local calendar days; newest first.
 ## 2026-10-23
 
 ### Added
+- Help & Guide, offline by design. A new screen (Settings → Help & Guide)
+  carries nineteen bundled articles in seven categories — Getting Started,
+  Transactions, Reminders, Archive, Data & Privacy, Troubleshooting, and
+  Feedback & Support — with a search box that filters titles, summaries
+  and body text. No network, no accounts: the whole guide ships inside
+  the app. Feedback & Support explains how to reach the developer; a
+  direct Email action appears only once a support address is configured
+  in constants/support.js, and nothing is ever attached automatically.
+- First-launch introduction. A five-slide tour welcomes new users —
+  local-only privacy, budgets and folders, receipt photos and on-device
+  reading, reminder actions, backups and restores. It appears once:
+  completing or skipping it marks a single settings row, and no financial
+  data or preference is ever touched. Replay Introduction from the top of
+  Help & Guide shows the tour again at any time. In Expo Go the tour
+  appears on every fresh launch so reviewers can see it, and dismissing
+  it there never writes the flag.
 - The Attachments section can use the camera. Adding a receipt on a new
   transaction now offers two sources side by side — Take Photo and Choose
   from Gallery — and both stay in reach while a receipt is staged, so

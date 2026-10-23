@@ -125,6 +125,28 @@ export default function SettingsScreen() {
 
       <View style={{ height: spacing.xl }} />
 
+      <SectionHeader title="Help & Guide" />
+      <Card padded={false}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/help")}
+          style={({ pressed }) => [
+            styles.option,
+            { opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <View style={styles.flex}>
+            <Text variant="body">Open Help & Guide</Text>
+            <Text variant="caption" tone="faint">
+              Guides, search, and replay the introduction
+            </Text>
+          </View>
+          <Icon name="chevronRight" size={16} color={colors.textFaint} />
+        </Pressable>
+      </Card>
+
+      <View style={{ height: spacing.xl }} />
+
       <SectionHeader title="Currency" />
       <Card padded={false}>
         <View accessibilityRole="radiogroup" accessibilityLabel="Currency">

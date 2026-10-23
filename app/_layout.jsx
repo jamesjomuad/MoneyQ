@@ -21,9 +21,11 @@ import { Text } from "../components/ui/Text";
 import { ThemeProvider, useTheme } from "../components/ui/ThemeProvider";
 import { ToastView } from "../components/ui/ToastView";
 import { NotificationTapHandler } from "../components/notifications/NotificationTapHandler";
+import { OnboardingCarousel } from "../components/onboarding/OnboardingCarousel";
 import { initReminderDelivery } from "../services/notificationService";
 import { initStorage } from "../storage/adapters/adapter";
 import { useAppStore } from "../stores/appStore";
+import { useOnboardingStore } from "../stores/onboardingStore";
 import { useRemindersStore } from "../stores/remindersStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -89,6 +91,17 @@ function DatabaseGate({ children }) {
         // Preferences are read before the shell mounts, so the very first frame
         // already carries the saved appearance instead of flashing the default.
         await useSettingsStore.getState().loadSettings();
+        // The first-launch tour is decided here, while the splash is still
+        // up: the first frame under the splash already shows the carousel
+        // (or already does not), so there is never a redirect or a flash
+        // between onboarding and the app. A storage read for one settings
+        // row — failing open to "show nothing" keeps the app reachable even
+        // if the flag cannot be read.
+        try {
+          await useOnboardingStore.getState().load();
+        } catch {
+          // Onboarding is optional; the app is not.
+        }
         if (!cancelled)
           useAppStore.getState().setDatabaseReady(schemaVersion, source);
       } catch (error) {
@@ -213,12 +226,25 @@ function NavigationShell() {
             title: "Tags",
           }}
         />
+        <Stack.Screen name="help" options={{ title: "Help & Guide" }} />
+        <Stack.Screen
+          name="help/[slug]"
+          options={{ title: "Help & Guide", headerBackTitle: "Back" }}
+        />
       </Stack>
       {/* Mounted above the navigator so a save toast survives the screen
           closing: auto-save fires from beforeRemove, then the screen unmounts. */}
       <ToastView />
+      {/* Last sibling: the onboarding overlay paints over every screen,
+          including the toast layer, for exactly as long as it is visible. */}
+      <OnboardingOverlay />
     </NavigationThemeProvider>
   );
+}
+
+function OnboardingOverlay() {
+  const visible = useOnboardingStore((state) => state.visible);
+  return visible ? <OnboardingCarousel /> : null;
 }
 
 function LoadingView() {

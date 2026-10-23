@@ -4,6 +4,7 @@ export const SETTING_KEYS = {
   currency: 'currency',
   theme: 'theme',
   pinnedBudgets: 'pinned_budgets',
+  onboardingSeen: 'onboarding_seen',
 };
 
 /**
@@ -46,4 +47,18 @@ export async function setSetting(key, value) {
 
 export async function getAllSettings() {
   return storage.getAllSettings();
+}
+
+/**
+ * The first-launch onboarding flag: one settings row, '1' once the tour
+ * has been completed or skipped. Any other value — missing row included —
+ * reads as “not seen”, so a fresh install shows the tour.
+ */
+export async function isOnboardingSeen() {
+  const value = await getSetting(SETTING_KEYS.onboardingSeen, '');
+  return value === '1' || value === 'true';
+}
+
+export async function markOnboardingSeen() {
+  return setSetting(SETTING_KEYS.onboardingSeen, '1');
 }
