@@ -46,3 +46,82 @@ export function latestDocumentedRelease(markdown) {
   const [latest] = parseChangelogReleases(markdown);
   return latest ?? null;
 }
+
+// Full-content parsing for the in-app changelog screen. Everything lives
+// in this one module so release data is never defined twice.
+const SECTION_HEADING = /^##\s+(.+?)\s*$/;
+const CATEGORY_HEADING = /^###\s+(.+?)\s*$/;
+const BRACKET_HEADING = /^\[([^\]]+)\](?:\s+-\s+(\d{4}-\d{2}-\d{2}))?\s*$/;
+const DATE_HEADING = /^(\d{4}-\d{2}-\d{2})$/;
+const BULLET_LINE = /^[-*]\s+(.*)$/;
+const VERSION_SHAPE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+/**
+ * The whole changelog as structured sections, in document order (the file
+ * is written newest-first). Each section:
+ *   { title, version, date, unreleased, categories: [{ title, items }] }
+ * Handles `## [Unreleased]`, `## [1.2.0] - 2026-10-23`, the legacy
+ * `## 2026-10-23` headings, and multi-line wrapped bullets. Unknown or
+ * malformed headings are still kept as plain sections so the original
+ * wording survives — nothing in the file is silently dropped after the
+ * first heading. The preamble before `##` lines is not release content.
+ */
+export function parseChangelogSections(markdown) {
+  if (typeof markdown !== 'string' || markdown.length === 0) return [];
+
+  const sections = [];
+  let section = null;
+  let category = null;
+
+  const openSection = (title, version, date, unreleased) => {
+    section = { title, version, date, unreleased, categories: [] };
+    category = null;
+    sections.push(section);
+  };
+
+  for (const rawLine of markdown.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+
+    const categoryMatch = CATEGORY_HEADING.exec(line);
+    if (categoryMatch && section) {
+      category = { title: categoryMatch[1], items: [] };
+      section.categories.push(category);
+      continue;
+    }
+
+    const sectionMatch = SECTION_HEADING.exec(line);
+    if (sectionMatch) {
+      const heading = sectionMatch[1];
+      const bracket = BRACKET_HEADING.exec(heading);
+      const inner = bracket ? bracket[1] : heading;
+      const date = bracket?.[2] ?? DATE_HEADING.exec(heading)?.[1] ?? null;
+      openSection(
+        inner,
+        VERSION_SHAPE.test(inner) ? inner : null,
+        date,
+        /^unreleased$/i.test(inner),
+      );
+      continue;
+    }
+
+    if (!section) continue; // preamble above the first heading
+
+    // Everything else is release-note prose. Bullets open a new item; any
+    // other line continues the wrapped text of the current one.
+    const bullet = BULLET_LINE.exec(line);
+    if (!category) {
+      category = { title: null, items: [] };
+      section.categories.push(category);
+    }
+    if (bullet) {
+      category.items.push(bullet[1]);
+    } else if (category.items.length > 0) {
+      category.items[category.items.length - 1] += ` ${line}`;
+    } else {
+      category.items.push(line);
+    }
+  }
+
+  return sections;
+}

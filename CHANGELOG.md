@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Tap-through release history. The "Latest documented version" row in
+  Settings → About is now a link that opens a new Changelog screen
+  (/changelog) rendering the whole CHANGELOG.md — Unreleased work, every
+  versioned heading, dates, categories and bullets — as native formatted
+  content, newest first, generated locally at build time with the same
+  parser as the About row. No network, no raw Markdown.
 - Release information in Settings → About. The card now shows the
   installed app version (from the runtime configuration) alongside the
   latest documented version read from CHANGELOG.md — kept clearly apart,

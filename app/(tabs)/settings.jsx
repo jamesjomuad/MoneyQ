@@ -16,7 +16,7 @@ import { Icon } from "../../components/ui/Icon";
 import { Screen, SectionHeader } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useTheme } from "../../components/ui/ThemeProvider";
-import { changelogMeta } from "../../constants/changelogMeta";
+import { changelogMeta, changelogSections } from "../../constants/changelogMeta";
 import { APPEARANCE_OPTIONS } from "../../constants/colors";
 import { useAppStore } from "../../stores/appStore";
 import { useRemindersStore } from "../../stores/remindersStore";
@@ -310,12 +310,37 @@ export default function SettingsScreen() {
             {installedVersion}
           </Text>
         </View>
-        <View style={{ marginTop: spacing.sm }}>
-          <Text variant="label">Latest documented version</Text>
-          <Text variant="caption" tone="muted" style={{ marginTop: 2 }}>
-            {documentedVersion}
-          </Text>
-        </View>
+        {/* The documented version is the entry point to the full history;
+            only interactive when the generated changelog actually has
+            sections to show, so a tap can never land on an empty screen. */}
+        {changelogSections?.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open changelog. Latest documented version ${changelogMeta?.latestVersion ?? "unknown"}`}
+            onPress={() => router.push("/changelog")}
+            style={({ pressed }) => [
+              styles.settingsLink,
+              { marginTop: spacing.sm, opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <View style={[styles.settingsLinkRow, { alignItems: "flex-start" }]}>
+              <View style={{ flex: 1 }}>
+                <Text variant="label">Latest documented version</Text>
+                <Text variant="caption" tone="muted" style={{ marginTop: 2 }}>
+                  {documentedVersion}
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={16} color={colors.textFaint} style={{ marginTop: 2 }} />
+            </View>
+          </Pressable>
+        ) : (
+          <View style={{ marginTop: spacing.sm }}>
+            <Text variant="label">Latest documented version</Text>
+            <Text variant="caption" tone="muted" style={{ marginTop: 2 }}>
+              {documentedVersion}
+            </Text>
+          </View>
+        )}
         <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
           Copyright © 2026 James Jomuad
         </Text>

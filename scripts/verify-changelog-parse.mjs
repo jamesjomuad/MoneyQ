@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { latestDocumentedRelease, parseChangelogReleases } from '../utils/changelog';
+import { latestDocumentedRelease, parseChangelogReleases, parseChangelogSections } from '../utils/changelog';
 
 let passed = 0;
 let failed = 0;
@@ -80,7 +80,25 @@ check('pre-release version recognized', latestDocumentedRelease(pre)?.version ==
 // 8. Undated version heading is still a release with null date.
 check('undated heading parses', latestDocumentedRelease('## [3.1.4]\n')?.date === null);
 
-// 9. The generator: writes real metadata for a fixture changelog...
+// 9. Section parsing (the /changelog screen data).
+const sections = parseChangelogSections(full);
+check('four sections in document order', sections.length === 4);
+check('first section is Unreleased', sections[0].unreleased === true && sections[0].version === null);
+check('Unreleased keeps its Added bullet', sections[0].categories[0]?.title === 'Added' && sections[0].categories[0]?.items[0] === 'something coming');
+check('versioned section keeps version + date', sections[1].version === '1.2.0' && sections[1].date === '2026-10-10');
+check('preamble is not release content', !JSON.stringify(sections).includes('Keep a Changelog'));
+
+const wrapped = '## [1.1.0] - 2026-10-01\n\n### Fixed\n- A bullet that wraps\n  across two lines\n- second bullet\n';
+const wrappedSections = parseChangelogSections(wrapped);
+const fixedItems = wrappedSections[0].categories[0].items;
+check('wrapped bullets join into one item', fixedItems.length === 2 && fixedItems[0] === 'A bullet that wraps across two lines');
+
+const legacy = '## 2026-10-23\n\n### Added\n- old-style entry\n';
+const legacySections = parseChangelogSections(legacy);
+check('legacy date heading parses', legacySections.length === 1 && legacySections[0].date === '2026-10-23' && legacySections[0].version === null);
+check('degenerate sections input → []', parseChangelogSections(null).length === 0);
+
+// 10. The generator: writes real metadata for a fixture changelog...
 const dir = mkdtempSync(join(tmpdir(), 'chg-gen-'));
 const fixture = join(dir, 'CHANGELOG.md');
 const out = join(dir, 'meta.js');
@@ -96,6 +114,7 @@ runGen([fixture, out]);
 const written = readFileSync(out, 'utf8');
 check('generated module contains 1.2.0', written.includes('"latestVersion": "1.2.0"'));
 check('generated module contains the date', written.includes('"releaseDate": "2026-10-10"'));
+check('generated module embeds full sections', written.includes('changelogSections') && written.includes('"version": "1.2.0"'));
 
 // 10. ...and graceful null metadata for a missing one.
 const out2 = join(dir, 'meta2.js');
