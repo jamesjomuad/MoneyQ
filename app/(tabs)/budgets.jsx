@@ -585,9 +585,34 @@ export default function BudgetsScreen() {
               refreshing={refreshing}
               onRefresh={refresh}
             >
-              {budgets.length > 0 && !searching ? (
+              {/* The screen heading doubles as the page's utility row: the
+                  Archive entry rides its right edge, the same text-link
+                  pattern Home uses for a secondary destination. It stays
+                  mounted when the list is empty so archived budgets can
+                  always be reached again; search mode owns the screen, so
+                  the link steps aside there. */}
+              {!searching ? (
                 <Animated.View entering={introEnter(1)}>
-                  <SectionHeader title={`Your Budgets · ${budgets.length}`} />
+                  <SectionHeader
+                    title={
+                      budgets.length > 0
+                        ? `Your Budgets · ${budgets.length}`
+                        : "Your Budgets"
+                    }
+                    action={
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Open archive"
+                        onPress={() => router.push("/archive")}
+                        hitSlop={14}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.55 : 1 })}
+                      >
+                        <Text variant="caption" tone="primary">
+                          Archive
+                        </Text>
+                      </Pressable>
+                    }
+                  />
                 </Animated.View>
               ) : null}
 
@@ -654,36 +679,6 @@ export default function BudgetsScreen() {
                     <Icon name="close" size={15} color={colors.textMuted} />
                   </Pressable>
                 ) : null}
-              </Animated.View>
-
-              {/* Compact utility actions, directly below the full-width search
-                  field and above the folder/budget list: just the Archive
-                  button on the right — the select-all checkbox now rides the
-                  Budgets section header itself. */}
-              <Animated.View
-                entering={introEnter(1)}
-                style={[styles.archiveRow, { marginBottom: spacing.md }]}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Open archive"
-                  onPress={() => router.push("/archive")}
-                  hitSlop={8}
-                  style={({ pressed }) => [
-                    styles.archiveButton,
-                    {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                      borderRadius: radius.pill,
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <Icon name="archive" size={16} color={colors.textMuted} />
-                  <Text variant="label" tone="muted">
-                    Archive
-                  </Text>
-                </Pressable>
               </Animated.View>
 
               {isLoading && budgets.length === 0 ? (
@@ -972,19 +967,6 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: "center",
     width: 44,
-  },
-  archiveRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "flex-end",
-  },
-  archiveButton: {
-    alignItems: "center",
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
   },
   txSection: {
     marginTop: 8,
