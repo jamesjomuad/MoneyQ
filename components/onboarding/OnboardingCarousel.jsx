@@ -46,7 +46,7 @@ const SLIDES = [
   },
   {
     icon: "clock",
-    title: "Reminders that answer back",
+    title: "<b>Reminders</b> that answer back",
     body: "Schedule a reminder on the calendar or a transaction, and the notification itself carries Complete and Remind Later buttons — settle it straight from the tray.",
   },
   {
