@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   intact, after the same confirmation the budget screen shows, and Restore
   brings it back unchanged.
 
+### Changed
+- The select-all checkbox moved off the utility row and now sits inline with
+  the Budgets section header: folders are not selectable, so the parent
+  checkbox belongs to the budgets section itself. Pressing it never folds or
+  unfolds the header.
+
 ## [1.0.0] - 2026-10-23
 
 ### Changed

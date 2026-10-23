@@ -640,17 +640,13 @@ export default function BudgetsScreen() {
               </Animated.View>
 
               {/* Compact utility actions, directly below the full-width search
-                  field and above the folder/budget list: the three-state parent
-                  checkbox rides the row's left edge (auto margin) while the
-                  Archive button keeps the right, and the search field keeps its
-                  whole width. */}
+                  field and above the folder/budget list: just the Archive
+                  button on the right — the select-all checkbox now rides the
+                  Budgets section header itself. */}
               <Animated.View
                 entering={introEnter(1)}
                 style={[styles.archiveRow, { marginBottom: spacing.md }]}
               >
-                {!searching && sel.masterRow ? (
-                  <View style={styles.masterInlineSlot}>{sel.masterRow}</View>
-                ) : null}
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Open archive"
@@ -819,12 +815,17 @@ export default function BudgetsScreen() {
                     {/* The budgets section always shows: it is the page's
                         subject, and a folded or empty "BUDGETS · 0" header
                         still tells the user where they are. The create entry
-                        below it is the established empty-state affordance. */}
+                        below it is the established empty-state affordance.
+                        The three-state select-all lives inline with the label
+                        because it covers exactly this section's rows — and a
+                        press on it is handled by the checkbox itself, not the
+                        surrounding fold toggle. */}
                     <SectionHeader
                       title={`Budgets · ${budgetItems.length}`}
                       fontSize={14}
                       collapsed={!budgetsOpen}
                       onToggle={() => setBudgetsOpen((open) => !open)}
+                      inlineAction={sel.masterRow}
                     />
                     {budgetsOpen ? (
                       <Card padded={false} style={{ marginBottom: spacing.sm }}>
@@ -923,9 +924,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "flex-end",
-  },
-  masterInlineSlot: {
-    marginRight: "auto",
   },
   archiveButton: {
     alignItems: "center",

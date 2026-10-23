@@ -138,11 +138,14 @@ function Chevron({ collapsed, color }) {
  * Section heading. Pass `collapsed` + `onToggle` to make it fold its section —
  * the header stays visible (title and action remain) so a folded list is still
  * navigable. Pass `style` to override the default bottom margin when a section
- * needs tighter spacing.
+ * needs tighter spacing. `inlineAction` rides inside the title group, right
+ * beside the label: a touchable there (e.g. a checkbox) keeps its own press —
+ * RN hands the responder to the inner control, so the fold never double-fires.
  */
 export function SectionHeader({
   title,
   action,
+  inlineAction,
   collapsed,
   onToggle,
   fontSize,
@@ -168,6 +171,7 @@ export function SectionHeader({
         >
           {title.toUpperCase()}
         </Text>
+        {inlineAction ?? null}
       </View>
       {action ?? null}
     </View>
