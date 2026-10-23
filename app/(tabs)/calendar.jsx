@@ -109,6 +109,12 @@ export default function CalendarScreen() {
   // until its first load lands.
   const remindersForDay = dayCache[selectedDate] ?? [];
   const dayLoading = remindersLoading && reminderDate === selectedDate;
+  // Whether anything renders between the day header and the Reminders header.
+  // The two cases carry different spacing above Reminders (a card's
+  // marginBottom vs the header's own marginBottom), so the section top-up
+  // below is chosen from this rather than guessed.
+  const hasDayContent =
+    dayTransactions.length > 0 || dayPurchases.length > 0 || dayPayments.length > 0;
   const totals = useMemo(() => computeTotals(dayTransactions), [dayTransactions]);
   const tagById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
 
@@ -122,7 +128,7 @@ export default function CalendarScreen() {
 
   return (
     <Screen topInset>
-      <Card>
+      <Card style={{ marginBottom: spacing.lg }}>
         <MonthCalendar
           monthKey={monthKey}
           selectedDate={selectedDate}
@@ -320,6 +326,12 @@ export default function CalendarScreen() {
 
       <SectionHeader
         title="Reminders"
+        // Every section in this screen opens after a spacing.lg breath. When a
+        // day card precedes Reminders it already carries spacing.md, so only
+        // the difference is added; on an empty date the day header carries
+        // spacing.sm instead. RN does not collapse margins, so the two cases
+        // need their own top-up to land on the same 16.
+        style={{ marginTop: hasDayContent ? spacing.xs : spacing.sm }}
         action={
           <Pressable
             accessibilityRole="button"
