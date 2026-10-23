@@ -15,7 +15,11 @@ All notable changes to Budgetarian. Dates are local calendar days; newest first.
   in constants/support.js, and nothing is ever attached automatically.
 - First-launch introduction. A five-slide tour welcomes new users —
   local-only privacy, budgets and folders, receipt photos and on-device
-  reading, reminder actions, backups and restores. It appears once:
+  reading, reminder actions, backups and restores. Paging it is never a
+  one-way street: Skip and a Back chevron bracket the top, the progress
+  dots are buttons that jump to any slide, and a "N of 5" counter says
+  the position in words; slide content eases in with short fades that a
+  system reduced-motion preference switches off. It appears once:
   completing or skipping it marks a single settings row, and no financial
   data or preference is ever touched. Replay Introduction from the top of
   Help & Guide shows the tour again at any time. In Expo Go the tour
