@@ -20,7 +20,7 @@ import { useTheme } from "../ui/ThemeProvider";
 const SLIDES = [
   {
     icon: "wallet",
-    title: "Welcome to <b>Budgetarian</b>",
+    title: "Welcome to Budgetarian",
     body: "A budgeting app that runs entirely on this device. No account, no cloud, no tracking — it works fully offline, and your money data never leaves the phone unless you export it yourself.",
   },
   {
