@@ -1,8 +1,10 @@
 /**
- * Payment status of an expense. It is deliberately separate from the
- * transaction `type`: an unpaid expense is still a recorded expense and
- * still counts toward every budget total. The status only answers "have I
- * handed the money over yet?".
+ * Payment status of an expense or an income. It is deliberately separate
+ * from the transaction `type`: an unpaid expense is still a recorded
+ * expense and still counts toward every budget total, while unpaid income
+ * is money expected, not yet received — totals read the two apart. The
+ * status only answers "has the money moved yet?". Transfers never carry
+ * one: a move between accounts is not a payment to wait for.
  */
 export const PAYMENT_STATUSES = ['unpaid', 'paid'];
 
@@ -11,10 +13,10 @@ export function isValidPaymentStatus(value) {
 }
 
 /**
- * The status a NEW expense starts with when the caller does not choose one.
- * Paid-first: most recorded expenses are completed payments, so the default
- * should match the usual case while still allowing an expense to be marked
- * Unpaid.
+ * The status a NEW expense or income starts with when the caller does not
+ * choose one. Paid-first: most recorded entries are completed money
+ * movements, so the default should match the usual case while still
+ * allowing an entry to be marked Unpaid.
  */
 export function defaultPaymentStatus(value) {
   return isValidPaymentStatus(value) ? value : 'paid';
@@ -22,13 +24,13 @@ export function defaultPaymentStatus(value) {
 
 /**
  * How a stored row's status should be read. Missing or invalid values on an
- * expense fall back to 'paid' — transactions recorded before this field
- * existed behaved as paid (they moved money in every total), and nothing in
- * the UI may crash on an unexpected value. Income and transfers have no
- * payment status at all and return null.
+ * expense or income fall back to 'paid' — entries recorded before a type
+ * carried this field behaved as settled money (they moved every total),
+ * and nothing in the UI may crash on an unexpected value. Transfers have
+ * no payment status at all and return null.
  */
 export function effectivePaymentStatus(row) {
-  if (!row || row.type !== 'expense') return null;
+  if (!row || row.type === 'transfer') return null;
   return isValidPaymentStatus(row.payment_status) ? row.payment_status : 'paid';
 }
 
@@ -60,7 +62,7 @@ export const PAYMENT_EVENT_LABELS = {
 export function derivePaymentEventStatus(row, todayIso) {
   const due = row?.payment_due_date;
   if (!due) return null;
-  if (row.type === 'expense' && effectivePaymentStatus(row) === 'paid') return 'paid';
+  if (effectivePaymentStatus(row) === 'paid') return 'paid';
   if (due < todayIso) return 'overdue';
   if (due === todayIso) return 'dueToday';
   return 'upcoming';

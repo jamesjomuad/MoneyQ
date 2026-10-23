@@ -171,7 +171,8 @@ export function createMemoryAdapter({ seedDemo = false } = {}) {
             if (transaction.budget_id !== budget.id) continue;
             transactionCount += 1;
             if (transaction.type === 'expense') spent += transaction.amount;
-            else if (transaction.type === 'income') income += transaction.amount;
+            else if (transaction.type === 'income' && transaction.payment_status !== 'unpaid')
+              income += transaction.amount;
           }
           return { ...budget, spent, income, transaction_count: transactionCount };
         });
@@ -1105,7 +1106,7 @@ function seedDemoData(store, timestamp) {
       transaction_date: date,
       // Mirrors the migration backfill: historical expenses read as paid.
       payment_status:
-        paymentStatus ?? (type === 'expense' ? 'paid' : null),
+        paymentStatus ?? (type === 'transfer' ? null : 'paid'),
       has_breakdown: 0,
       created_at: timestamp,
       updated_at: timestamp,

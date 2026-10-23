@@ -1737,6 +1737,79 @@ async function runScenario(store) {
     settings: await store.getAllSettings(),
   };
 
+  // --- income payment status through the engine -----------------------------
+  // Runs after every other snapshot: the wipes above have already recorded
+  // their expected emptiness, so these rows exist only to read the status
+  // back from each engine. The budget, the stored status, and the received
+  // income aggregate are captured as extra snapshot keys, then cleared —
+  // the shared sqlite adapter must not carry residue into later sections.
+  // Unpaid income must stay OUT of the card total; a NULL status (legacy
+  // row) must read as received.
+  await store.insertBudget({
+    id: 'p_status_budget',
+    name: 'Statuses',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    folder_id: null,
+    position: null,
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertTransaction({
+    id: 'p_income_expected',
+    budget_id: 'p_status_budget',
+    type: 'income',
+    amount: 300_000,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Freelance (expected)',
+    transaction_date: '2026-10-06',
+    payment_status: 'unpaid',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertTransaction({
+    id: 'p_income_received',
+    budget_id: 'p_status_budget',
+    type: 'income',
+    amount: 700_000,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Client payment',
+    transaction_date: '2026-10-06',
+    payment_status: 'paid',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  await store.insertTransaction({
+    id: 'p_income_legacy',
+    budget_id: 'p_status_budget',
+    type: 'income',
+    amount: 100_000,
+    tag_id: null,
+    account_id: null,
+    to_account_id: null,
+    description: 'Old salary',
+    transaction_date: '2026-10-04',
+    created_at: STAMP,
+    updated_at: STAMP,
+  });
+  snapshot.statusIncomeStored = (await store.getTransaction('p_income_expected')).payment_status;
+  snapshot.statusBudgetIncome = (await store.listBudgets()).find(
+    (budget) => budget.id === 'p_status_budget',
+  ).income;
+  await store.updateTransaction({
+    ...(await store.getTransaction('p_income_expected')),
+    payment_status: 'paid',
+    updated_at: STAMP,
+  });
+  snapshot.statusBudgetIncomeAfterFlip = (await store.listBudgets()).find(
+    (budget) => budget.id === 'p_status_budget',
+  ).income;
+  await store.clearAllData();
+
   return stable(snapshot);
 }
 
@@ -1799,6 +1872,15 @@ check(
   sqliteResult.updatedTransaction.payment_status === 'unpaid' &&
     memoryResult.updatedTransaction.payment_status === 'unpaid',
   String(sqliteResult.updatedTransaction.payment_status),
+);
+check(
+  'unpaid income persists on both engines and stays out of received income until paid',
+  sqliteResult.statusIncomeStored === 'unpaid' &&
+    memoryResult.statusIncomeStored === 'unpaid' &&
+    sqliteResult.statusBudgetIncome === 800_000 &&
+    memoryResult.statusBudgetIncome === 800_000 &&
+    sqliteResult.statusBudgetIncomeAfterFlip === 1_100_000 &&
+    memoryResult.statusBudgetIncomeAfterFlip === 1_100_000,
 );
 check(
   'search treats LIKE wildcards as literal text',
@@ -2186,9 +2268,35 @@ check(
     effectivePaymentStatus({ type: 'expense', payment_status: 'paid' }) === 'paid',
 );
 check(
-  'income and transfers have no payment status',
-  effectivePaymentStatus({ type: 'income', payment_status: 'paid' }) === null &&
+  'income reads a payment status; only transfers never do',
+  effectivePaymentStatus({ type: 'income', payment_status: 'unpaid' }) === 'unpaid' &&
+    effectivePaymentStatus({ type: 'income', payment_status: null }) === 'paid' &&
     effectivePaymentStatus({ type: 'transfer', payment_status: 'unpaid' }) === null,
+);
+const unpaidIncomeTotals = computeTotals([
+  { id: 'u1', type: 'income', amount: 4_000, payment_status: 'unpaid' },
+  { id: 'u2', type: 'income', amount: 6_000, payment_status: 'paid' },
+  { id: 'u3', type: 'income', amount: 2_000, payment_status: null },
+  { id: 'u4', type: 'expense', amount: 1_000, payment_status: 'unpaid' },
+]);
+check(
+  'unpaid income is expected, not received: totals split it apart',
+  unpaidIncomeTotals.income === 8_000 &&
+    unpaidIncomeTotals.expectedIncome === 4_000 &&
+    unpaidIncomeTotals.recordedIncome === 12_000 &&
+    unpaidIncomeTotals.remaining === 7_000,
+  JSON.stringify(unpaidIncomeTotals),
+);
+check(
+  'unpaid income never credits an account balance',
+  computeAccountBalance(
+    { id: 'acct_status', name: 'Status', initial_balance: 0 },
+    [{ account_id: 'acct_status', type: 'income', amount: 500, payment_status: 'unpaid' }],
+  ) === 0 &&
+    computeAccountBalance(
+      { id: 'acct_status', name: 'Status', initial_balance: 0 },
+      [{ account_id: 'acct_status', type: 'income', amount: 500, payment_status: 'paid' }],
+    ) === 500,
 );
 // The status is descriptive only: both kinds of expense count the same way.
 const mixedStatuses = [
@@ -3074,8 +3182,8 @@ check(
   repaired.ok === true && repaired.data.transactions[1].payment_status === 'paid',
 );
 check(
-  'a status on an income is cleared',
-  repaired.ok === true && repaired.data.transactions[2].payment_status === null,
+  'a valid status on an income is kept',
+  repaired.ok === true && repaired.data.transactions[2].payment_status === 'unpaid',
 );
 check(
   'remind_at is rebuilt from the local date and time on this device',

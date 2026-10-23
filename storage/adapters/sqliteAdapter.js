@@ -79,7 +79,8 @@ export function createSqliteAdapter(getDb) {
               WHERE t.budget_id = b.id AND t.type = 'expense'), 0) AS spent,
           COALESCE(
             (SELECT SUM(t.amount) FROM transactions t
-              WHERE t.budget_id = b.id AND t.type = 'income'), 0) AS income,
+              WHERE t.budget_id = b.id AND t.type = 'income'
+                AND (t.payment_status IS NULL OR t.payment_status != 'unpaid')), 0) AS income,
           (SELECT COUNT(*) FROM transactions t
             WHERE t.budget_id = b.id) AS transaction_count
         FROM budgets b

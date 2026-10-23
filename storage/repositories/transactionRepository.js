@@ -99,24 +99,24 @@ function resolvePaymentDueDate(value) {
 const SEARCH_RESULT_LIMIT = 30;
 
 /**
- * Payment status rules. Only expenses have one; income and transfers always
- * store NULL. A new expense defaults to 'paid' unless the caller says
- * otherwise, and an update that does not mention the status keeps whatever
- * the stored expense already had.
+ * Payment status rules. Expenses and incomes carry one; transfers always
+ * store NULL. A new statused transaction defaults to 'paid' unless the
+ * caller says otherwise, and an update that does not mention the status
+ * keeps whatever the stored row already had.
  */
 function resolveNewPaymentStatus(type, requested) {
-  if (type !== 'expense') return null;
+  if (type === 'transfer') return null;
   return defaultPaymentStatus(requested);
 }
 
 function resolveUpdatedPaymentStatus(type, existing, input) {
-  if (type !== 'expense') return null;
+  if (type === 'transfer') return null;
   const requested = input.paymentStatus;
   if (requested === undefined || requested === null) {
-    // Not mentioned: a stored expense keeps its status (missing or invalid
-    // historical values read as 'paid'); an income/transfer becoming an
-    // expense starts 'paid'.
-    return existing.type === 'expense' ? effectivePaymentStatus(existing) : 'paid';
+    // Not mentioned: a stored expense or income keeps its status (missing
+    // or invalid historical values read as 'paid'); a transfer becoming a
+    // statused type starts 'paid'.
+    return effectivePaymentStatus(existing) ?? 'paid';
   }
   return defaultPaymentStatus(requested);
 }

@@ -390,10 +390,11 @@ export default function BudgetDetailScreen() {
     [removeTransaction],
   );
 
-  // Paid/Unpaid toggle: flips the expense's existing payment_status through the
-  // store's update flow (repository keeps every other field as stored, SQLite
-  // persists, and the store re-reads so the row and summary refresh together).
-  // Income and transfers have no payment status and never get the action.
+  // Paid/Unpaid toggle: flips the expense's or income's existing
+  // payment_status through the store's update flow (repository keeps every
+  // other field as stored, SQLite persists, and the store re-reads so the
+  // row and summary refresh together). Transfers have no status and never
+  // get the action.
   const togglePaymentStatus = useCallback(
     async (transaction, nextStatus) => {
       try {

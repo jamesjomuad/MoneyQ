@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transactions, breakdown items, tags, reminders, attachments and color
   intact, after the same confirmation the budget screen shows, and Restore
   brings it back unchanged.
+- Income transactions now carry the same Paid/Unpaid payment status that
+  expenses always had. New income defaults to Paid, older income rows
+  without a status read as Paid, and the Status control in the transaction
+  form appears for both Expense and Income. Transfers keep no payment
+  status: the form hides the control for them and the database stores NULL.
 
 ### Changed
 - The Add Transaction page now mirrors the Edit Transaction page: the
@@ -50,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   standalone reminders, Budgets archived or deleted since the alarm was
   set — lands on the Calendar. Tapping the notification body itself keeps
   opening the transaction or reminder form exactly as before.
+- Unpaid income is money expected, not yet received. It no longer counts
+  toward received income, remaining, account balances or total assets, and
+  is reported separately as expected income. Expense totals and budget
+  allocation semantics are unchanged — an unpaid expense is still a
+  recorded expense. Income due dates remain an expense-only feature, so
+  unpaid income has no calendar payment event.
 
 ### Fixed
 - The "Complete" button on reminder notifications works again. Two bugs hid
@@ -60,13 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Dismissal and the scheduled-alarm cancel now use the current APIs, so a
   completed reminder clears itself from the tray and never fires again,
   while other reminders on the same transaction are untouched.
-- The transaction form no longer offers a payment status that cannot exist.
-  Only expenses carry one (income and transfers have never stored a status),
-  yet the Status control stayed interactive on every type: a choice made on
-  an income transaction looked accepted, was silently dropped on save, and
-  snapped back on reopen. The Status control now appears only when the type
-  is Expense — matching the Due-date section's established rule — so what
-  the form offers is always what it keeps. Expense behavior is unchanged.
 
 ## [1.0.0] - 2026-10-23
 

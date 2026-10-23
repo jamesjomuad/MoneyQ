@@ -6,19 +6,39 @@
  * income, expenses, or total assets. A Budget has no spending limit, so there
  * is no overspend state anywhere in this module: "spent" is always just the
  * expense transactions recorded against it.
+ *
+ * Money rule: income reads as RECEIVED money. Unpaid income is expected, so
+ * it never lands in `income`, `remaining`, account balances, or total
+ * assets — `expectedIncome` keeps it visible apart. Expenses are unchanged:
+ * an unpaid expense is still a recorded expense, and allocation semantics
+ * never moved.
  */
 
+import { effectivePaymentStatus } from './paymentStatus';
+
+/**
+ * Headline money totals for a set of transactions. `income` counts only
+ * received money (paid income and legacy rows with no stored status);
+ * `expectedIncome` holds unpaid income apart, and `recordedIncome` is both
+ * together — the ruler income shares are measured against. `expense` stays
+ * every expense recorded, paid or not. `remaining` is received minus spent.
+ */
 export function computeTotals(transactions) {
   let income = 0;
+  let expectedIncome = 0;
   let expense = 0;
 
   for (const transaction of transactions) {
-    if (transaction.type === 'income') income += transaction.amount;
-    else if (transaction.type === 'expense') expense += transaction.amount;
+    if (transaction.type === 'income') {
+      if (effectivePaymentStatus(transaction) === 'unpaid') expectedIncome += transaction.amount;
+      else income += transaction.amount;
+    } else if (transaction.type === 'expense') expense += transaction.amount;
   }
 
   return {
     income,
+    expectedIncome,
+    recordedIncome: income + expectedIncome,
     expense,
     remaining: income - expense,
     transactionCount: transactions.length,
@@ -42,8 +62,10 @@ export function computeAccountBalance(account, transactions) {
     const isDestination = transaction.type === 'transfer' && transaction.to_account_id === account.id;
 
     if (isSource) {
-      if (transaction.type === 'income') balance += transaction.amount;
-      else if (transaction.type === 'expense') balance -= transaction.amount;
+      if (transaction.type === 'income') {
+        // Unpaid income is not in the account yet; it cannot raise a balance.
+        if (effectivePaymentStatus(transaction) !== 'unpaid') balance += transaction.amount;
+      } else if (transaction.type === 'expense') balance -= transaction.amount;
       else if (transaction.type === 'transfer') balance -= transaction.amount;
     }
 
@@ -117,7 +139,9 @@ export function computeTagExpenseBreakdown(transactions, tags = [], totalExpense
 
 /**
  * One transaction's share of the matching budget total. Expenses are measured
- * against total expenses and income against total income; transfers have no
+ * against total expenses and income against total recorded income
+ * (`recordedIncome` from computeTotals when present, so paid and unpaid
+ * income rows share one ruler); transfers have no
  * applicable share and return null so the UI can hide them. Both totals come
  * from computeTotals, keeping this formula aligned with the budget summary.
  */
@@ -129,7 +153,7 @@ export function computeTransactionSharePercent(
 
   const total =
     transaction.type === 'income'
-      ? totals.income
+      ? totals.recordedIncome ?? totals.income
       : transaction.type === 'expense'
         ? totals.expense
         : 0;

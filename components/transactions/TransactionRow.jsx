@@ -62,7 +62,7 @@ export const TransactionRow = memo(function TransactionRow({
 
   const showBadge = transaction.type !== "transfer" && Boolean(tag);
 
-  // Expenses carry a payment status; income and transfers never show one.
+  // Expenses and incomes carry a payment status; transfers never show one.
   const payment = effectivePaymentStatus(transaction);
 
   const showShareBar =
@@ -90,7 +90,7 @@ export const TransactionRow = memo(function TransactionRow({
   const a11yTag = showBadge ? tag.name : null;
   const a11ySuffixes = [
     a11yTag,
-    payment ? `${payment} expense` : null,
+    payment ? `${payment} ${isIncome ? "income" : "expense"}` : null,
     hasReminder ? "reminder set" : null,
     itemCount > 0 ? `${itemCount} breakdown items` : null,
     showShareBar

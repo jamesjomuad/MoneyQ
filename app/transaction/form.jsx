@@ -159,7 +159,7 @@ function breakdownSnapshot(active, items) {
 function formSnapshot(values) {
   return JSON.stringify({
     type: values.type,
-    paymentStatus: values.type === 'expense' ? values.paymentStatus : null,
+    paymentStatus: values.type === 'transfer' ? null : values.paymentStatus,
     amountMinor: values.breakdownActive
       ? computeBreakdownTotal(values.items)
       : values.amountMinor,
@@ -271,7 +271,7 @@ function buildPayload(f, currency) {
     tagId: f.tagId,
     description: f.description.trim() || null,
     date: parseFlexibleDate(f.date),
-    paymentStatus: f.type === 'expense' ? f.paymentStatus : null,
+    paymentStatus: f.type === 'transfer' ? null : f.paymentStatus,
     paymentDueDate:
       f.type === 'expense' && f.paymentStatus === 'unpaid' ? f.dueDate || null : null,
     ...(f.breakdownActive
@@ -1882,16 +1882,16 @@ export default function TransactionFormScreen() {
 
         {/* Type and Status are core one-tap choices: kept dense beside the
             amount so they never scroll away from the fields they govern
-            (due date follows payment status). Status is an expense-only
-            rule — income and transfers keep none, so the control is only
-            offered where a choice can actually be persisted; Type fills
-            the row alone otherwise. */}
+            (due date follows payment status). Status belongs to expenses
+            and incomes alike — transfers keep none, so the control is
+            only offered where a choice can actually be persisted; Type
+            fills the row alone otherwise. */}
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
           <View style={{ flex: 1 }}>
             <SectionHeader title="Type" color={summaryInk} />
             <SegmentedControl options={typeOptions} value={type} onChange={setType} dense />
           </View>
-          {type === 'expense' ? (
+          {type !== 'transfer' ? (
             <View style={{ flex: 1 }}>
               <SectionHeader title="Status" color={summaryInk} />
               <SegmentedControl

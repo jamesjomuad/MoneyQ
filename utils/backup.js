@@ -461,7 +461,7 @@ export function validateBackup(parsed, { nowStamp = nowIso() } = {}) {
       continue;
     }
     let paymentStatus = null;
-    if (row.type === 'expense') {
+    if (row.type === 'expense' || row.type === 'income') {
       paymentStatus = PAYMENT_STATUSES.includes(row.payment_status) ? row.payment_status : 'paid';
     } else if (row.payment_status != null && row.payment_status !== '') {
       warnings.push(`${label} is ${row.type} but carried a payment status; it was cleared.`);
