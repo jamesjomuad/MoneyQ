@@ -861,7 +861,19 @@ export default function BudgetsScreen() {
                       inlineAction={sel.masterRow}
                     />
                     {budgetsOpen ? (
-                      <Card padded={false} style={{ marginBottom: spacing.sm }}>
+                      <Card
+                        padded={false}
+                        // Clip a swiped row's square reveal to the card's
+                        // rounded corners (the budget detail does the same).
+                        // While a row is lifted for dragging, the clip steps
+                        // aside so the lift's shadow and 1.03 scale are not
+                        // cut off at the card edge; swipe is disabled while
+                        // lifted anyway, so no revealed strip can show then.
+                        style={{
+                          marginBottom: spacing.sm,
+                          overflow: liftedKey ? 'visible' : 'hidden',
+                        }}
+                      >
                         <DraggableRows
                           items={budgetItems}
                           disabled={sel.selectionMode}
