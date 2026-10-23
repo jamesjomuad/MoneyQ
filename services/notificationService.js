@@ -232,7 +232,26 @@ export async function cancelAsync(notificationId) {
     // Already delivered, already cancelled, or a wiped install.
   }
   try {
-    await Notifications.cancelDisplayedNotificationAsync(notificationId);
+    await Notifications.dismissNotificationAsync(notificationId);
+  } catch {
+    // Not on screen: nothing to dismiss.
+  }
+}
+
+/**
+ * Removes one DELIVERED notification from the tray without touching any
+ * scheduled alarm behind it — the Complete action dismisses exactly the
+ * notification the user pressed, whatever the row mapping says. Never
+ * throws: a notification that is already gone counts as success.
+ * (SDK 57 renamed this API from `cancelDisplayedNotificationAsync`.)
+ */
+export async function dismissAsync(notificationId) {
+  if (!notificationId) return;
+  if (!isSupported) return;
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return;
+  try {
+    await Notifications.dismissNotificationAsync(notificationId);
   } catch {
     // Not on screen: nothing to dismiss.
   }

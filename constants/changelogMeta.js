@@ -28,7 +28,14 @@ export const changelogSections = [
       {
         "title": "Changed",
         "items": [
-          "The select-all checkbox moved off the utility row and now sits inline with the Budgets section header: folders are not selectable, so the parent checkbox belongs to the budgets section itself. Pressing it never folds or unfolds the header."
+          "The select-all checkbox moved off the utility row and now sits inline with the Budgets section header: folders are not selectable, so the parent checkbox belongs to the budgets section itself. Pressing it never folds or unfolds the header.",
+          "The reminder notification's \"Complete\" button now takes you where the reminder belongs: after the completion is saved, a reminder linked to a live Budget opens that Budget's detail screen, and anything else — standalone reminders, Budgets archived or deleted since the alarm was set — lands on the Calendar. Tapping the notification body itself keeps opening the transaction or reminder form exactly as before."
+        ]
+      },
+      {
+        "title": "Fixed",
+        "items": [
+          "The \"Complete\" button on reminder notifications works again. Two bugs hid it: pressing the notification body first (or Complete twice) collided in the tap handler's duplicate guard, so the button silently did nothing, and a completed reminder's notification never left the Android tray because the app called an expo-notifications API that SDK 57 renamed. Dismissal and the scheduled-alarm cancel now use the current APIs, so a completed reminder clears itself from the tray and never fires again, while other reminders on the same transaction are untouched."
         ]
       }
     ]
