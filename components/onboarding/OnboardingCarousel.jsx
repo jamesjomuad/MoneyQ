@@ -13,49 +13,53 @@
  * system-wide reduced-motion preference swaps the fades off entirely.
  */
 
-import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from "expo-router";
+import { useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import Animated, {
+  FadeInDown,
+  useReducedMotion,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useOnboardingStore } from '../../stores/onboardingStore';
-import { Button } from '../ui/Button';
-import { Icon } from '../ui/Icon';
-import { Text } from '../ui/Text';
-import { useTheme } from '../ui/ThemeProvider';
+import { useOnboardingStore } from "../../stores/onboardingStore";
+import { Button } from "../ui/Button";
+import { Icon } from "../ui/Icon";
+import { Text } from "../ui/Text";
+import { useTheme } from "../ui/ThemeProvider";
 
 const SLIDES = [
   {
-    icon: 'wallet',
-    title: 'Welcome to <b>Budgetarian</b>',
-    body: 'Money management that lives entirely on your device. No accounts, no cloud, no sign-in — open it and go.',
+    icon: "wallet",
+    title: "Welcome to <b>Budgetarian</b>",
+    body: "Money management that lives entirely on your device. No accounts, no cloud, no sign-in — open it and go.",
   },
   {
-    icon: 'folder',
-    title: '<b>Budgets</b>, grouped your way',
-    body: 'Each budget is one period of your money — October, a trip, a project. Folders collect budgets into any category you like, by year, purpose, or anything else.',
+    icon: "folder",
+    title: "<b>Budgets</b>, grouped your way",
+    body: "Each budget is one period of your money — October, a trip, a project. Folders collect budgets into any category you like, by year, purpose, or anything else.",
   },
   {
-    icon: 'bills',
-    body: 'Photograph a receipt or pick one from the gallery, and on-device text recognition offers every line as chips you can drop into the amount, date, or description. Nothing is ever filled in without you tapping it.',
-    title: 'Receipts you can photograph',
+    icon: "bills",
+    body: "Photograph a receipt or pick one from the gallery, and on-device text recognition offers every line as chips you can drop into the amount, date, or description. Nothing is ever filled in without you tapping it.",
+    title: "<b>Receipts</b> you can photograph",
   },
   {
-    icon: 'clock',
-    title: 'Reminders that answer back',
-    body: 'Schedule a reminder on the calendar or a transaction, and the notification itself carries Complete and Remind Later buttons — settle it straight from the tray.',
+    icon: "clock",
+    title: "Reminders that answer back",
+    body: "Schedule a reminder on the calendar or a transaction, and the notification itself carries Complete and Remind Later buttons — settle it straight from the tray.",
   },
   {
-    icon: 'database',
-    title: 'Your data, in your hands',
-    body: 'Everything is stored locally in a SQLite database. Export a JSON backup when you want insurance, merge one back on conflict review, and restore on a new device without losing anything.',
+    icon: "database",
+    title: "Your data, in your hands",
+    body: "Everything is stored locally in a SQLite database. Export a JSON backup when you want insurance, merge one back on conflict review, and restore on a new device without losing anything.",
   },
 ];
 
 // Slide titles carry inline <b> emphasis (rendered by components/ui/Text);
 // the accessibility labels must not repeat that markup as literal characters.
 function plainTitle(title) {
-  return title.replace(/<\/?b>/g, '');
+  return title.replace(/<\/?b>/g, "");
 }
 
 export function OnboardingCarousel() {
@@ -83,11 +87,19 @@ export function OnboardingCarousel() {
 
   const finish = () => void complete();
 
+  // The tour's ending is a way in, not just away: finishing on the last
+  // slide lands on Home, so a replay opened from deep in the app (Help &
+  // Guide) ends at the starting point rather than back in place.
+  const getStarted = () => {
+    complete();
+    router.navigate("/");
+  };
+
   const slideInner = {
-    alignItems: 'center',
+    alignItems: "center",
     gap: spacing.lg,
     maxWidth: 480,
-    width: '100%',
+    width: "100%",
   };
 
   return (
@@ -99,9 +111,9 @@ export function OnboardingCarousel() {
           without paging forward through anything they have already seen. */}
       <View
         style={{
-          alignItems: 'center',
-          flexDirection: 'row',
-          justifyContent: 'space-between',
+          alignItems: "center",
+          flexDirection: "row",
+          justifyContent: "space-between",
           paddingHorizontal: spacing.lg,
           paddingTop: insets.top + spacing.sm,
         }}
@@ -113,8 +125,8 @@ export function OnboardingCarousel() {
             hitSlop={12}
             onPress={() => goTo(index - 1)}
             style={({ pressed }) => ({
-              alignItems: 'center',
-              flexDirection: 'row',
+              alignItems: "center",
+              flexDirection: "row",
               gap: spacing.xs,
               opacity: pressed ? 0.6 : 1,
             })}
@@ -151,7 +163,8 @@ export function OnboardingCarousel() {
           // Only the scroll EVENT's layoutWidth is trustworthy for the page
           // offset; the `width` state from onLayout divides by a real number
           // and never produces NaN dot indices.
-          if (width > 0) setIndex(Math.round(event.nativeEvent.contentOffset.x / width));
+          if (width > 0)
+            setIndex(Math.round(event.nativeEvent.contentOffset.x / width));
         }}
         style={styles.pages}
       >
@@ -160,8 +173,9 @@ export function OnboardingCarousel() {
           // Re-mounting the Animated views when a slide becomes active is
           // what replays the entrance fade for each visit; a slide that is
           // merely adjacent renders the same content with no transition.
-          const contentKey = active ? 'on' : 'off';
-          const entering = active && !reduceMotion ? FadeInDown.duration(240) : undefined;
+          const contentKey = active ? "on" : "off";
+          const entering =
+            active && !reduceMotion ? FadeInDown.duration(240) : undefined;
           return (
             <View
               key={slide.title}
@@ -169,14 +183,18 @@ export function OnboardingCarousel() {
               accessible
               accessibilityLabel={`Slide ${i + 1} of ${SLIDES.length}. ${plainTitle(slide.title)}. ${slide.body}`}
             >
-              <Animated.View key={`icon-${contentKey}`} entering={entering} style={slideInner}>
+              <Animated.View
+                key={`icon-${contentKey}`}
+                entering={entering}
+                style={slideInner}
+              >
                 <View
                   style={{
-                    alignItems: 'center',
+                    alignItems: "center",
                     backgroundColor: colors.primarySoft,
                     borderRadius: 96,
                     height: 96,
-                    justifyContent: 'center',
+                    justifyContent: "center",
                     width: 96,
                   }}
                 >
@@ -185,21 +203,21 @@ export function OnboardingCarousel() {
                 <Animated.View
                   key={`title-${contentKey}`}
                   entering={entering?.delay(80)}
-                  style={{ width: '100%' }}
+                  style={{ width: "100%" }}
                 >
-                  <Text variant="display" style={{ textAlign: 'center' }}>
+                  <Text variant="display" style={{ textAlign: "center" }}>
                     {slide.title}
                   </Text>
                 </Animated.View>
                 <Animated.View
                   key={`body-${contentKey}`}
                   entering={entering?.delay(160)}
-                  style={{ width: '100%' }}
+                  style={{ width: "100%" }}
                 >
                   <Text
                     variant="body"
                     tone="muted"
-                    style={{ textAlign: 'center', lineHeight: 24 }}
+                    style={{ textAlign: "center", lineHeight: 24 }}
                   >
                     {slide.body}
                   </Text>
@@ -212,7 +230,7 @@ export function OnboardingCarousel() {
 
       <View
         style={{
-          alignItems: 'center',
+          alignItems: "center",
           gap: spacing.sm,
           paddingBottom: insets.bottom + spacing.xl,
           paddingHorizontal: spacing.xl,
@@ -246,9 +264,9 @@ export function OnboardingCarousel() {
             </Pressable>
           ))}
         </View>
-        <View style={{ width: '100%', marginTop: spacing.sm }}>
+        <View style={{ width: "100%", marginTop: spacing.sm }}>
           {last ? (
-            <Button label="Get started" onPress={finish} />
+            <Button label="Get started" onPress={getStarted} />
           ) : (
             <Button label="Next" onPress={() => goTo(index + 1)} />
           )}
@@ -261,14 +279,14 @@ export function OnboardingCarousel() {
 const styles = StyleSheet.create({
   pages: { flexGrow: 1 },
   slide: {
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
     paddingHorizontal: 24,
   },
   dots: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: 8,
   },
 });

@@ -1,6 +1,17 @@
 # Changelog
 
-All notable changes to Budgetarian. Dates are local calendar days; newest first.
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Changed
+- The introduction tour's "Get started" now lands on Home instead of
+  staying where the tour was opened from — finishing a replay started in
+  Help & Guide ends at the app's front page. Skip still simply dismisses
+  the tour in place.
 
 ## 2026-10-23
 
