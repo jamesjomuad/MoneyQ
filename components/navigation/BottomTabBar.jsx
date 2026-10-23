@@ -252,7 +252,7 @@ export function BottomTabBar({ state, descriptors, navigation }) {
             styles.card,
             {
               backgroundColor: colors.surface,
-              borderRadius: BAR_H / 2,
+              borderRadius: radius.xl,
               boxShadow: `0 6px 18px ${colors.shadow}`,
             },
           ]}
