@@ -21,6 +21,11 @@ All notable changes to Budgetarian. Dates are local calendar days; newest first.
   Help & Guide shows the tour again at any time. In Expo Go the tour
   appears on every fresh launch so reviewers can see it, and dismissing
   it there never writes the flag.
+- Inline emphasis in text. `<b>…</b>` in any app copy now renders one
+  static Manrope weight heavier — the welcome title, help articles and
+  captions can bold a phrase for real. At the heaviest bundled weight
+  (display titles) there is nothing heavier to go to, so a bold span
+  takes the brand green there instead and emphasis never goes invisible.
 - The Attachments section can use the camera. Adding a receipt on a new
   transaction now offers two sources side by side — Take Photo and Choose
   from Gallery — and both stay in reach while a receipt is staged, so
