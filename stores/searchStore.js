@@ -15,25 +15,30 @@ export const useSearchStore = create((set) => {
   return {
     transactions: [],
     error: null,
+    // True while a scan is in flight. Superseded responses never touch it —
+    // the newest request owns the flag, and reset() force-clears so a
+    // dropped in-flight read cannot leave the spinner stuck on.
+    isSearching: false,
 
     search: async (query) => {
       const term = (query ?? '').trim();
       const id = ++requestId;
       if (term.length === 0) {
-        set({ transactions: [], error: null });
+        set({ transactions: [], error: null, isSearching: false });
         return;
       }
+      set({ isSearching: true });
       try {
         const transactions = await searchTransactions(term);
-        if (id === requestId) set({ transactions, error: null });
+        if (id === requestId) set({ transactions, error: null, isSearching: false });
       } catch (error) {
-        if (id === requestId) set({ transactions: [], error });
+        if (id === requestId) set({ transactions: [], error, isSearching: false });
       }
     },
 
     reset: () => {
       requestId += 1;
-      set({ transactions: [], error: null });
+      set({ transactions: [], error: null, isSearching: false });
     },
   };
 });

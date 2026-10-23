@@ -282,6 +282,7 @@ export default function BudgetsScreen() {
   const searching = debouncedTerm.length > 0;
   const txMatches = useSearchStore((state) => state.transactions);
   const searchError = useSearchStore((state) => state.error);
+  const isSearching = useSearchStore((state) => state.isSearching);
   const runSearch = useSearchStore((state) => state.search);
   const resetSearch = useSearchStore((state) => state.reset);
 
@@ -371,6 +372,10 @@ export default function BudgetsScreen() {
     const byId = new Map(budgets.map((budget) => [budget.id, budget]));
     return pinnedIds.map((id) => byId.get(id)).filter(Boolean);
   }, [budgets, pinnedIds]);
+
+  // O(1) pin lookup per row instead of scanning the pinned array on every
+  // render of every card.
+  const pinnedSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
 
   // Folder cards show how many budgets live inside; the main list keeps only
   // ungrouped budgets so nothing appears twice in Budgets.
@@ -498,7 +503,7 @@ export default function BudgetsScreen() {
             <BudgetCard
               budget={item.budget}
               currency={currency}
-              pinned={pinnedIds.includes(item.budget.id)}
+              pinned={pinnedSet.has(item.budget.id)}
               onTogglePin={togglePinned}
               selectable={sel.selectionMode && !forSearch}
               selected={!forSearch && sel.isSelected(item.budget.id)}
@@ -600,7 +605,19 @@ export default function BudgetsScreen() {
                   },
                 ]}
               >
-                <Icon name="search" size={18} color={colors.textFaint} />
+                {/* Fixed-width slot: the spinner swaps in without nudging
+                    the input or its placeholder. */}
+                <View style={styles.searchIconSlot}>
+                  {isSearching ? (
+                    <ActivityIndicator
+                      accessibilityLabel="Searching"
+                      color={colors.primary}
+                      size="small"
+                    />
+                  ) : (
+                    <Icon name="search" size={18} color={colors.textFaint} />
+                  )}
+                </View>
                 <TextInput
                   value={query}
                   onChangeText={setQuery}
@@ -776,9 +793,25 @@ export default function BudgetsScreen() {
                   ) : null}
 
                   {searchError ? (
-                    <Text variant="caption" tone="expense" style={styles.searchNote}>
-                      Search could not finish. Check the data and try again.
-                    </Text>
+                    <View style={styles.searchNote}>
+                      <Text accessibilityRole="alert" variant="caption" tone="expense">
+                        Search could not finish. Check the data and try again.
+                      </Text>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => runSearch(debouncedTerm)}
+                        hitSlop={12}
+                        style={({ pressed }) => [
+                          styles.retryButton,
+                          { opacity: pressed ? 0.6 : 1 },
+                        ]}
+                      >
+                        <Icon name="refresh" size={14} color={colors.primary} />
+                        <Text variant="label" tone="primary">
+                          Try again
+                        </Text>
+                      </Pressable>
+                    </View>
                   ) : null}
                 </>
               ) : (
@@ -854,9 +887,12 @@ export default function BudgetsScreen() {
                         hitSlop={16}
                         style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
                       >
-                        <Text variant="label" tone="primary">
-                          + New budget
-                        </Text>
+                        <View style={styles.newBudgetRow}>
+                          <Icon name="add" size={16} color={colors.primary} />
+                          <Text variant="label" tone="primary">
+                            New budget
+                          </Text>
+                        </View>
                       </Pressable>
                     </View>
                   ) : null}
@@ -906,6 +942,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     minHeight: 48,
   },
+  searchIconSlot: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 18,
+  },
   searchInput: {
     fontFamily: 'Manrope_400Regular',
     flex: 1,
@@ -943,6 +984,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
     paddingHorizontal: 4,
   },
+  newBudgetRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  retryButton: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
   txGroup: {
     marginTop: 8,
   },
@@ -951,7 +1002,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   searchNote: {
+    alignItems: "center",
+    gap: 6,
     marginTop: 8,
-    textAlign: "center",
   },
 });
