@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Release information in Settings → About. The card now shows the
+  installed app version (from the runtime configuration) alongside the
+  latest documented version read from CHANGELOG.md — kept clearly apart,
+  so an undocumented or unreleased state never looks like an update
+  offer. A small parser (utils/changelog.js) and generator
+  (npm run gen:changelog, wired into the dev start hooks) keep the
+  changelog version available to the app without any network call.
 - The Budgets page now shows two independently collapsible sections —
   Folders and Budgets — each with a foldable count header following the
   budget detail's transaction-section pattern. Selection, bulk actions,

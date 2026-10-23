@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback } from "react";
 import {
@@ -15,6 +16,7 @@ import { Icon } from "../../components/ui/Icon";
 import { Screen, SectionHeader } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { useTheme } from "../../components/ui/ThemeProvider";
+import { changelogMeta } from "../../constants/changelogMeta";
 import { APPEARANCE_OPTIONS } from "../../constants/colors";
 import { useAppStore } from "../../stores/appStore";
 import { useRemindersStore } from "../../stores/remindersStore";
@@ -48,6 +50,16 @@ export default function SettingsScreen() {
   const supported = permission ? permission.supported !== false : true;
   const granted = Boolean(permission?.granted);
   const canAskAgain = permission?.canAskAgain !== false;
+
+  // Two distinct facts, deliberately labelled apart: what this device runs
+  // (runtime config) versus what the changelog documents as released (the
+  // generated constants/changelogMeta.js). Never claim one is the other.
+  const installedVersion = Constants.expoConfig?.version ?? "Unknown in this runtime";
+  const documentedVersion = changelogMeta?.latestVersion
+    ? `${changelogMeta.latestVersion}${
+        changelogMeta.releaseDate ? ` — released ${changelogMeta.releaseDate}` : ""
+      }`
+    : "No versioned release is documented in the changelog yet.";
 
   function openDeviceSettings() {
     if (Platform.OS !== "web") Linking.openSettings();
@@ -292,6 +304,18 @@ export default function SettingsScreen() {
             ? "This build runs in a browser against in-memory sample data, so nothing you do here is saved. The Android app uses the on-device SQLite database instead."
             : "Budgetarian stores everything locally on this device. It works fully offline and does not send your financial data anywhere."}
         </Text>
+        <View style={{ marginTop: spacing.md }}>
+          <Text variant="label">Installed app version</Text>
+          <Text variant="caption" tone="muted" style={{ marginTop: 2 }}>
+            {installedVersion}
+          </Text>
+        </View>
+        <View style={{ marginTop: spacing.sm }}>
+          <Text variant="label">Latest documented version</Text>
+          <Text variant="caption" tone="muted" style={{ marginTop: 2 }}>
+            {documentedVersion}
+          </Text>
+        </View>
         <Text variant="caption" tone="faint" style={{ marginTop: spacing.sm }}>
           Copyright © 2026 James Jomuad
         </Text>

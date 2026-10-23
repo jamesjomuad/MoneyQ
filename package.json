@@ -39,6 +39,11 @@
     "web": "expo start --web",
     "verify:db": "node --import ./scripts/register.mjs ./scripts/verify-schema.mjs",
     "verify:receipt": "node --import ./scripts/register.mjs ./scripts/verify-receipt-parse.mjs",
+    "verify:changelog": "node --import ./scripts/register.mjs ./scripts/verify-changelog-parse.mjs",
+    "gen:changelog": "node --import ./scripts/register.mjs ./scripts/generate-changelog-meta.mjs",
+    "prestart": "npm run gen:changelog",
+    "preandroid": "npm run gen:changelog",
+    "preweb": "npm run gen:changelog",
     "lint": "expo lint"
   },
   "private": true,
