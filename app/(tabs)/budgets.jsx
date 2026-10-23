@@ -9,12 +9,14 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeInDown, useReducedMotion } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BudgetCard } from "../../components/budgets/BudgetCard";
 import { CreateFab, CREATE_FAB_SIZE } from "../../components/budgets/CreateFab";
 import { FolderGroupCard } from "../../components/budgets/FolderGroupCard";
 import { FolderPickerSheet } from "../../components/budgets/FolderPickerSheet";
 import { PinnedFolders } from "../../components/budgets/PinnedFolders";
+import { tabBandHeight } from "../../components/navigation/tabBand";
 import { DraggableRows } from "../../components/lists/DraggableRows";
 import { SelectionWrapper } from "../../components/selection/SelectionWrapper";
 import { TransactionRow } from "../../components/transactions/TransactionRow";
@@ -46,6 +48,10 @@ const budgetRowId = (item) => item.budget.id;
 
 export default function BudgetsScreen() {
   const { colors, radius, spacing } = useTheme();
+  const insets = useSafeAreaInsets();
+  // The floating tab capsule overlays the scene, so bottom-docked strips have
+  // to step above its band themselves; the scene above them runs under it.
+  const tabBand = tabBandHeight(insets.bottom, spacing);
   const reduced = useReducedMotion();
   const budgets = useBudgetsStore((state) => state.budgets);
   const pinnedIds = useBudgetsStore((state) => state.pinnedIds);
@@ -570,9 +576,9 @@ export default function BudgetsScreen() {
         return (
           <View style={styles.fill}>
             {/* The screen animates its own items, so the scroll body stays put. */}
-            {/* The tab bar is in normal flow, so only the floating create
-                button needs reserved clearance; the button itself carries the
-                gap that keeps the last card off the pinned strip. */}
+            {/* The tab capsule floats over the scene, so the last row needs
+                room for the create button, which itself is lifted above the
+                capsule. */}
             <Screen
               topInset
               enter={false}
@@ -908,9 +914,14 @@ export default function BudgetsScreen() {
             </Screen>
 
             {sel.selectionMode && !searching ? (
-              sel.toolbar
+              // The toolbar docks above the floating capsule, not under it.
+              <View style={{ marginBottom: tabBand }}>{sel.toolbar}</View>
             ) : searching ? null : (
-              <Animated.View entering={introEnter(7)} onLayout={handleStripLayout}>
+              <Animated.View
+                entering={introEnter(7)}
+                onLayout={handleStripLayout}
+                style={{ marginBottom: tabBand }}
+              >
                 <PinnedFolders budgets={pinnedBudgets} onPressFolder={openFolder} />
               </Animated.View>
             )}
@@ -918,10 +929,13 @@ export default function BudgetsScreen() {
             {/* The one create action: floating, horizontally centered, and
                 hidden while a selection is active so it can never sit on the
                 move bar. It anchors above the pinned strip when that strip is
-                on screen, otherwise just above the navigation bar. */}
+                on screen, and always above the floating capsule. */}
             {sel.selectionMode ? null : (
               <CreateFab
-                bottomOffset={!searching && pinnedBudgets.length > 0 ? stripHeight : 0}
+                bottomOffset={
+                  tabBand +
+                  (!searching && pinnedBudgets.length > 0 ? stripHeight : 0)
+                }
               />
             )}
 

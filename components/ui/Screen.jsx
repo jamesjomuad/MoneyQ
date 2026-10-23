@@ -10,6 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { tabBandHeight } from "../navigation/tabBand";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { useTheme } from "./ThemeProvider";
@@ -47,11 +48,10 @@ export function Screen({
   const { colors, spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const entering = useEnter(enter);
-  // Inside a bottom-tab screen the floating tab bar is laid out in-flow below
-  // the scene, and its band already reserves the bottom safe-area inset. The
-  // screen's own navigator answers the question directly — expo-router 57
-  // vendors react-navigation, so the official tab-bar-height context is not
-  // importable from any public entry point.
+  // Inside a bottom-tab screen the floating capsule is an overlay: the scene
+  // runs all the way to the bottom edge and scrolls underneath it, so content
+  // reserves the band height to keep its last row clear of the capsule (the
+  // same contract the Add transaction page uses for its floating button).
   const navigation = useNavigation();
   const inTabScreen = navigation?.getState?.().type === "tab";
 
@@ -63,10 +63,12 @@ export function Screen({
       // the first row; opt-in padding hands the inset back.
       paddingTop: spacing.lg + (topInset ? insets.top : 0),
       // Stack screens sit at the physical bottom edge, so content needs the
-      // inset to clear Android's navigation bar. Tab screens stop above the
-      // tab bar band, which already accounts for it.
+      // inset to clear Android's navigation bar. Tab screens instead clear the
+      // floating capsule, whose band already carries the bottom inset.
       paddingBottom:
-        spacing.lg + (inTabScreen ? 0 : insets.bottom) + bottomSpace,
+        spacing.lg +
+        (inTabScreen ? tabBandHeight(insets.bottom, spacing) : insets.bottom) +
+        bottomSpace,
     },
     contentContainerStyle,
   ];

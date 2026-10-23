@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unpaid income has no calendar payment event.
 
 ### Fixed
+- The floating tab capsule now really floats. Its band is transparent and
+  overlays the page, so content scrolls beneath the capsule instead of
+  stopping above an opaque strip, while the last row still comes to rest
+  clear of it. Bottom-docked Budgets controls — the create button, pinned
+  folders and the selection toolbar — ride above the capsule.
 - The "Complete" button on reminder notifications works again. Two bugs hid
   it: pressing the notification body first (or Complete twice) collided in
   the tap handler's duplicate guard, so the button silently did nothing,

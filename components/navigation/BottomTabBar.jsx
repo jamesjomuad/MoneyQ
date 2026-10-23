@@ -10,10 +10,20 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../ui/ThemeProvider';
-import { setTabBandHeight } from './tabBand';
+import {
+  setTabBandHeight,
+  TAB_BAR_CAPSULE_HEIGHT,
+  TAB_BAR_LIFT,
+} from './tabBand';
 
 /**
  * Floating capsule navigation.
+ *
+ * The band is an overlay: it is absolutely pinned to the bottom of the tab
+ * scene and paints nothing, so the page scrolls underneath and only the
+ * capsule itself (plus its shadow) floats over the content. Screens reserve
+ * the band height at the end of their scroll content, like the Add
+ * transaction page reserves room for its floating action button.
  *
  * The capsule is one surface: a theme background, one soft shadow, no border.
  * The tabs are icon-only: one glyph size, one shared icon zone, no visible
@@ -33,7 +43,6 @@ import { setTabBandHeight } from './tabBand';
  * navigation state, so programmatic tab changes animate identically.
  */
 
-const BAR_H = 68; // capsule height (excludes the safe-area spacing below it)
 const BAR_PAD = 8; // horizontal padding inside the capsule
 const ICON_SIZE = 26; // the one glyph size, active or not
 const ZONE_W = 48; // shared icon zone width: the pill is measured against it
@@ -50,8 +59,6 @@ const PILL_TRAVEL_MS = 400; // pill glide duration between tabs
 const ICON_SCALE_MS = 260; // active-icon settle, same curve as the pill
 // cubic-bezier(0.22, 1, 0.36, 1) from the demo: a quick, soft settle.
 const GLIDE_EASING = Easing.bezier(0.22, 1, 0.36, 1);
-
-const BAR_LIFT = 10; // extra air under the capsule, lifting the bar off the edge
 
 /**
  * One tab: a single icon, centered in an equal share of the capsule — no visible
@@ -223,18 +230,19 @@ export function BottomTabBar({ state, descriptors, navigation }) {
 
   // Air held under the capsule: the Android navigation inset (or a minimum of
   // breathing room) plus the small lift that keeps the bar off the screen edge.
-  const barInset = Math.max(insets.bottom, spacing.md) + BAR_LIFT;
+  const barInset = Math.max(insets.bottom, spacing.md) + TAB_BAR_LIFT;
 
   return (
     <View
+      // Air around the capsule is transparent and never intercepts touches, so
+      // the scene behind keeps scrolling; only the capsule's own controls do.
+      pointerEvents="box-none"
       // Publish the band height so the app-wide toast can float above the
       // capsule instead of landing on it.
       onLayout={(event) => setTabBandHeight(event.nativeEvent.layout.height)}
       style={[
         styles.band,
         {
-          pointerEvents: 'box-none',
-          backgroundColor: colors.background,
           // Just enough air above the capsule for its shadow.
           paddingTop: spacing.sm,
           // Keep the capsule clear of the screen edges, clear of the Android
@@ -291,17 +299,20 @@ export function BottomTabBar({ state, descriptors, navigation }) {
 
 const styles = StyleSheet.create({
   band: {
-    width: '100%',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
   },
   cardWrap: {
-    height: BAR_H,
+    height: TAB_BAR_CAPSULE_HEIGHT,
     justifyContent: 'center',
     width: '100%',
   },
   card: {
     alignItems: 'center',
     flexDirection: 'row',
-    height: BAR_H,
+    height: TAB_BAR_CAPSULE_HEIGHT,
     overflow: 'visible',
     paddingHorizontal: BAR_PAD,
     width: '100%',

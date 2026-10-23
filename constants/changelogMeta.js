@@ -39,6 +39,7 @@ export const changelogSections = [
       {
         "title": "Fixed",
         "items": [
+          "The floating tab capsule now really floats. Its band is transparent and overlays the page, so content scrolls beneath the capsule instead of stopping above an opaque strip, while the last row still comes to rest clear of it. Bottom-docked Budgets controls — the create button, pinned folders and the selection toolbar — ride above the capsule.",
           "The \"Complete\" button on reminder notifications works again. Two bugs hid it: pressing the notification body first (or Complete twice) collided in the tap handler's duplicate guard, so the button silently did nothing, and a completed reminder's notification never left the Android tray because the app called an expo-notifications API that SDK 57 renamed. Dismissal and the scheduled-alarm cancel now use the current APIs, so a completed reminder clears itself from the tray and never fires again, while other reminders on the same transaction are untouched."
         ]
       }

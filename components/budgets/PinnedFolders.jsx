@@ -12,9 +12,10 @@ import { useTheme } from "../ui/ThemeProvider";
  * palette so custom colors carry over, and the row scrolls sideways when many
  * folders are pinned instead of growing the page.
  *
- * The strip sits above the floating tab bar, which already reserves the
- * Android bottom inset, so it must not add insets.bottom itself or the nav
- * area is double-counted and the page gains a tall blank band.
+ * The strip sits above the floating tab capsule, which already covers the
+ * Android bottom inset and sits inside its own band; the host lifts this strip
+ * by that band, so the strip must not add insets.bottom itself or the nav area
+ * is double-counted and the page gains a tall blank band.
  */
 export function PinnedFolders({ budgets, onPressFolder }) {
   const { colors, radius, spacing } = useTheme();
