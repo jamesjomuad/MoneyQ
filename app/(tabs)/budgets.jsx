@@ -23,6 +23,7 @@ import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Screen, SectionHeader } from "../../components/ui/Screen";
+import { SwipeActionRow, closeAllSwipeActions } from "../../components/ui/SwipeActionRow";
 import { Text } from "../../components/ui/Text";
 import { useTheme } from "../../components/ui/ThemeProvider";
 import { useBudgetsStore } from "../../stores/budgetsStore";
@@ -143,6 +144,63 @@ export default function BudgetsScreen() {
       );
     },
     [archiveMany, undoArchive],
+  );
+
+  // Swipe-to-delete on a budget row is the same canonical archive the budget
+  // detail's "Delete budget" runs: `archiveMany` flips only `deleted_at`, so
+  // the budget moves to Archive with its transactions, breakdown items, tags,
+  // reminders, attachments, color and folder assignment untouched, and Restore
+  // brings it back losslessly. The store reload inside `archiveMany` refreshes
+  // this list and the Archive screen on the next read.
+  const swipingDeleteRef = useRef(false);
+
+  const confirmSwipeDelete = useCallback(
+    (budget) => {
+      Alert.alert(
+        `Delete ${budget.name}?`,
+        'This budget will be removed from your active lists and moved to Archive. Its financial data will be preserved, and you can restore it later from Archive.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            // Neutral, not destructive: this archives the budget (reversible).
+            style: 'default',
+            onPress: async () => {
+              if (swipingDeleteRef.current) return;
+              swipingDeleteRef.current = true;
+              try {
+                await archiveMany([budget.id]);
+                showToast('1 budget archived', 'success');
+              } catch (error) {
+                showToast(
+                  error?.message ?? 'Could not archive this budget.',
+                  'error',
+                );
+              } finally {
+                swipingDeleteRef.current = false;
+              }
+            },
+          },
+        ],
+      );
+    },
+    [archiveMany],
+  );
+
+  // The single action a budget row exposes. Tone resolves to the destructive
+  // theme tokens inside SwipeActionRow, matching the transaction swipe.
+  const budgetActions = useCallback(
+    (budget) => [
+      {
+        key: 'delete',
+        label: 'Delete',
+        icon: 'trash',
+        tone: 'destructive',
+        accessibilityLabel: `Delete ${budget.name}`,
+        onPress: () => confirmSwipeDelete(budget),
+      },
+    ],
+    [confirmSwipeDelete],
   );
 
   const selectionActions = useMemo(
@@ -409,43 +467,62 @@ export default function BudgetsScreen() {
         // One row renderer for both the unified budget list and search results,
         // so folder and budget rows stay pixel-identical in every context.
         // Search rows keep pinning but never enter bulk-move selection.
-        const renderRow = (item, index, total, forSearch, lifted = false, reorder = null) => (
-          <Animated.View
-            key={item.key}
-            entering={introEnter(2 + Math.min(index, 4))}
-          >
-            {item.kind === 'folder' ? (
-              <FolderGroupCard
-                folder={item.folder}
-                budgetCount={folderCounts.get(item.folder.id) ?? 0}
-                isLast={index === total - 1}
-                reorder={forSearch ? null : reorder}
-                onPress={
-                  lifted
-                    ? undefined
-                    : () =>
-                        router.push({
-                          pathname: "/folder/[id]",
-                          params: { id: item.folder.id },
-                        })
-                }
-              />
-            ) : (
-              <BudgetCard
-                budget={item.budget}
-                currency={currency}
-                pinned={pinnedIds.includes(item.budget.id)}
-                onTogglePin={togglePinned}
-                selectable={sel.selectionMode && !forSearch}
-                selected={!forSearch && sel.isSelected(item.budget.id)}
-                onToggleSelect={sel.toggleItem}
-                onPress={lifted ? undefined : openFolder}
-                isLast={index === total - 1}
-                reorder={forSearch ? null : reorder}
-              />
-            )}
-          </Animated.View>
-        );
+        const renderRow = (item, index, total, forSearch, lifted = false, reorder = null) => {
+          const budgetCard = (
+            <BudgetCard
+              budget={item.budget}
+              currency={currency}
+              pinned={pinnedIds.includes(item.budget.id)}
+              onTogglePin={togglePinned}
+              selectable={sel.selectionMode && !forSearch}
+              selected={!forSearch && sel.isSelected(item.budget.id)}
+              onToggleSelect={sel.toggleItem}
+              onPress={lifted ? undefined : openFolder}
+              isLast={index === total - 1}
+              reorder={forSearch ? null : reorder}
+            />
+          );
+
+          return (
+            <Animated.View
+              key={item.key}
+              entering={introEnter(2 + Math.min(index, 4))}
+            >
+              {item.kind === 'folder' ? (
+                <FolderGroupCard
+                  folder={item.folder}
+                  budgetCount={folderCounts.get(item.folder.id) ?? 0}
+                  isLast={index === total - 1}
+                  reorder={forSearch ? null : reorder}
+                  onPress={
+                    lifted
+                      ? undefined
+                      : () =>
+                          router.push({
+                            pathname: "/folder/[id]",
+                            params: { id: item.folder.id },
+                          })
+                  }
+                />
+              ) : forSearch ? (
+                // Search hits stay plain: the swipe action belongs to the
+                // budget list itself, not to every rendering of a card.
+                budgetCard
+              ) : (
+                // Lifted rows and selection mode disable the swipe: a row in
+                // the air must follow the drag, and checkbox taps must never
+                // compete with a revealed action.
+                <SwipeActionRow
+                  rowId={`budgets-row-${item.budget.id}`}
+                  actions={budgetActions(item.budget)}
+                  disabled={lifted || sel.selectionMode}
+                >
+                  {budgetCard}
+                </SwipeActionRow>
+              )}
+            </Animated.View>
+          );
+        };
 
         function confirmBulkMove(folderId) {
           const destination = folderId
@@ -703,19 +780,24 @@ export default function BudgetsScreen() {
                 </>
               ) : (
                 <>
-                  <Card padded={false} style={{ marginBottom: spacing.sm }}>
-                    <DraggableRows
-                      items={listItems}
-                      disabled={sel.selectionMode}
-                      scroll={dragScroll}
-                      onLiftChange={setLiftedKey}
-                      resolveTarget={resolveMixedTarget}
-                      onReorder={handleReorder}
-                      renderItem={(item, index, total, lifted, reorder) =>
-                        renderRow(item, index, total, false, lifted, reorder)
-                      }
-                    />
-                  </Card>
+                  {/* Any touch inside the list region dismisses a stray open
+                      swipe row (taps on the row itself are handled by its own
+                      close overlay) — same pattern as the budget detail. */}
+                  <View onTouchStart={closeAllSwipeActions}>
+                    <Card padded={false} style={{ marginBottom: spacing.sm }}>
+                      <DraggableRows
+                        items={listItems}
+                        disabled={sel.selectionMode}
+                        scroll={dragScroll}
+                        onLiftChange={setLiftedKey}
+                        resolveTarget={resolveMixedTarget}
+                        onReorder={handleReorder}
+                        renderItem={(item, index, total, lifted, reorder) =>
+                          renderRow(item, index, total, false, lifted, reorder)
+                        }
+                      />
+                    </Card>
+                  </View>
 
                   {/* The Plus action: the same create entry the old Home offered,
                       now sitting under the single unified list. */}

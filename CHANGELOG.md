@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Swipe-to-delete on budget rows. Swiping a budget left in the Budgets list
+  reveals a single Delete action, matching how transaction rows swipe. Delete
+  keeps the established archive rule: the budget moves to Archive with its
+  transactions, breakdown items, tags, reminders, attachments and color
+  intact, after the same confirmation the budget screen shows, and Restore
+  brings it back unchanged.
+
 ## [1.0.0] - 2026-10-23
 
 ### Changed
