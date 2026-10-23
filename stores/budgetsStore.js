@@ -118,6 +118,34 @@ export const useBudgetsStore = create((set, get) => ({
     await get().load();
   },
 
+  /**
+   * Permanently delete several archived budgets — the Archive screen's bulk
+   * action. Each id goes through exactly the single-delete sequence (cancel
+   * its OS notifications, delete its reminder rows, then delete the budget and
+   * let the adapter cascade its transactions, breakdown items and attachments).
+   * A failure on one id never hides the others: the caller gets back what was
+   * deleted and what was not, and the store is reloaded from storage either
+   * way, so the screen can report the truth instead of assuming success.
+   */
+  removeMany: async (ids) => {
+    const deleted = [];
+    const failed = [];
+    for (const id of ids) {
+      try {
+        await cancelScheduledRemindersForBudget(id);
+        await deleteRemindersForBudget(id);
+        await deleteBudget(id);
+        deleted.push(id);
+      } catch (error) {
+        failed.push({ id, message: error?.message ?? 'Could not delete this budget.' });
+      }
+    }
+    const pinnedIds = get().pinnedIds.filter((pinnedId) => !deleted.includes(pinnedId));
+    if (pinnedIds.length !== get().pinnedIds.length) await setPinnedBudgetIds(pinnedIds);
+    await get().load();
+    return { deleted, failed };
+  },
+
   /** Toggle a budget's pinned state; a fresh pin is appended (order-preserving). */
   togglePinned: async (id) => {
     const current = get().pinnedIds;

@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without a status read as Paid, and the Status control in the transaction
   form appears for both Expense and Income. Transfers keep no payment
   status: the form hides the control for them and the database stores NULL.
+- Multi-select on the Archive screen, using the same shared checkboxes,
+  three-state select-all and contextual toolbar as Home and folders. Bulk
+  Restore returns every chosen budget through the existing restore rule — to
+  its original folder when it still exists, otherwise to the root list — and
+  bulk Delete permanently removes only the selected archived budgets, after a
+  confirmation that names the count and states that it cannot be undone.
+  Each deleted budget takes its transactions, breakdown items, reminders and
+  attachments with it, and any row that fails stays in Archive with a report
+  instead of a false success.
 
 ### Changed
 - The Add Transaction page now mirrors the Edit Transaction page: the
