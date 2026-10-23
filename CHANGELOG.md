@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Dismissal and the scheduled-alarm cancel now use the current APIs, so a
   completed reminder clears itself from the tray and never fires again,
   while other reminders on the same transaction are untouched.
+- The transaction form no longer offers a payment status that cannot exist.
+  Only expenses carry one (income and transfers have never stored a status),
+  yet the Status control stayed interactive on every type: a choice made on
+  an income transaction looked accepted, was silently dropped on save, and
+  snapped back on reopen. The Status control now appears only when the type
+  is Expense — matching the Due-date section's established rule — so what
+  the form offers is always what it keeps. Expense behavior is unchanged.
 
 ## [1.0.0] - 2026-10-23
 

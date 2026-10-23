@@ -1882,21 +1882,26 @@ export default function TransactionFormScreen() {
 
         {/* Type and Status are core one-tap choices: kept dense beside the
             amount so they never scroll away from the fields they govern
-            (due date follows payment status). */}
+            (due date follows payment status). Status is an expense-only
+            rule — income and transfers keep none, so the control is only
+            offered where a choice can actually be persisted; Type fills
+            the row alone otherwise. */}
         <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
           <View style={{ flex: 1 }}>
             <SectionHeader title="Type" color={summaryInk} />
             <SegmentedControl options={typeOptions} value={type} onChange={setType} dense />
           </View>
-          <View style={{ flex: 1 }}>
-            <SectionHeader title="Status" color={summaryInk} />
-            <SegmentedControl
-              options={PAYMENT_OPTIONS}
-              value={paymentStatus}
-              onChange={setPaymentStatus}
-              dense
-            />
-          </View>
+          {type === 'expense' ? (
+            <View style={{ flex: 1 }}>
+              <SectionHeader title="Status" color={summaryInk} />
+              <SegmentedControl
+                options={PAYMENT_OPTIONS}
+                value={paymentStatus}
+                onChange={setPaymentStatus}
+                dense
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Budget association as a compact detail line: it never scrolls
