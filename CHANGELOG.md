@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of a false success.
 
 ### Changed
+- The time picker's Hour and Minute wheels now scroll endlessly in both
+  directions. Each column repeats its values and silently recentres on the
+  middle copy once the wheel stops, so there is no visible start or end.
+  Values, minute steps, the 12-hour format, the centre highlight and the
+  saved time all stay as they were.
 - The Add Transaction page now mirrors the Edit Transaction page: the
   Attachments section moved below Reminders to the same last position, and
   it wears the same section chrome — header with a single add action, card
