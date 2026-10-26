@@ -77,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unpaid income has no calendar payment event.
 
 ### Fixed
+- Needs Attention on Home now flags only real financial trouble. A budget is
+  no longer listed just because its period is close to ending — elapsed time
+  says nothing about the money. The section shows budgets spending ahead of
+  received income and unpaid payments past their due date, the overdue rows
+  no longer repeat under Upcoming, and alert rows no longer carry the
+  elapsed-period bar and percentage.
 - The floating tab capsule now really floats. Its band is transparent and
   overlays the page, so content scrolls beneath the capsule instead of
   stopping above an opaque strip, while the last row still comes to rest

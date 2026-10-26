@@ -15,33 +15,20 @@ import { useBudgetsStore } from "../../stores/budgetsStore";
 import { useDashboardStore } from "../../stores/dashboardStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useTagsStore } from "../../stores/tagsStore";
+import { attentionBudgets, overduePayments } from "../../utils/attention";
 import { computeBudgetBalance, computeTotals } from "../../utils/calculations";
 import { resolveRowChip } from "../../utils/colors";
 import { formatCurrency } from "../../utils/currency";
-import {
-  daysInclusive,
-  formatDateRange,
-  formatShortDate,
-  formatTime,
-  todayIso,
-} from "../../utils/dates";
+import { formatDateRange, formatShortDate, formatTime, todayIso } from "../../utils/dates";
 import { PAYMENT_EVENT_LABELS, derivePaymentEventStatus } from "../../utils/paymentStatus";
 import { REMINDER_STATUS_LABELS, deriveReminderStatus } from "../../utils/reminders";
-
-/** How far a budget's period can be from ending and still be worth flagging. */
-const ENDING_SOON_DAYS = 7;
 
 /** How many rows each list shows before it stops — a dashboard, not a report. */
 const ATTENTION_LIMIT = 3;
 const UPCOMING_LIMIT = 4;
 
-/** Why a budget is on the attention list, in the user's words. */
-function attentionReason(row) {
-  if (row.overBalance) return "Spending ahead of income";
-  if (row.daysLeft <= 0) return "Period ends today";
-  if (row.daysLeft === 1) return "Period ends in 1 day";
-  return `Period ends in ${row.daysLeft} days`;
-}
+/** The one financial condition that puts a budget in Needs Attention. */
+const OVER_BALANCE_REASON = "Spending ahead of income";
 
 /**
  * Disclosure row for a list the dashboard caps. It expands the list in place
@@ -76,6 +63,101 @@ function ShowAllRow({ count, expanded, noun, onPress }) {
 }
 
 /**
+ * One over-balance budget in Needs Attention. It states the financial reason
+ * and the money left (negative), and says nothing about how much of the period
+ * has run — elapsed time is context for the Budgets list, never an alarm.
+ */
+function BudgetAttentionRow({ row, currency, isFirst, onPress }) {
+  const { colors, spacing } = useTheme();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${row.budget.name}, ${OVER_BALANCE_REASON}, ${formatCurrency(
+        row.remaining,
+        { currency },
+      )} remaining`}
+      onPress={() => onPress(row.budget)}
+      style={({ pressed }) => [
+        styles.row,
+        { padding: spacing.lg },
+        !isFirst && {
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
+        },
+        pressed && styles.pressed,
+      ]}
+    >
+      <View
+        style={[
+          styles.dot,
+          { backgroundColor: resolveRowChip(row.budget.color, colors).background },
+        ]}
+      />
+      <View style={styles.grow}>
+        <View style={styles.rowHead}>
+          <Text variant="body" numberOfLines={1} style={styles.grow}>
+            {row.budget.name}
+          </Text>
+          <Text variant="body" tone="expense" style={styles.amount}>
+            {formatCurrency(row.remaining, { currency })}
+          </Text>
+        </View>
+        <Text variant="caption" tone="muted" numberOfLines={1} style={styles.reason}>
+          {OVER_BALANCE_REASON} ·{" "}
+          {formatDateRange(row.budget.start_date, row.budget.end_date)}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** An unpaid payment past its due date — the other actionable attention item. */
+function OverduePaymentRow({ entry, currency, isFirst, onPress }) {
+  const { colors, spacing } = useTheme();
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${entry.description || "Payment"}, ${
+        PAYMENT_EVENT_LABELS.overdue
+      }, due ${formatShortDate(entry.payment_due_date)}, ${formatCurrency(entry.amount, {
+        currency,
+      })}`}
+      onPress={() => onPress(entry)}
+      style={({ pressed }) => [
+        styles.row,
+        styles.rowCenter,
+        { padding: spacing.lg },
+        !isFirst && {
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
+        },
+        pressed && styles.pressed,
+      ]}
+    >
+      <Icon name="calendar" size={18} color={colors.expense} />
+      <View style={styles.grow}>
+        <Text variant="body" numberOfLines={1}>
+          {entry.description || "Payment"}
+        </Text>
+        <Text variant="caption" tone="muted" style={styles.reason}>
+          Due {formatShortDate(entry.payment_due_date)}
+        </Text>
+      </View>
+      <View style={styles.trailing}>
+        <Text variant="caption" style={{ color: colors.expense }}>
+          {PAYMENT_EVENT_LABELS.overdue}
+        </Text>
+        <Text variant="body" style={[styles.amount, styles.statusRight]}>
+          {formatCurrency(entry.amount, { currency })}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
  * Home tab: the Insights dashboard. It answers "how am I doing, what is coming
  * up, and what did I just record" from data that already exists — the active
  * budgets the Budgets tab manages, this month's transactions, the payments and
@@ -92,7 +174,7 @@ function ShowAllRow({ count, expanded, noun, onPress }) {
  * heavy lifting (which rows to read) lives in `useDashboardStore`.
  */
 export default function HomeScreen() {
-  const { colors, radius, spacing } = useTheme();
+  const { colors, spacing } = useTheme();
   const currency = useSettingsStore((state) => state.currency);
 
   const isLoading = useDashboardStore((state) => state.isLoading);
@@ -153,38 +235,30 @@ export default function HomeScreen() {
   const tagById = useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
 
   /**
-   * The budgets worth a nudge: one whose spending is already ahead of its
-   * income, or one whose period is about to close. A budget holds transactions
-   * rather than capping them, so the bar tracks the period itself — there is no
-   * limit to compare against.
+   * The dashboard's only alarm list. A row earns a place for a financial
+   * reason — a budget spending ahead of received income, or an unpaid payment
+   * past its due date. A healthy budget is never listed just because its
+   * period is ending; the calendar position of a period is context, not a
+   * problem. Overdue payments are not repeated in Upcoming.
    */
   const attentionAll = useMemo(() => {
-    const rows = [];
-    for (const budget of budgets) {
-      const remaining = computeBudgetBalance(budget.income ?? 0, budget.spent ?? 0);
-      const totalDays = Math.max(daysInclusive(budget.start_date, budget.end_date), 1);
-      const daysSoFar = Math.min(Math.max(daysInclusive(budget.start_date, today), 0), totalDays);
-      const daysLeft = daysInclusive(today, budget.end_date) - 1;
-      const overBalance = (budget.income ?? 0) > 0 && remaining < 0;
-      const endingSoon = daysLeft >= 0 && daysLeft <= ENDING_SOON_DAYS && budget.start_date <= today;
-      if (!overBalance && !endingSoon) continue;
-      rows.push({
-        budget,
-        remaining,
-        progress: daysSoFar / totalDays,
-        daysLeft,
-        overBalance,
-      });
-    }
-    rows.sort((a, b) => Number(b.overBalance) - Number(a.overBalance) || a.daysLeft - b.daysLeft);
-    return rows;
-  }, [budgets, today]);
+    const budgetsAhead = attentionBudgets(budgets).map((row) => ({ kind: "budget", ...row }));
+    const paymentsLate = overduePayments(upcomingPayments, today).map((entry) => ({
+      kind: "payment",
+      entry,
+    }));
+    return [...budgetsAhead, ...paymentsLate];
+  }, [budgets, upcomingPayments, today]);
   const attention = showAllAttention ? attentionAll : attentionAll.slice(0, ATTENTION_LIMIT);
 
-  // The due-date read starts a month back, which is what keeps an overdue
-  // payment on the list instead of letting it fall off silently.
+  // Paid commitments are settled money, and overdue ones moved to Needs
+  // Attention, so Upcoming carries only what is still ahead or due today.
   const duePaymentsAll = useMemo(
-    () => upcomingPayments.filter((entry) => derivePaymentEventStatus(entry, today) !== "paid"),
+    () =>
+      upcomingPayments.filter((entry) => {
+        const status = derivePaymentEventStatus(entry, today);
+        return status === "upcoming" || status === "dueToday";
+      }),
     [upcomingPayments, today],
   );
   const duePayments = showAllPayments ? duePaymentsAll : duePaymentsAll.slice(0, UPCOMING_LIMIT);
@@ -326,76 +400,30 @@ export default function HomeScreen() {
             <View>
               <SectionHeader title="Needs Attention" />
               <Card padded={false}>
-                {attention.map((row, index) => (
-                  <Pressable
-                    key={row.budget.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${row.budget.name}, ${attentionReason(row)}, ${formatCurrency(
-                      row.remaining,
-                      { currency },
-                    )} remaining`}
-                    onPress={() => openBudget(row.budget)}
-                    style={({ pressed }) => [
-                      styles.row,
-                      { padding: spacing.lg },
-                      index > 0 && {
-                        borderTopWidth: StyleSheet.hairlineWidth,
-                        borderTopColor: colors.border,
-                      },
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.dot,
-                        { backgroundColor: resolveRowChip(row.budget.color, colors).background },
-                      ]}
+                {attention.map((item, index) =>
+                  item.kind === "budget" ? (
+                    <BudgetAttentionRow
+                      key={`budget-${item.budget.id}`}
+                      row={item}
+                      currency={currency}
+                      isFirst={index === 0}
+                      onPress={openBudget}
                     />
-                    <View style={styles.grow}>
-                      <View style={styles.rowHead}>
-                        <Text variant="body" numberOfLines={1} style={styles.grow}>
-                          {row.budget.name}
-                        </Text>
-                        <Text
-                          variant="body"
-                          tone={row.remaining < 0 ? "expense" : "default"}
-                          style={styles.amount}
-                        >
-                          {formatCurrency(row.remaining, { currency })}
-                        </Text>
-                      </View>
-                      <Text variant="caption" tone="muted" numberOfLines={1} style={styles.reason}>
-                        {attentionReason(row)} ·{" "}
-                        {formatDateRange(row.budget.start_date, row.budget.end_date)}
-                      </Text>
-                      <View
-                        style={[
-                          styles.track,
-                          { backgroundColor: colors.surfaceMuted, marginTop: spacing.sm },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.fill,
-                            {
-                              width: `${Math.round(row.progress * 100)}%`,
-                              backgroundColor: row.overBalance ? colors.expense : colors.primary,
-                              borderRadius: radius.pill,
-                            },
-                          ]}
-                        />
-                      </View>
-                      <Text variant="caption" tone="faint" style={{ marginTop: spacing.xs }}>
-                        {Math.round(row.progress * 100)}% of the period elapsed
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
+                  ) : (
+                    <OverduePaymentRow
+                      key={`payment-${item.entry.id}`}
+                      entry={item.entry}
+                      currency={currency}
+                      isFirst={index === 0}
+                      onPress={openTransaction}
+                    />
+                  ),
+                )}
                 {attentionAll.length > ATTENTION_LIMIT ? (
                   <ShowAllRow
                     count={attentionAll.length}
                     expanded={showAllAttention}
-                    noun="budgets needing attention"
+                    noun="items needing attention"
                     onPress={() => setShowAllAttention((value) => !value)}
                   />
                 ) : null}
@@ -456,12 +484,7 @@ export default function HomeScreen() {
                         <Text
                           variant="caption"
                           style={{
-                            color:
-                              status === "overdue"
-                                ? colors.expense
-                                : status === "dueToday"
-                                  ? colors.warning
-                                  : colors.textMuted,
+                            color: status === "dueToday" ? colors.warning : colors.textMuted,
                           }}
                         >
                           {PAYMENT_EVENT_LABELS[status]}
@@ -618,8 +641,6 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5, marginTop: 6 },
   reason: { marginTop: 2 },
   amount: { fontVariant: ["tabular-nums"] },
-  track: { height: 6, borderRadius: 999, overflow: "hidden" },
-  fill: { height: 6 },
   groupHead: {
     flexDirection: "row",
     alignItems: "center",
