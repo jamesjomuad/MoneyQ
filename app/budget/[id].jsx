@@ -10,6 +10,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
+import { BudgetActionsSheet } from '../../components/budgets/BudgetActionsSheet';
+import { BudgetImportSheet } from '../../components/budgets/BudgetImportSheet';
 import { FolderPickerSheet } from '../../components/budgets/FolderPickerSheet';
 import { TagSpendRow } from '../../components/tags/TagSpendRow';
 import { TransactionRow } from '../../components/transactions/TransactionRow';
@@ -345,6 +347,7 @@ export default function BudgetDetailScreen() {
   // Budget-folder quick move: opening the picker is display state; the move
   // itself goes through the budgets store (which re-reads from the repository).
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -550,18 +553,7 @@ export default function BudgetDetailScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Budget options"
-              onPress={() =>
-                Alert.alert(budget.name, null, [
-                  {
-                    text: 'Edit budget',
-                    onPress: () =>
-                      router.push({ pathname: '/budget/form', params: { id: budget.id } }),
-                  },
-                  // Neutral, not destructive: this archives the budget (reversible).
-                  { text: 'Delete budget', onPress: confirmDeleteBudget },
-                  { text: 'Cancel', style: 'cancel' },
-                ])
-              }
+              onPress={() => setActionsOpen(true)}
               hitSlop={10}
               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
             >
@@ -881,6 +873,14 @@ export default function BudgetDetailScreen() {
           onClose={() => setFolderPickerOpen(false)}
         />
       ) : null}
+
+      <BudgetActionsSheet
+        visible={actionsOpen}
+        budget={budget}
+        onDelete={confirmDeleteBudget}
+        onClose={() => setActionsOpen(false)}
+      />
+      <BudgetImportSheet origin="budget" />
     </GestureHandlerRootView>
   );
 }

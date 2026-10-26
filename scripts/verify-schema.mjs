@@ -63,6 +63,20 @@ import {
   stringifyBackup,
   validateBackup,
 } from '../utils/backup.js';
+import {
+  buildBudgetTransferFileName,
+  parseBudgetTransferText,
+  planBudgetImport,
+  serializeBudgetTransfer,
+  stringifyBudgetTransfer,
+  uniqueBudgetName,
+  validateBudgetTransfer,
+} from '../utils/budgetTransfer.js';
+import {
+  applyBudgetTransferImport,
+  readBudgetImportContext,
+  readBudgetTransferSource,
+} from '../storage/repositories/budgetTransferRepository.js';
 
 let passed = 0;
 let failed = 0;
@@ -3610,6 +3624,566 @@ console.log('\n--- sqlite serialization regression ---');
   check('a failed sqlite operation rejects its caller', firstThrew);
   check('the sqlite queue keeps working after a failure', Array.isArray(after), JSON.stringify(after));
 }
+
+console.log('\n--- single-budget transfer ---');
+
+const TRANSFER_STAMP = '2026-10-26T00:00:00.000Z';
+
+async function createTransferFixture(store) {
+  const ids = {
+    sourceBudget: 'budget_source',
+    otherBudget: 'budget_other',
+    archivedBudget: 'budget_archived',
+    sourceTag: 'tag_trip',
+    otherTag: 'tag_other',
+    archivedTag: 'tag_retired',
+    expense: 'tx_trip_expense',
+    income: 'tx_trip_income',
+    otherExpense: 'tx_other_expense',
+    reminder: 'rem_trip',
+    attachment: 'att_trip',
+  };
+
+  await store.insertTag({
+    id: ids.sourceTag,
+    name: 'Trip',
+    emoji: '✈️',
+    color: '#0F7A8C',
+    is_default: 0,
+    archived: 0,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertTag({
+    id: ids.otherTag,
+    name: 'OtherTag',
+    emoji: '🏷️',
+    color: '#AA5500',
+    is_default: 0,
+    archived: 0,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertTag({
+    id: ids.archivedTag,
+    name: 'Retired',
+    emoji: '🏷️',
+    color: null,
+    is_default: 0,
+    archived: 1,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+
+  await store.insertBudget({
+    id: ids.sourceBudget,
+    name: 'Trip',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    color: '#AA5500',
+    folder_id: null,
+    position: 0,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+    deleted_at: null,
+  });
+  await store.insertBudget({
+    id: ids.otherBudget,
+    name: 'Other',
+    start_date: '2026-10-01',
+    end_date: '2026-10-31',
+    color: null,
+    folder_id: null,
+    position: 1,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+    deleted_at: null,
+  });
+  await store.insertBudget({
+    id: ids.archivedBudget,
+    name: 'Archived Trip',
+    start_date: '2026-09-01',
+    end_date: '2026-09-30',
+    color: null,
+    folder_id: null,
+    position: 2,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+    deleted_at: TRANSFER_STAMP,
+  });
+
+  await store.insertTransaction({
+    id: ids.expense,
+    budget_id: ids.sourceBudget,
+    type: 'expense',
+    amount: 5000,
+    tag_id: ids.sourceTag,
+    account_id: null,
+    to_account_id: null,
+    description: 'Flights',
+    transaction_date: '2026-10-05',
+    payment_status: 'unpaid',
+    has_breakdown: 1,
+    payment_due_date: '2026-10-20',
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertTransaction({
+    id: ids.income,
+    budget_id: ids.sourceBudget,
+    type: 'income',
+    amount: 20000,
+    tag_id: ids.sourceTag,
+    account_id: null,
+    to_account_id: null,
+    description: 'Budget top-up',
+    transaction_date: '2026-10-01',
+    payment_status: 'paid',
+    has_breakdown: 0,
+    payment_due_date: null,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertSubTransaction({
+    id: 'subtx_trip_out',
+    transaction_id: ids.expense,
+    description: 'Flight out',
+    amount: 2000,
+    position: 0,
+    purchase_date: null,
+    purchase_time: null,
+    notes: null,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertSubTransaction({
+    id: 'subtx_trip_back',
+    transaction_id: ids.expense,
+    description: 'Flight back',
+    amount: 3000,
+    position: 1,
+    purchase_date: null,
+    purchase_time: null,
+    notes: null,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertReminder({
+    id: ids.reminder,
+    transaction_id: ids.expense,
+    enabled: 1,
+    status: 'active',
+    remind_date: '2026-10-19',
+    remind_time: '09:00',
+    remind_at: buildRemindAt('2026-10-19', '09:00'),
+    notification_id: null,
+    notes: 'Pay before the trip',
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertAttachment({
+    id: ids.attachment,
+    transaction_id: ids.expense,
+    path: 'receipts/abc.jpg',
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+  await store.insertTransaction({
+    id: ids.otherExpense,
+    budget_id: ids.otherBudget,
+    type: 'expense',
+    amount: 900,
+    tag_id: ids.otherTag,
+    account_id: null,
+    to_account_id: null,
+    description: 'Other budget',
+    transaction_date: '2026-10-06',
+    payment_status: 'paid',
+    has_breakdown: 0,
+    payment_due_date: null,
+    created_at: TRANSFER_STAMP,
+    updated_at: TRANSFER_STAMP,
+  });
+
+  return ids;
+}
+
+// 1. Reading a single budget touches only that budget's rows.
+const transferMemory = createMemoryAdapter();
+const transferIds = await createTransferFixture(transferMemory);
+const transferSource = await readBudgetTransferSource(transferMemory, transferIds.sourceBudget);
+check(
+  'a budget file reads only its own transactions, breakdowns, tags, reminders and receipts',
+  transferSource !== null &&
+    transferSource.transactions.length === 2 &&
+    transferSource.breakdownItems.length === 2 &&
+    transferSource.tags.length === 1 &&
+    transferSource.tags[0].id === transferIds.sourceTag &&
+    transferSource.reminders.length === 1 &&
+    transferSource.attachments.length === 1,
+  JSON.stringify({
+    transactions: transferSource?.transactions.length,
+    breakdowns: transferSource?.breakdownItems.length,
+    tags: transferSource?.tags.map((tag) => tag.name),
+    reminders: transferSource?.reminders.length,
+    attachments: transferSource?.attachments.length,
+  }),
+);
+check(
+  'another budget never leaks into the file',
+  transferSource.transactions.every((row) => row.id !== transferIds.otherExpense),
+);
+check(
+  'an archived budget has nothing to export',
+  (await readBudgetTransferSource(transferMemory, transferIds.archivedBudget)) === null,
+);
+
+// 2. Serialize, stringify, parse and validate a complete file.
+const transferAttachment = {
+  id: transferIds.attachment,
+  transaction_id: transferIds.expense,
+  mime_type: 'image/png',
+  data: 'iVBORw0KGgo=',
+};
+const transferEnvelope = serializeBudgetTransfer(
+  { ...transferSource, attachments: [transferAttachment] },
+  { currency: 'PHP', appVersion: '9.9.9', createdAt: TRANSFER_STAMP },
+);
+const transferText = stringifyBudgetTransfer(transferEnvelope);
+const validatedTransfer = parseBudgetTransferText(transferText);
+check(
+  'a budget file round-trips through its validator',
+  validatedTransfer.ok === true &&
+    validatedTransfer.counts.transactions === 2 &&
+    validatedTransfer.counts.breakdownItems === 2 &&
+    validatedTransfer.counts.tags === 1 &&
+    validatedTransfer.counts.reminders === 1 &&
+    validatedTransfer.counts.attachments === 1,
+  JSON.stringify(validatedTransfer.ok ? validatedTransfer.counts : validatedTransfer.issues),
+);
+check(
+  'the file keeps dates, payment status, colour, breakdowns, reminders and receipt bytes',
+  validatedTransfer.ok === true &&
+    validatedTransfer.data.budget.name === 'Trip' &&
+    validatedTransfer.data.budget.color === '#AA5500' &&
+    validatedTransfer.data.transactions.find((row) => row.id === transferIds.expense)?.payment_due_date ===
+      '2026-10-20' &&
+    validatedTransfer.data.transactions.find((row) => row.id === transferIds.expense)?.payment_status ===
+      'unpaid' &&
+    validatedTransfer.data.breakdownItems.every((row) => row.transaction_id === transferIds.expense) &&
+    validatedTransfer.data.reminders[0].remind_date === '2026-10-19' &&
+    validatedTransfer.data.attachments[0].data === 'iVBORw0KGgo=',
+  JSON.stringify(validatedTransfer.ok ? validatedTransfer.data : validatedTransfer.issues),
+);
+check(
+  'the file carries no unrelated budget or tag',
+  !transferText.includes('budget_other') && !transferText.includes('OtherTag'),
+);
+
+// 3. File names and duplicate budget names stay readable.
+check(
+  'a filename names the budget and the export date',
+  buildBudgetTransferFileName('Trip / 2026!', '2026-10-26') ===
+    'Budgetarian-Trip-2026-2026-10-26.json',
+  buildBudgetTransferFileName('Trip / 2026!', '2026-10-26'),
+);
+check(
+  'duplicate budget names get a clear suffix',
+  uniqueBudgetName('Trip', []) === 'Trip' &&
+    uniqueBudgetName('Trip', ['trip']) === 'Trip (Imported)' &&
+    uniqueBudgetName('Trip', ['Trip', 'Trip (Imported)']) === 'Trip (Imported 2)',
+);
+
+// 4. Malformed or unsupported input is refused before any write.
+check('an empty file is refused', parseBudgetTransferText('').ok === false);
+check('malformed JSON is refused', parseBudgetTransferText('{').ok === false);
+
+function transferRejects(label, mutate, expected) {
+  const candidate = structuredClone(transferEnvelope);
+  mutate(candidate);
+  const result = validateBudgetTransfer(candidate);
+  check(
+    label,
+    result.ok === false && result.issues.join(' ').includes(expected),
+    JSON.stringify(result.issues),
+  );
+}
+
+transferRejects(
+  'a future file version asks the user to update',
+  (candidate) => {
+    candidate.formatVersion = 99;
+  },
+  'Update the app',
+);
+transferRejects(
+  'a transfer row is refused because accounts are not portable',
+  (candidate) => {
+    candidate.transactions[0].type = 'transfer';
+    candidate.transactions[0].tag_id = null;
+    candidate.transactions[0].account_id = 'acc_one';
+    candidate.transactions[0].to_account_id = 'acc_two';
+  },
+  'accounts',
+);
+transferRejects(
+  'a stray account reference is refused',
+  (candidate) => {
+    candidate.transactions[0].account_id = 'acc_one';
+  },
+  'accounts',
+);
+transferRejects(
+  'invalid receipt bytes are refused',
+  (candidate) => {
+    candidate.attachments[0].data = 'not base64!!!';
+  },
+  'base64',
+);
+transferRejects(
+  'a breakdown that does not add up is refused',
+  (candidate) => {
+    candidate.breakdownItems[0].amount = 4000;
+  },
+  'does not add up',
+);
+transferRejects(
+  'an impossible calendar date is refused',
+  (candidate) => {
+    candidate.transactions[0].transaction_date = '2026-02-31';
+  },
+  'date',
+);
+
+// 5. Planning remaps ids, reuses tags, renames collisions and honours the folder.
+let transferSequence = 0;
+const transferId = (prefix) => `${prefix}_plan${(transferSequence += 1)}`;
+
+const reusedTagPlan = planBudgetImport(validatedTransfer, {
+  createId: transferId,
+  timestamp: TRANSFER_STAMP,
+  folderId: null,
+  existingTags: [{ id: 'tag_existing', name: 'trip', archived: 0 }],
+  existingBudgetNames: [],
+  targetCurrency: 'PHP',
+});
+check(
+  'an existing tag is reused by case-insensitive name',
+  reusedTagPlan.tags.length === 0 &&
+    reusedTagPlan.transactions.every((row) => row.tag_id === 'tag_existing'),
+  JSON.stringify({ tags: reusedTagPlan.tags, refs: reusedTagPlan.transactions.map((row) => row.tag_id) }),
+);
+check(
+  'imported ids never reuse the ids stored in the file',
+  reusedTagPlan.budget.id !== transferIds.sourceBudget &&
+    reusedTagPlan.transactions.every(
+      (row) => row.id !== transferIds.expense && row.id !== transferIds.income,
+    ),
+);
+
+transferSequence = 0;
+const freshPlan = planBudgetImport(validatedTransfer, {
+  createId: transferId,
+  timestamp: TRANSFER_STAMP,
+  folderId: 'folder_import',
+  existingTags: [],
+  existingBudgetNames: ['Trip'],
+  targetCurrency: 'USD',
+});
+check(
+  'a missing tag is created with a fresh id',
+  freshPlan.tags.length === 1 &&
+    freshPlan.tags[0].name === 'Trip' &&
+    freshPlan.tags[0].id.startsWith('tag_'),
+  JSON.stringify(freshPlan.tags),
+);
+check(
+  'a duplicate budget name gets a clear suffix in the plan',
+  freshPlan.budgetName === 'Trip (Imported)' && freshPlan.budget.name === 'Trip (Imported)',
+  freshPlan.budgetName,
+);
+check(
+  'the destination folder and the currency warning survive planning',
+  freshPlan.budget.folder_id === 'folder_import' &&
+    freshPlan.warnings.some((warning) => warning.includes('PHP') && warning.includes('USD')),
+  JSON.stringify({ folder: freshPlan.budget.folder_id, warnings: freshPlan.warnings }),
+);
+
+const freshExpense = freshPlan.transactions.find((row) => row.type === 'expense');
+const freshItems = freshPlan.breakdownItems.filter((row) => row.transaction_id === freshExpense.id);
+const freshReminder = freshPlan.reminders[0];
+const freshAttachment = freshPlan.attachments[0];
+check(
+  'breakdown items follow their remapped parent',
+  freshItems.length === 2 &&
+    freshItems[0].position === 0 &&
+    freshItems[1].position === 1,
+  JSON.stringify(freshItems),
+);
+check(
+  'a reminder is re-linked and loses its device notification id',
+  freshReminder.transaction_id === freshExpense.id &&
+    freshReminder.notification_id === null &&
+    freshReminder.remind_at === buildRemindAt('2026-10-19', '09:00'),
+  JSON.stringify(freshReminder),
+);
+check(
+  'a receipt follows its remapped transaction',
+  freshAttachment.transaction_id === freshExpense.id &&
+    freshAttachment.data === 'iVBORw0KGgo=' &&
+    freshAttachment.id.startsWith('att_'),
+  JSON.stringify(freshAttachment),
+);
+
+transferSequence = 0;
+const archivedTagPlan = planBudgetImport(validatedTransfer, {
+  createId: transferId,
+  timestamp: TRANSFER_STAMP,
+  folderId: null,
+  existingTags: [{ id: 'tag_retired', name: 'Trip', archived: 1 }],
+  existingBudgetNames: [],
+  targetCurrency: 'PHP',
+});
+check(
+  'a name held by an archived tag is renamed instead of resurrected',
+  archivedTagPlan.tags.length === 1 &&
+    archivedTagPlan.tags[0].name === 'Trip (Imported)' &&
+    archivedTagPlan.warnings.some((warning) => warning.includes('Trip')),
+  JSON.stringify({ tags: archivedTagPlan.tags, warnings: archivedTagPlan.warnings }),
+);
+
+// 6. Applying the plan creates an independent, active budget with every record.
+const applyStore = createMemoryAdapter();
+await applyStore.insertBudget({
+  id: 'budget_existing',
+  name: 'Existing',
+  start_date: '2026-01-01',
+  end_date: '2026-01-31',
+  color: null,
+  folder_id: null,
+  position: 3,
+  created_at: TRANSFER_STAMP,
+  updated_at: TRANSFER_STAMP,
+  deleted_at: null,
+});
+
+let applySequence = 0;
+const applyPlan = planBudgetImport(validatedTransfer, {
+  createId: (prefix) => `${prefix}_apply${(applySequence += 1)}`,
+  timestamp: TRANSFER_STAMP,
+  folderId: null,
+  existingTags: [],
+  existingBudgetNames: ['Existing'],
+  targetCurrency: 'PHP',
+});
+applyPlan.attachments[0].path = 'receipts/imported.png';
+
+const appliedBudget = await applyBudgetTransferImport(applyStore, applyPlan, { folderId: null });
+check(
+  'an imported budget is appended to its destination scope',
+  appliedBudget.position === 4 && appliedBudget.folder_id === null && appliedBudget.deleted_at === null,
+  JSON.stringify({ position: appliedBudget.position, folder: appliedBudget.folder_id }),
+);
+const appliedRow = (await applyStore.listBudgets()).find((row) => row.id === appliedBudget.id);
+check(
+  'the imported budget reports its own income and expenses',
+  appliedRow.income === 20000 && appliedRow.spent === 5000,
+  JSON.stringify({ income: appliedRow?.income, spent: appliedRow?.spent }),
+);
+const appliedTransactions = await applyStore.listTransactionsByBudget(appliedBudget.id);
+const appliedExpense = appliedTransactions.find((row) => row.type === 'expense');
+check(
+  'imported transactions are independent and remapped',
+  appliedTransactions.length === 2 &&
+    appliedExpense.id !== transferIds.expense &&
+    appliedExpense.budget_id === appliedBudget.id &&
+    appliedExpense.tag_id === applyPlan.tags[0].id,
+  JSON.stringify(appliedTransactions),
+);
+const appliedItems = await applyStore.listSubTransactionsByBudget(appliedBudget.id);
+check(
+  'breakdown items are imported under the new transaction',
+  appliedItems.length === 2 &&
+    appliedItems.every((row) => row.transaction_id === appliedExpense.id) &&
+    appliedItems[0].position === 0 &&
+    appliedItems[1].position === 1,
+  JSON.stringify(appliedItems),
+);
+const appliedReminders = await applyStore.listRemindersForBudget(appliedBudget.id, {
+  includeArchived: true,
+});
+check(
+  'an imported reminder keeps its schedule without a stale notification id',
+  appliedReminders.length === 1 &&
+    appliedReminders[0].transaction_id === appliedExpense.id &&
+    appliedReminders[0].notification_id === null &&
+    appliedReminders[0].remind_at === buildRemindAt('2026-10-19', '09:00'),
+  JSON.stringify(appliedReminders),
+);
+const appliedAttachments = await applyStore.listAttachmentsForParents([appliedExpense.id]);
+check(
+  'an imported receipt row points at the copied file',
+  appliedAttachments.length === 1 && appliedAttachments[0].path === 'receipts/imported.png',
+  JSON.stringify(appliedAttachments),
+);
+check(
+  'the existing budget is untouched by the import',
+  (await applyStore.getBudget('budget_existing'))?.name === 'Existing',
+);
+
+// 7. A failure halfway through rolls back every row.
+const rollbackStore = createMemoryAdapter();
+const rollbackPlan = structuredClone(applyPlan);
+rollbackStore.insertSubTransaction = async () => {
+  throw new Error('disk full');
+};
+const rollbackBudgetCount = (await rollbackStore.listBudgets({ includeArchived: true })).length;
+const rollbackTagCount = (await rollbackStore.listTags({ includeArchived: true })).length;
+let rollbackThrew = false;
+try {
+  await applyBudgetTransferImport(rollbackStore, rollbackPlan, { folderId: null });
+} catch {
+  rollbackThrew = true;
+}
+check(
+  'a failed import rolls back the budget, tags, transactions, reminders and receipts',
+  rollbackThrew === true &&
+    (await rollbackStore.listBudgets({ includeArchived: true })).length === rollbackBudgetCount &&
+    (await rollbackStore.listTags({ includeArchived: true })).length === rollbackTagCount &&
+    !(await rollbackStore.getBudget(rollbackPlan.budget.id)),
+  JSON.stringify({
+    budgetCount: (await rollbackStore.listBudgets({ includeArchived: true })).length,
+    tagCount: (await rollbackStore.listTags({ includeArchived: true })).length,
+  }),
+);
+
+// 8. Attachment paths are validated before any database write.
+const pathStore = createMemoryAdapter();
+const unsafePlan = structuredClone(applyPlan);
+unsafePlan.attachments[0].path = '../evil.png';
+let unsafePathThrew = false;
+try {
+  await applyBudgetTransferImport(pathStore, unsafePlan, { folderId: null });
+} catch {
+  unsafePathThrew = true;
+}
+check(
+  'an unsafe attachment path is refused before any write',
+  unsafePathThrew === true &&
+    (await pathStore.listBudgets({ includeArchived: true })).length === 0,
+);
+
+// 9. The import context sees archived tags and budget names too.
+const importContext = await readBudgetImportContext(transferMemory);
+check(
+  'the import context includes archived tags and archived budget names',
+  importContext.existingTags.some((tag) => tag.name === 'Retired' && tag.archived === 1) &&
+    importContext.existingBudgetNames.includes('Archived Trip'),
+  JSON.stringify({
+    tags: importContext.existingTags.map((tag) => `${tag.name}:${tag.archived}`),
+    budgets: importContext.existingBudgetNames,
+  }),
+);
 
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);

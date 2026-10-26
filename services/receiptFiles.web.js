@@ -12,6 +12,14 @@ export async function persistReceipt() {
   throw new Error('Receipt images are not supported on web.');
 }
 
+export async function readReceiptBase64() {
+  return null;
+}
+
+export async function writeReceiptBase64() {
+  throw new Error('Receipt images are not supported on web.');
+}
+
 export function receiptFileUri() {
   return null;
 }

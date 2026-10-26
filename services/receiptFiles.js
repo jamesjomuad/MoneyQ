@@ -66,6 +66,44 @@ export async function persistReceipt(sourceUri) {
   return `${RECEIPT_DIR}/${name}`;
 }
 
+/**
+ * Base64 bytes for a stored receipt, used only by the single-budget exporter.
+ * Null means "not readable": the export leaves that image out and warns
+ * rather than failing the whole budget.
+ */
+export async function readReceiptBase64(path) {
+  const file = receiptFile(path);
+  if (!file) return null;
+  try {
+    return file.exists ? await file.base64() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write imported base64 image bytes into the app's own receipts folder under a
+ * fresh name and return the document-relative path to store. The caller never
+ * supplies a path, so imported data cannot point at arbitrary files. Throws if
+ * the bytes could not be written, so the import can abort before any row is
+ * committed.
+ */
+export async function writeReceiptBase64(base64, extension = '.jpg') {
+  if (!base64) throw new Error('There is no receipt image to save.');
+  const safeExtension = /^\.[a-z0-9]+$/i.test(String(extension))
+    ? String(extension).toLowerCase()
+    : '.jpg';
+
+  const dir = new Directory(Paths.document, RECEIPT_DIR);
+  dir.create({ intermediates: true, idempotent: true });
+  const name = `${createId()}${safeExtension}`;
+  const file = new File(dir, name);
+  file.create({ overwrite: true, intermediates: true });
+  file.write(base64, { encoding: 'base64' });
+  if (!file.exists) throw new Error('The receipt image could not be saved.');
+  return `${RECEIPT_DIR}/${name}`;
+}
+
 /** Absolute file URI for rendering, or null when the file is (or reads as) gone. */
 export function receiptFileUri(path) {
   const file = receiptFile(path);

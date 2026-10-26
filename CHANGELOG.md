@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Single-budget export and import. A budget's options menu can save or share
+  just that budget as a versioned JSON file, and can import one back without
+  touching any other budget. The same import is available from Settings →
+  Backup, alongside full-backup import. A preview lists the budget, its
+  transactions, breakdown items, tags, reminders and receipts before anything
+  is written, and the destination folder can be chosen there. Imports always
+  create a new active budget with fresh IDs; duplicate names get an
+  "(Imported)" suffix, existing tags are reused by name, and receipts travel
+  inside the file and are copied back into app storage. Transfers and account
+  references are not supported in a single-budget file and are rejected
+  clearly.
 - Tap-through release history. The "Latest documented version" row in
   Settings → About is now a link that opens a new Changelog screen
   (/changelog) rendering the whole CHANGELOG.md — Unreleased work, every

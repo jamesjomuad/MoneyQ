@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
+import { BudgetImportSheet } from '../components/budgets/BudgetImportSheet';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Icon } from '../components/ui/Icon';
@@ -10,6 +11,7 @@ import { SegmentedControl } from '../components/ui/SegmentedControl';
 import { Text } from '../components/ui/Text';
 import { useTheme } from '../components/ui/ThemeProvider';
 import { useBackupStore } from '../stores/backupStore';
+import { useBudgetTransferStore } from '../stores/budgetTransferStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { fileService } from '../services/fileService';
 import { describeConflict } from '../utils/backup';
@@ -37,6 +39,9 @@ export default function BackupScreen() {
   const confirmMerge = useBackupStore((state) => state.confirmMerge);
   const performFullRestore = useBackupStore((state) => state.performFullRestore);
   const clearError = useBackupStore((state) => state.clearError);
+
+  const budgetImportBusy = useBudgetTransferStore((state) => state.isBusy);
+  const startBudgetImport = useBudgetTransferStore((state) => state.startImport);
 
   // Surface store errors as an alert; each carries its own title + message.
   useEffect(() => {
@@ -112,12 +117,39 @@ export default function BackupScreen() {
           ]}
         >
           <View style={styles.flex}>
-            <Text variant="body">Import from a file</Text>
+            <Text variant="body">Import full backup</Text>
             <Text variant="caption" tone="muted">
-              Choose a Budgetarian backup to preview before anything changes
+              Replace or merge everything from a Budgetarian backup
             </Text>
           </View>
           {isBusy && !preview && !plan ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Icon name="chevronRight" size={16} color={colors.textFaint} />
+          )}
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            fileService.supported ? startBudgetImport({ origin: 'backup' }) : undefined
+          }
+          disabled={budgetImportBusy || !fileService.supported}
+          style={({ pressed }) => [
+            styles.option,
+            {
+              borderTopColor: colors.border,
+              borderTopWidth: StyleSheet.hairlineWidth,
+              opacity: pressed || !fileService.supported ? 0.7 : 1,
+            },
+          ]}
+        >
+          <View style={styles.flex}>
+            <Text variant="body">Import single budget</Text>
+            <Text variant="caption" tone="muted">
+              Add one budget from a budget file — nothing is replaced
+            </Text>
+          </View>
+          {budgetImportBusy ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
             <Icon name="chevronRight" size={16} color={colors.textFaint} />
@@ -267,6 +299,7 @@ export default function BackupScreen() {
       ) : null}
 
       <View style={{ height: spacing.xl }} />
+      <BudgetImportSheet origin="backup" />
     </Screen>
   );
 }
